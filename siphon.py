@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 # ---------------------------------------------------------------------------
 # Dependency bootstrap
@@ -102,17 +102,17 @@ except ImportError:
 # VantageConsole — protocol bridge when managed by Vantage/Crucible
 # ---------------------------------------------------------------------------
 
-_MANAGED = os.environ.get("VANTAGE_MANAGED", "0") == "1"
+_MANAGED = os.environ.get("CRUCIBLE_MANAGED", "0") == "1"
 
 
 class VantageConsole:
-    """Emits structured protocol tokens when run under Vantage/Crucible."""
+    """Emits structured protocol tokens when run under Crucible."""
 
     # Protocol tokens
-    LOG    = "__VANTAGE_LOG__:"
-    ERR    = "__VANTAGE_ERR__:"
-    STATUS = "__VANTAGE_STATUS__:"
-    PROMPT = "__VANTAGE_PROMPT__:"
+    LOG    = "__CRUCIBLE_LOG__:"
+    ERR    = "__CRUCIBLE_ERR__:"
+    STATUS = "__CRUCIBLE_STATUS__:"
+    PROMPT = "__CRUCIBLE_PROMPT__:"
 
     # Severity → color mapping
     _SEV_COLOR = {
