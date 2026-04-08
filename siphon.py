@@ -36,7 +36,52 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.0.2"
+VERSION = "1.0.4"
+
+
+def _clients_base() -> Path:
+    """Return the OS-appropriate default parent directory for client project folders."""
+    system = platform.system()
+    if system == "Windows":
+        base = Path("C:/clients")
+    elif system == "Darwin":
+        base = Path("/Users/Shared/clients")
+    else:
+        base = Path("/clients")
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _build_project_dir(client_short: str, start_date: str, tool_name: str) -> Path:
+    """
+    Build a structured project directory:
+      <clients_base>/<client_short>/<year>/<tool_name>/<client_short>_<datetime>/
+    """
+    slug = re.sub(r'[^\w-]', '_', (client_short or 'client').strip().lower()).strip('_') or 'client'
+    year = (start_date[:4] if start_date and len(start_date) >= 4 and start_date[:4].isdigit()
+            else datetime.now().strftime('%Y'))
+    dt_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = _clients_base() / slug / year / tool_name / f"{slug}_{dt_str}"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _write_project_meta(project_dir: Path, tool: str, client_short: str,
+                        year: str, version: str) -> None:
+    """Write project_meta.json so Flask apps can discover this project."""
+    try:
+        (project_dir / "project_meta.json").write_text(
+            json.dumps({
+                "tool":         tool,
+                "client_short": client_short,
+                "year":         year,
+                "created_at":   datetime.now().isoformat(),
+                "version":      version,
+            }, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Dependency bootstrap
@@ -543,7 +588,7 @@ DEFAULT_SETTINGS: dict = {
         "end_date":         "",
     },
     "scan": {
-        "project":        "siphon_output",
+        "project":        "",
         "api_base_url":   "",
         "api_base_urls":  [],
         "openapi_url":    "",
@@ -2681,6 +2726,15 @@ def main() -> None:
     settings = _apply_args(settings, args)
     scan = settings["scan"]
 
+    # Auto-compute structured project path from engagement fields if not explicitly set
+    if not scan.get("project"):
+        eng = settings.get("engagement", {})
+        scan["project"] = str(_build_project_dir(
+            eng.get("client_short", ""),
+            eng.get("start_date", ""),
+            "siphon",
+        ))
+
     # Validate target
     if not scan["api_base_url"]:
         con.err("No API base URL specified. Use --url or set scan.api_base_url in settings.")
@@ -2712,6 +2766,14 @@ def main() -> None:
 
     # Output manager
     output = OutputManager(scan["project"])
+    eng = settings.get("engagement", {})
+    _write_project_meta(
+        Path(scan["project"]).resolve(),
+        tool="siphon",
+        client_short=eng.get("client_short", ""),
+        year=(eng.get("start_date", "") or "")[:4] or datetime.now().strftime("%Y"),
+        version=VERSION,
+    )
 
     # Shared API inventory (populated by discovery, used by later phases)
     api_inventory: list = []
