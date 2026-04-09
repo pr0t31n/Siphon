@@ -2,47 +2,121 @@
 """
 install.py — Siphon dependency installer
 
-Installs Python packages, Go-based tools, and system utilities
-required by siphon.py for full functionality.
+Installs Python packages, Go-based tools, git-cloned utilities, and
+system packages required by siphon.py for full functionality.
+
+Supported platforms: macOS (Homebrew), Debian/Ubuntu/Kali (apt),
+                     RHEL/CentOS/Fedora/Rocky (dnf), openSUSE (zypper).
 """
 
-import sys
+import argparse
 import os
-import subprocess
 import platform
 import shutil
+import subprocess
+import sys
+import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 
 # ---------------------------------------------------------------------------
-# Helpers
+# ANSI colours (same convention as Fracture)
+# ---------------------------------------------------------------------------
+R = "\033[1;31m"
+G = "\033[1;32m"
+Y = "\033[1;33m"
+B = "\033[1;34m"
+C = "\033[1;36m"
+W = "\033[0m"
+
+
+def banner(msg):  print(f"\n{B}{'='*60}{W}\n{C}  {msg}{W}\n{B}{'='*60}{W}")
+def info(msg):    print(f"{G}[+]{W} {msg}")
+def warn(msg):    print(f"{Y}[!]{W} {msg}")
+def error(msg):   print(f"{R}[x]{W} {msg}")
+def step(msg):    print(f"{B}[>]{W} {msg}")
+
+
+# ---------------------------------------------------------------------------
+# OS detection
 # ---------------------------------------------------------------------------
 
-def _run(cmd: list, check: bool = True, capture: bool = False, **kwargs) -> subprocess.CompletedProcess:
-    """Run a subprocess command with optional output capture."""
-    kwargs.setdefault("timeout", 300)
-    if capture:
-        kwargs["stdout"] = subprocess.PIPE
-        kwargs["stderr"] = subprocess.PIPE
-        kwargs["text"]   = True
-    return subprocess.run(cmd, check=check, **kwargs)
+def detect_os() -> str:
+    system = platform.system()
+    if system == "Darwin":
+        return "macos"
+    if system == "Windows":
+        return "windows"
+    try:
+        with open("/etc/os-release") as f:
+            data = f.read().lower()
+    except FileNotFoundError:
+        return "linux-unknown"
+    if "kali" in data or "debian" in data or "ubuntu" in data:
+        return "apt"
+    if "rhel" in data or "centos" in data or "rocky" in data or "fedora" in data:
+        return "dnf"
+    if "suse" in data or "opensuse" in data:
+        return "zypper"
+    return "linux-unknown"
 
 
-def _which(name: str) -> str | None:
-    return shutil.which(name)
+OS = detect_os()
 
 
-def _is_root() -> bool:
+# ---------------------------------------------------------------------------
+# Privilege helpers
+# ---------------------------------------------------------------------------
+
+def is_root() -> bool:
     return os.getuid() == 0 if hasattr(os, "getuid") else False
 
 
-def _sudo_user() -> str:
+def get_sudo_user() -> str:
     return os.environ.get("SUDO_USER", "")
 
 
-def _brew_install(pkg: str) -> bool:
-    """Run 'brew install pkg', dropping to SUDO_USER when running as root."""
+def require_root() -> None:
+    """Re-execute under sudo if not already root (Unix only)."""
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                error("This installer requires Administrator privileges.")
+                error("Right-click the terminal and choose 'Run as administrator'.")
+                sys.exit(1)
+        except Exception:
+            warn("Could not verify Windows admin status — continuing.")
+        return
+    if not is_root():
+        warn("Installer requires root privileges. Re-running with sudo ...")
+        os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+def run(cmd, check: bool = True, capture: bool = False,
+        env=None, cwd=None) -> subprocess.CompletedProcess:
+    step(" ".join(cmd) if isinstance(cmd, list) else cmd)
+    kwargs: dict = {"check": check}
+    if capture:
+        kwargs["capture_output"] = True
+        kwargs["text"] = True
+    if env:
+        kwargs["env"] = env
+    if cwd:
+        kwargs["cwd"] = cwd
+    return subprocess.run(cmd, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Homebrew helper — never run as root
+# ---------------------------------------------------------------------------
+
+def brew_install(pkg: str) -> bool:
     brew_path = shutil.which("brew")
     if not brew_path:
         for p in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]:
@@ -50,284 +124,369 @@ def _brew_install(pkg: str) -> bool:
                 brew_path = p
                 break
     if not brew_path:
-        _print_err(f"brew not found — skipping {pkg}")
+        warn(f"brew not found — skipping {pkg}")
         return False
     cmd = [brew_path, "install", pkg]
-    if _is_root():
-        user = _sudo_user()
-        if not user:
-            _print_err(f"Running as root without SUDO_USER — cannot run brew safely. Skipping {pkg}.")
+    if is_root():
+        sudo_user = get_sudo_user()
+        if not sudo_user:
+            warn(f"Running as root without SUDO_USER — cannot run brew safely. Skipping {pkg}.")
             return False
-        cmd = ["sudo", "-u", user] + cmd
+        cmd = ["sudo", "-u", sudo_user] + cmd
     try:
-        _run(cmd)
+        run(cmd, check=False)
         return True
-    except subprocess.CalledProcessError:
+    except Exception:
         return False
 
 
-def _os_name() -> str:
-    s = platform.system().lower()
-    if s == "darwin":
-        return "macos"
-    if s == "windows":
-        return "windows"
-    return "linux"
+# ---------------------------------------------------------------------------
+# Package managers
+# ---------------------------------------------------------------------------
+
+_apt_updated = False
 
 
-def _pip(*packages: str) -> bool:
-    """Install one or more pip packages."""
-    try:
-        _run([sys.executable, "-m", "pip", "install", "--upgrade"] + list(packages))
-        return True
-    except subprocess.CalledProcessError:
-        return False
+def apt_install(packages: list) -> None:
+    global _apt_updated
+    if not _apt_updated:
+        info("Running apt-get update ...")
+        run(["apt-get", "update", "-y"])
+        _apt_updated = True
+    run(["apt-get", "install", "-y"] + packages)
 
 
-def _print_ok(msg: str) -> None:
-    print(f"  [OK] {msg}")
+def dnf_install(packages: list) -> None:
+    run(["dnf", "install", "-y"] + packages)
 
 
-def _print_skip(msg: str) -> None:
-    print(f"  [--] {msg} (already installed)")
-
-
-def _print_err(msg: str) -> None:
-    print(f"  [!!] {msg}", file=sys.stderr)
-
-
-def _print_section(title: str) -> None:
-    bar = "-" * 50
-    print(f"\n{bar}\n  {title}\n{bar}")
+def zypper_install(packages: list) -> None:
+    run(["zypper", "install", "-y"] + packages)
 
 
 # ---------------------------------------------------------------------------
-# Python packages
+# System packages
 # ---------------------------------------------------------------------------
 
-PYTHON_PACKAGES = [
-    ("requests",  "requests>=2.28.0",  "HTTP client library"),
-    ("colorama",  "colorama>=0.4.6",   "ANSI color output"),
-    ("yaml",      "pyyaml>=6.0.0",     "YAML parser for OpenAPI specs"),
+APT_PACKAGES = [
+    "sslscan",
+    "curl",
+    "jq",
+    "python3-pip",
+    "python3-dev",
+    "git",
+    "golang-go",
+]
+
+DNF_PACKAGES = [
+    "sslscan",
+    "curl",
+    "jq",
+    "python3-pip",
+    "python3-devel",
+    "git",
+    "golang",
+]
+
+BREW_PACKAGES = [
+    "sslscan",
+    "curl",
+    "jq",
+    "git",
 ]
 
 
-def install_python_packages() -> None:
-    _print_section("Python Packages")
-    import importlib.util
-    for module, pkg_spec, desc in PYTHON_PACKAGES:
-        if importlib.util.find_spec(module):
-            _print_skip(f"{pkg_spec} ({desc})")
-        else:
-            print(f"  Installing {pkg_spec} ({desc}) …")
-            if _pip(pkg_spec):
-                _print_ok(pkg_spec)
-            else:
-                _print_err(f"Failed to install {pkg_spec}")
+def install_system() -> None:
+    banner("Phase: system packages")
+    if OS == "apt":
+        apt_install(APT_PACKAGES)
+    elif OS == "dnf":
+        dnf_install(DNF_PACKAGES)
+    elif OS == "zypper":
+        zypper_install(["sslscan", "curl", "jq", "python3-pip", "git", "golang"])
+    elif OS == "macos":
+        for pkg in BREW_PACKAGES:
+            brew_install(pkg)
+    elif OS == "windows":
+        warn("Windows: install sslscan, curl, jq manually.")
+    else:
+        warn(f"Unknown OS '{OS}' — skipping system packages.")
 
 
 # ---------------------------------------------------------------------------
-# Go tools (via go install or binary download)
+# pip packages
+# ---------------------------------------------------------------------------
+
+PIP_PACKAGES = [
+    "requests>=2.28.0",   # HTTP client — required
+    "colorama>=0.4.6",    # ANSI colour output — required
+    "pyyaml>=6.0.0",      # YAML parser for OpenAPI/Swagger spec ingestion — required
+]
+
+
+def install_pip() -> None:
+    banner("Phase: pip packages")
+    run(
+        [sys.executable, "-m", "pip", "install", "--break-system-packages"] + PIP_PACKAGES,
+        check=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Go tools
 # ---------------------------------------------------------------------------
 
 GO_TOOLS = [
-    {
-        "name":    "nuclei",
-        "check":   "nuclei",
-        "go_path": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
-        "desc":    "Vulnerability scanner (ProjectDiscovery)",
-        "brew":    "nuclei",
-    },
+    (
+        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+        "nuclei",
+        "nuclei",   # brew formula
+    ),
 ]
 
 
-def _install_go_tool(tool: dict) -> bool:
-    """Install a Go-based tool."""
-    os_name = _os_name()
-
-    # macOS Homebrew
-    if os_name == "macos" and _which("brew"):
-        brew_name = tool.get("brew")
-        if brew_name and _brew_install(brew_name):
-            return True
-
-    # go install
-    if _which("go"):
-        try:
-            _run(["go", "install", tool["go_path"]])
-            return True
-        except subprocess.CalledProcessError:
-            pass
-
-    # Linux apt
-    if os_name == "linux":
-        apt_name = tool.get("apt")
-        if apt_name and _which("apt-get"):
-            try:
-                _run(["sudo", "apt-get", "install", "-y", apt_name])
-                return True
-            except subprocess.CalledProcessError:
-                pass
-
-    return False
+def find_go() -> str | None:
+    go = shutil.which("go")
+    if go:
+        return go
+    for p in ["/usr/local/go/bin/go", "/usr/lib/go/bin/go"]:
+        if os.path.isfile(p):
+            return p
+    return None
 
 
-def install_go_tools() -> None:
-    _print_section("Go / Binary Tools")
-    for tool in GO_TOOLS:
-        if _which(tool["check"]):
-            _print_skip(f"{tool['name']} ({tool['desc']})")
-        else:
-            print(f"  Installing {tool['name']} ({tool['desc']}) …")
-            if _install_go_tool(tool):
-                _print_ok(tool["name"])
-            else:
-                _print_err(
-                    f"Could not auto-install {tool['name']}. "
-                    f"Install manually: go install {tool['go_path']}"
-                )
+def install_go() -> None:
+    banner("Phase: Go tools")
+    go_bin = find_go()
+    if not go_bin:
+        warn("go not found in PATH — skipping Go tool installation.")
+        warn("Install Go from https://go.dev/dl/ and re-run with --skip-go")
+        return
+    env = os.environ.copy()
+    env["GOBIN"] = "/usr/local/bin"
+    for pkg, name, brew_name in GO_TOOLS:
+        if shutil.which(name):
+            info(f"{name} already installed — skipping")
+            continue
+        # macOS: prefer Homebrew if available
+        if OS == "macos" and brew_name:
+            if brew_install(brew_name):
+                continue
+        info(f"Installing {name} via go install ...")
+        run([go_bin, "install", pkg], check=False, env=env)
 
 
 # ---------------------------------------------------------------------------
-# System utilities
+# Git tools
 # ---------------------------------------------------------------------------
 
-SYSTEM_TOOLS = [
-    {
-        "name":    "curl",
-        "check":   "curl",
-        "desc":    "HTTP client",
-        "brew":    "curl",
-        "apt":     "curl",
-    },
-    {
-        "name":    "jq",
-        "check":   "jq",
-        "desc":    "JSON processor",
-        "brew":    "jq",
-        "apt":     "jq",
-    },
-]
+def git_clone_or_update(url: str, dest: str) -> None:
+    if os.path.isdir(dest):
+        info(f"Updating existing clone: {dest}")
+        run(["git", "-C", dest, "pull", "--ff-only"], check=False)
+    else:
+        run(["git", "clone", url, dest])
 
 
-def _install_system_tool(tool: dict) -> bool:
-    os_name = _os_name()
-    if os_name == "macos" and _which("brew"):
-        brew = tool.get("brew")
-        if brew and _brew_install(brew):
-            return True
-    elif os_name == "linux":
-        apt_name = tool.get("apt")
-        if apt_name and _which("apt-get"):
-            try:
-                _run(["sudo", "apt-get", "install", "-y", apt_name])
-                return True
-            except subprocess.CalledProcessError:
-                pass
-        yum_name = tool.get("yum", tool.get("apt"))
-        if yum_name and _which("yum"):
-            try:
-                _run(["sudo", "yum", "install", "-y", yum_name])
-                return True
-            except subprocess.CalledProcessError:
-                pass
-    return False
+def symlink_force(src: str, dest: str) -> None:
+    try:
+        if os.path.islink(dest) or os.path.exists(dest):
+            os.remove(dest)
+        os.symlink(src, dest)
+        info(f"Symlink: {dest} -> {src}")
+    except PermissionError:
+        warn(f"Cannot create symlink {dest} — not root.")
+    except Exception as e:
+        warn(f"Symlink {dest} failed: {e}")
 
 
-def install_system_tools() -> None:
-    _print_section("System Utilities")
-    for tool in SYSTEM_TOOLS:
-        if _which(tool["check"]):
-            _print_skip(f"{tool['name']} ({tool['desc']})")
-        else:
-            print(f"  Installing {tool['name']} ({tool['desc']}) …")
-            if _install_system_tool(tool):
-                _print_ok(tool["name"])
-            else:
-                _print_err(
-                    f"Could not auto-install {tool['name']}. "
-                    f"Please install '{tool['name']}' manually."
-                )
+def install_git() -> None:
+    banner("Phase: git tools")
+
+    # testssl.sh — TLS analysis (used by phase_tls)
+    git_clone_or_update("https://github.com/drwetter/testssl.sh.git", "/opt/testssl.sh")
+    testssl_bin = "/opt/testssl.sh/testssl.sh"
+    if os.path.isfile(testssl_bin):
+        os.chmod(testssl_bin, 0o755)
+        symlink_force(testssl_bin, "/usr/local/bin/testssl.sh")
+        info("testssl.sh symlinked to /usr/local/bin/testssl.sh")
+
+    # jwt_tool — JWT testing utility (complements Siphon's JWT phases)
+    git_clone_or_update("https://github.com/ticarpi/jwt_tool.git", "/opt/jwt_tool")
+    jwt_bin = "/opt/jwt_tool/jwt_tool.py"
+    if os.path.isfile(jwt_bin):
+        os.chmod(jwt_bin, 0o755)
+        symlink_force(jwt_bin, "/usr/local/bin/jwt_tool")
+        info("jwt_tool symlinked to /usr/local/bin/jwt_tool")
+        req = "/opt/jwt_tool/requirements.txt"
+        if os.path.isfile(req):
+            run(
+                [sys.executable, "-m", "pip", "install",
+                 "--break-system-packages", "-r", req],
+                check=False,
+            )
+
+    # nuclei-templates
+    git_clone_or_update(
+        "https://github.com/projectdiscovery/nuclei-templates.git",
+        "/opt/nuclei-templates",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Symlinks
+# ---------------------------------------------------------------------------
+
+APP_DIR  = str(Path(__file__).parent.resolve())
+APP_FILE = str(Path(APP_DIR) / "siphon.py")
+SYMLINKS = {
+    "/usr/local/bin/siphon": APP_FILE,
+}
+
+
+def install_symlinks() -> None:
+    banner("Creating symlinks")
+    if not os.path.isfile(APP_FILE):
+        warn(f"{APP_FILE} not found — symlink will point to a missing target.")
+    for dest, src in SYMLINKS.items():
+        symlink_force(src, dest)
 
 
 # ---------------------------------------------------------------------------
 # Verification
 # ---------------------------------------------------------------------------
 
-def verify_installation() -> None:
-    _print_section("Verification")
-    import importlib.util
+VERIFY_PYTHON = ["requests", "colorama", "yaml"]
 
-    all_ok = True
+VERIFY_CLI = [
+    ("sslscan",     "TLS scanner"),
+    ("testssl.sh",  "TLS scanner (testssl)"),
+    ("jwt_tool",    "JWT testing utility"),
+    ("nuclei",      "Vulnerability scanner"),
+    ("curl",        "HTTP client"),
+    ("jq",          "JSON processor"),
+]
 
-    # Python imports
-    for module, pkg_spec, desc in PYTHON_PACKAGES:
-        if importlib.util.find_spec(module):
-            _print_ok(f"Python: {module}")
+VERIFY_GIT = [
+    ("/opt/testssl.sh",       "testssl.sh"),
+    ("/opt/jwt_tool",         "jwt_tool"),
+    ("/opt/nuclei-templates", "nuclei-templates"),
+]
+
+
+def run_check() -> None:
+    banner("Post-install verification")
+
+    print(f"\n{C}Python imports:{W}")
+    for pkg in VERIFY_PYTHON:
+        try:
+            __import__(pkg)
+            info(f"{pkg:30s} {G}OK{W}")
+        except ImportError:
+            warn(f"{pkg:30s} {Y}MISSING{W}")
+
+    print(f"\n{C}CLI tools:{W}")
+    for tool, desc in VERIFY_CLI:
+        found = shutil.which(tool)
+        if found:
+            info(f"{tool:30s} {G}FOUND{W} ({found})")
         else:
-            _print_err(f"Python: {module} NOT found — run: pip install {pkg_spec}")
-            all_ok = False
+            warn(f"{tool:30s} {Y}NOT FOUND{W}  ({desc})")
 
-    # CLI tools
-    cli_tools = [
-        ("nuclei", "Vulnerability scanner"),
-        ("curl",   "HTTP client"),
-        ("jq",     "JSON processor"),
-    ]
-    for tool, desc in cli_tools:
-        path = _which(tool)
-        if path:
-            _print_ok(f"CLI: {tool} ({path})")
+    print(f"\n{C}Git clones:{W}")
+    for path, label in VERIFY_GIT:
+        if os.path.isdir(path):
+            info(f"{label:30s} {G}PRESENT{W} ({path})")
         else:
-            print(f"  [??] CLI: {tool} not found ({desc}) — optional but recommended")
+            warn(f"{label:30s} {Y}NOT FOUND{W}")
 
-    # Siphon self-check
-    siphon_path = Path(__file__).parent / "siphon.py"
-    if siphon_path.exists():
-        _print_ok(f"siphon.py found at {siphon_path}")
+    print(f"\n{C}Siphon:{W}")
+    if os.path.isfile(APP_FILE):
+        info(f"siphon.py found at {APP_FILE}")
     else:
-        _print_err(f"siphon.py not found at {siphon_path}")
-        all_ok = False
-
-    print()
-    if all_ok:
-        print("  All required dependencies installed.")
-        print("  Run: python3 siphon.py --help")
-    else:
-        print("  Some dependencies are missing. See errors above.")
-        sys.exit(1)
+        error(f"siphon.py not found at {APP_FILE}")
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Summary
+# ---------------------------------------------------------------------------
+
+def print_summary(skips: set) -> None:
+    banner("Post-install summary")
+    info(f"Application : Siphon — API Penetration Testing Orchestrator")
+    info(f"Location    : {APP_DIR}")
+    info(f"Symlink     : siphon → {APP_FILE}")
+    info(f"OS detected : {OS}")
+    print()
+    phases = ["system", "pip", "go", "git"]
+    for p in phases:
+        status = f"{Y}SKIPPED{W}" if p in skips else f"{G}DONE{W}"
+        print(f"  {p:10s} {status}")
+    print()
+    info("Run: siphon --help")
+    warn("testssl.sh installed from git (/opt/testssl.sh) — use the git version.")
+    warn("jwt_tool installed from git (/opt/jwt_tool) — available as /usr/local/bin/jwt_tool.")
+    warn("nuclei-templates cloned to /opt/nuclei-templates.")
+
+
+# ---------------------------------------------------------------------------
+# Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    import argparse
     parser = argparse.ArgumentParser(description="Siphon installer")
-    parser.add_argument("--skip-apt",  "--skip-system", dest="skip_system", action="store_true")
-    parser.add_argument("--skip-pip",  action="store_true")
-    parser.add_argument("--skip-go",   action="store_true")
-    parser.add_argument("--skip-git",  action="store_true", help="No-op (reserved for Arsenal compatibility)")
-    parser.add_argument("--check",     action="store_true", help="Verify installation only")
+    parser.add_argument("--skip-system", "--skip-apt", dest="skip_system", action="store_true",
+                        help="Skip system package installation")
+    parser.add_argument("--skip-pip",    action="store_true",
+                        help="Skip pip package installation")
+    parser.add_argument("--skip-go",     action="store_true",
+                        help="Skip Go tool installation")
+    parser.add_argument("--skip-git",    action="store_true",
+                        help="Skip git-cloned tool installation")
+    parser.add_argument("--check",       action="store_true",
+                        help="Verify installation only, make no changes")
     args = parser.parse_args()
 
-    print(f"\nSiphon v{VERSION} — Dependency Installer")
-    print("=" * 50)
-    print(f"Platform : {platform.system()} {platform.machine()}")
-    print(f"Python   : {sys.version.split()[0]}")
+    require_root()
+
+    banner("Siphon — API Penetration Testing Orchestrator — Installer")
+    info(f"Detected OS : {OS}")
+    info(f"Python      : {sys.executable}")
+    info(f"Running as  : {'root' if is_root() else os.environ.get('USER', '?')}")
 
     if args.check:
-        verify_installation()
+        run_check()
         return
 
-    if not args.skip_pip:
-        install_python_packages()
-    if not args.skip_go:
-        install_go_tools()
+    skips: set = set()
+
     if not args.skip_system:
-        install_system_tools()
-    verify_installation()
+        install_system()
+    else:
+        skips.add("system")
+        warn("Skipping system packages.")
+
+    if not args.skip_pip:
+        install_pip()
+    else:
+        skips.add("pip")
+        warn("Skipping pip packages.")
+
+    if not args.skip_go:
+        install_go()
+    else:
+        skips.add("go")
+        warn("Skipping Go tools.")
+
+    if not args.skip_git:
+        install_git()
+    else:
+        skips.add("git")
+        warn("Skipping git tools.")
+
+    install_symlinks()
+    run_check()
+    print_summary(skips)
 
 
 if __name__ == "__main__":
