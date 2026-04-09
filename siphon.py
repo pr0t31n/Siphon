@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -989,45 +989,147 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
     if not auth_cfg.get("enabled", False):
         return None
     sess = _make_session(settings)
-    auth_type = auth_cfg.get("auth_type", "token").lower()
-    token = auth_cfg.get("auth_token", "").strip()
-    cookie = auth_cfg.get("session_cookie", "").strip()
+    timeout = scan.get("timeout", 10)
 
-    if token:
-        token_type = auth_cfg.get("token_type", "Bearer")
-        sess.headers["Authorization"] = f"{token_type} {token}"
-    elif cookie:
-        for part in cookie.split(";"):
-            part = part.strip()
-            if "=" in part:
-                k, v = part.split("=", 1)
-                sess.cookies.set(k.strip(), v.strip())
-    elif auth_type == "form":
-        login_url = auth_cfg.get("login_url", "")
-        login_data_raw = auth_cfg.get("login_data", "{}")
+    # Resolve method: new "method" field takes precedence; fall back to legacy "auth_type"
+    method = (auth_cfg.get("method") or auth_cfg.get("auth_type") or "bearer").strip().lower()
+
+    def _login_post(url: str) -> "requests.Response | None":
+        raw = auth_cfg.get("login_data", "{}")
         try:
-            login_data = json.loads(login_data_raw) if isinstance(login_data_raw, str) else login_data_raw
-        except json.JSONDecodeError:
-            login_data = {}
-        if login_url:
-            try:
-                resp = sess.post(login_url, json=login_data, timeout=scan.get("timeout", 10))
-                # Try to extract token from response
-                try:
-                    body = resp.json()
-                    for key in ("token", "access_token", "jwt", "id_token", "auth_token"):
-                        if key in body:
-                            sess.headers["Authorization"] = f"Bearer {body[key]}"
-                            break
-                except Exception:
-                    pass
-            except Exception as exc:
-                con.err(f"Auth login failed: {exc}")
-    elif auth_type == "basic":
+            data = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            data = {}
+        # Inject convenience username/password fields when not already in the payload
+        u = auth_cfg.get("username", "")
+        p = auth_cfg.get("password", "")
+        uf = auth_cfg.get("login_username_field", "username")
+        pf = auth_cfg.get("login_password_field", "password")
+        if u and uf not in data:
+            data[uf] = u
+        if p and pf not in data:
+            data[pf] = p
+        ct = auth_cfg.get("login_content_type", "application/json")
+        try:
+            if "json" in ct:
+                return sess.post(url, json=data, timeout=timeout)
+            return sess.post(url, data=data, timeout=timeout)
+        except Exception as exc:
+            con.err(f"Login POST to {url} failed: {exc}")
+            return None
+
+    if method == "bearer":
+        token = auth_cfg.get("auth_token", "").strip()
+        if token:
+            sess.headers["Authorization"] = f"{auth_cfg.get('token_type', 'Bearer')} {token}"
+
+    elif method in ("basic", "token"):  # "token" is legacy alias
+        if method == "token":
+            # legacy: token field first, fall back to cookie
+            token = auth_cfg.get("auth_token", "").strip()
+            if token:
+                sess.headers["Authorization"] = f"{auth_cfg.get('token_type', 'Bearer')} {token}"
+                return sess
+            # fall through to cookie if no token
+            cookie = auth_cfg.get("session_cookie", "").strip()
+            if cookie:
+                for part in cookie.split(";"):
+                    part = part.strip()
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        sess.cookies.set(k.strip(), v.strip())
+        else:
+            username = auth_cfg.get("username", "")
+            password = auth_cfg.get("password", "")
+            if username:
+                sess.auth = (username, password)
+
+    elif method == "digest":
+        from requests.auth import HTTPDigestAuth
         username = auth_cfg.get("username", "")
         password = auth_cfg.get("password", "")
         if username:
-            sess.auth = (username, password)
+            sess.auth = HTTPDigestAuth(username, password)
+
+    elif method == "apikey":
+        key = auth_cfg.get("api_key", "").strip()
+        header = auth_cfg.get("api_key_header", "X-API-Key")
+        if key and header:
+            sess.headers[header] = key
+        # Query-param API keys are injected at request time via extra_headers convention;
+        # store in session params so all requests carry it automatically.
+        qp = auth_cfg.get("api_key_query", "")
+        if key and qp:
+            sess.params = {qp: key}  # type: ignore[assignment]
+
+    elif method == "cookie_login":
+        login_url = auth_cfg.get("login_url", "")
+        if login_url:
+            _login_post(login_url)  # cookies captured into sess.cookies automatically
+
+    elif method in ("token_login", "form"):
+        login_url = auth_cfg.get("login_url", "")
+        if login_url:
+            resp = _login_post(login_url)
+            if resp is not None:
+                try:
+                    body = resp.json()
+                    # Navigate dot-path (e.g. "data.token" or "access_token")
+                    token_path = auth_cfg.get("login_token_path", "token")
+                    token: "str | None" = body
+                    for key in token_path.split("."):
+                        token = token.get(key) if isinstance(token, dict) else None  # type: ignore[union-attr]
+                    if not token or not isinstance(token, str):
+                        # Fallback: scan common token keys
+                        for key in ("token", "access_token", "jwt", "id_token", "auth_token"):
+                            if key in body:
+                                token = body[key]
+                                break
+                    if token and isinstance(token, str):
+                        sess.headers["Authorization"] = f"{auth_cfg.get('token_type', 'Bearer')} {token}"
+                except Exception:
+                    pass
+
+    elif method == "oauth2_client_creds":
+        token_url = auth_cfg.get("oauth_token_url", "")
+        client_id = auth_cfg.get("oauth_client_id", "")
+        client_secret = auth_cfg.get("oauth_client_secret", "")
+        scope = auth_cfg.get("oauth_scope", "")
+        if token_url and client_id:
+            data: dict = {
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            }
+            if scope:
+                data["scope"] = scope
+            try:
+                resp = sess.post(token_url, data=data, timeout=timeout)
+                body = resp.json()
+                token = body.get("access_token", "")
+                if token:
+                    token_type = body.get("token_type", "Bearer")
+                    sess.headers["Authorization"] = f"{token_type} {token}"
+            except Exception as exc:
+                con.err(f"OAuth2 client_credentials failed: {exc}")
+
+    elif method == "header_creds":
+        hdrs = auth_cfg.get("custom_headers", {})
+        if isinstance(hdrs, dict):
+            sess.headers.update(hdrs)
+
+    elif method == "ntlm":
+        username = auth_cfg.get("username", "")
+        password = auth_cfg.get("password", "")
+        domain = auth_cfg.get("domain", "")
+        if username:
+            try:
+                from requests_ntlm import HttpNtlmAuth  # type: ignore[import]
+                ntlm_user = f"{domain}\\{username}" if domain else username
+                sess.auth = HttpNtlmAuth(ntlm_user, password)
+            except ImportError:
+                con.err("NTLM auth requires: pip install requests-ntlm")
+
     return sess
 
 
@@ -1105,21 +1207,45 @@ DEFAULT_SETTINGS: dict = {
             "tls":              True,
         },
         "auth": {
-            "enabled":        False,
-            "username":       "",
-            "password":       "",
-            "auth_type":      "token",
-            "login_url":      "",
-            "login_data":     "",
-            "auth_token":     "",
-            "token_type":     "Bearer",
-            "session_cookie": "",
+            "enabled":                 False,
+            "method":                  "bearer",   # bearer|basic|digest|apikey|cookie_login|token_login|oauth2_client_creds|header_creds|ntlm
+            # Bearer / token
+            "auth_token":              "",
+            "token_type":              "Bearer",
+            # Basic / Digest / NTLM
+            "username":                "",
+            "password":                "",
+            "domain":                  "",         # NTLM domain
+            # API Key
+            "api_key":                 "",
+            "api_key_header":          "X-API-Key",
+            "api_key_query":           "",         # query-param name (alternative to header)
+            # Login endpoint (cookie_login + token_login)
+            "login_url":               "",
+            "login_method":            "POST",
+            "login_data":              "{}",       # JSON string, e.g. '{"username":"u","password":"p"}'
+            "login_content_type":      "application/json",
+            "login_username_field":    "username", # convenience: injected into login_data
+            "login_password_field":    "password",
+            "login_token_path":        "token",    # dot-path into JSON response (token_login)
+            # OAuth2 Client Credentials
+            "oauth_token_url":         "",
+            "oauth_client_id":         "",
+            "oauth_client_secret":     "",
+            "oauth_scope":             "",
+            # Custom headers
+            "custom_headers":          {},
+            # Legacy compat
+            "auth_type":               "",
+            "session_cookie":          "",
         },
         "auth2": {
             "enabled":        False,
+            "method":         "bearer",
             "username":       "",
             "password":       "",
             "auth_token":     "",
+            "token_type":     "Bearer",
             "session_cookie": "",
         },
         "jwt_secret":              "",
@@ -1220,9 +1346,14 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--list-phases",  action="store_true", help="List all phases and exit")
     ap.add_argument("--username",     metavar="USER",  help="Auth username")
     ap.add_argument("--password",     metavar="PASS",  help="Auth password")
-    ap.add_argument("--auth-type",    metavar="TYPE",  choices=["token", "basic", "form"])
-    ap.add_argument("--login-url",    metavar="URL",   help="Login endpoint URL")
-    ap.add_argument("--auth-token",   metavar="TOKEN", help="Pre-obtained auth token")
+    ap.add_argument("--auth-method",   metavar="METHOD",
+                    choices=["bearer","basic","digest","apikey","cookie_login","token_login",
+                             "oauth2_client_creds","header_creds","ntlm"],
+                    help="Auth method (bearer|basic|digest|apikey|cookie_login|token_login|oauth2_client_creds|header_creds|ntlm)")
+    ap.add_argument("--auth-type",    metavar="TYPE",  choices=["token", "basic", "form"],
+                    help="Legacy alias for --auth-method")
+    ap.add_argument("--login-url",    metavar="URL",   help="Login endpoint URL (cookie_login / token_login)")
+    ap.add_argument("--auth-token",   metavar="TOKEN", help="Pre-obtained auth token (bearer)")
     ap.add_argument("--threads",      type=int,        metavar="N")
     ap.add_argument("--timeout",      type=int,        metavar="SEC")
     ap.add_argument("--proxy",        metavar="URL",   help="HTTP proxy")
@@ -1270,8 +1401,11 @@ def _apply_args(settings: dict, args: argparse.Namespace) -> dict:
         scan["auth"]["username"] = args.username
     if args.password:
         scan["auth"]["password"] = args.password
+    if getattr(args, "auth_method", None):
+        scan["auth"]["method"] = args.auth_method
+        scan["auth"]["enabled"] = True
     if args.auth_type:
-        scan["auth"]["auth_type"] = args.auth_type
+        scan["auth"]["auth_type"] = args.auth_type  # legacy compat
     if args.login_url:
         scan["auth"]["login_url"] = args.login_url
     return settings
