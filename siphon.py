@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -2624,23 +2624,9 @@ def phase_discovery(settings: dict, sess: requests.Session,
     con.info("Discovery: probing for wildcard/catch-all behaviour …")
     _wc_baseline = _detect_wildcard(target_root, sess, timeout)
     if _wc_baseline is not None:
-        _wc_detail = (
-            f"Wildcard/catch-all detected — server returns HTTP {_wc_baseline['status']} "
-            f"for all unknown paths"
-            + (f", redirecting to {_wc_baseline['location']}" if _wc_baseline.get("redirect") else "")
-            + ". Path-based discovery tools (FFUF, Feroxbuster, dirsearch) are skipped; "
-            "results would be all false positives. Kiterunner still runs (API-aware)."
-        )
-        con.warn(f"[discovery] Wildcard detected — skipping path-fuzzing tools")
-        output.add_finding(
-            phase="discovery",
-            title="Wildcard Routing Detected",
-            severity="INFO",
-            url=target_root,
-            detail=_wc_detail,
-            evidence=f"All random probe paths return HTTP {_wc_baseline['status']}",
-            remediation="Ensure the API returns 404 for non-existent routes rather than catch-all responses.",
-            extra={"owasp": "API9"},
+        con.warn(
+            f"[discovery] Wildcard detected (HTTP {_wc_baseline['status']}) — "
+            "skipping FFUF/Feroxbuster/dirsearch"
         )
 
     # ------------------------------------------------------------------ #
@@ -2711,6 +2697,13 @@ def phase_recon(settings: dict, sess: requests.Session,
         con.status("recon", "fail", "Unreachable")
         return
 
+    # Write all response headers to an evidence file (shared by recon findings)
+    _recon_host = urlparse(base_url).hostname or "target"
+    _hdr_file = output.output_path("recon", f"response_headers_{_recon_host}.txt")
+    _hdr_lines = [f"GET {base_url}", f"HTTP {resp.status_code}", ""]
+    _hdr_lines += [f"{k}: {v}" for k, v in resp.headers.items()]
+    _hdr_file.write_text("\n".join(_hdr_lines), encoding="utf-8")
+
     # Server header disclosure
     server = resp.headers.get("Server", "")
     x_powered = resp.headers.get("X-Powered-By", "")
@@ -2724,6 +2717,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail=f"Server header reveals: {server}",
             evidence=f"Server: {server}",
             remediation="Remove or genericize the Server header.",
+            output_file=str(_hdr_file),
         )
     if x_powered:
         output.add_finding(
@@ -2791,21 +2785,24 @@ def phase_recon(settings: dict, sess: requests.Session,
                     remediation="Validate Origin against an allowlist before reflecting.",
                 )
 
-    # Wildcard / catch-all detection — random path should 404
-    import secrets as _secrets_mod
-    _rnd_path = f"/siphon-probe-{_secrets_mod.token_hex(8)}-notfound"
-    wc_resp = _safe_get(sess, base_url.rstrip("/") + _rnd_path, timeout=timeout)
-    if wc_resp and wc_resp.status_code == 200:
+    # Wildcard / catch-all detection
+    _recon_wc = _detect_wildcard(base_url, sess, timeout)
+    if _recon_wc is not None:
         output.add_finding(
             phase="recon",
-            title="API Catch-All / Wildcard Routing Detected",
-            severity="LOW",
+            title=f"Wildcard (*) Detected: {base_url}",
+            severity="INFO",
             url=base_url,
-            detail=(f"The server returned HTTP 200 for a random non-existent path "
-                    f"({_rnd_path}). This may mask true endpoint inventory and inflate "
-                    f"undocumented-endpoint findings."),
-            evidence=f"GET {_rnd_path} → HTTP {wc_resp.status_code}",
-            remediation="Return 404 for unknown paths. Do not expose catch-all routes in production.",
+            detail=(
+                f"A wildcard/catch-all response was detected — the server returns "
+                f"HTTP {_recon_wc['status']} for all unknown paths"
+                + (f", redirecting to {_recon_wc['location']}" if _recon_wc.get("redirect") else "")
+                + ". Path-based discovery tools (FFUF, Feroxbuster, dirsearch) and fuzzing "
+                "are unreliable on this host; results would be false positives."
+            ),
+            evidence=f"Wildcard: HTTP {_recon_wc['status']} for all paths",
+            remediation="Return 404 for unknown routes. Do not expose catch-all handlers in production APIs.",
+            output_file=str(_hdr_file),
         )
 
     # Framework / stack fingerprinting
@@ -2870,21 +2867,6 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
         con.warn(
             f"[fuzzing] Wildcard/catch-all detected (HTTP {_fuzz_wc['status']}) — "
             "skipping entire fuzzing phase to prevent false positives"
-        )
-        output.add_finding(
-            phase="fuzzing",
-            title="Fuzzing Skipped: Wildcard Routing Detected",
-            severity="INFO",
-            url=root,
-            detail=(
-                f"The server returns HTTP {_fuzz_wc['status']} for all unknown paths"
-                + (f", redirecting to {_fuzz_wc['location']}" if _fuzz_wc.get("redirect") else "")
-                + ". HTTP method and parameter fuzzing would generate innumerable false positives "
-                "and has been skipped."
-            ),
-            evidence=f"All random probe paths return HTTP {_fuzz_wc['status']}",
-            remediation="Ensure the API returns 404 for non-existent routes.",
-            extra={"owasp": "API9"},
         )
         con.status("fuzzing", "skip", "Wildcard detected — fuzzing skipped")
         return
@@ -3394,6 +3376,18 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
         if resp and resp.status_code == 200:
             # Check response has meaningful content
             if len(resp.text) > 50:
+                _ep_safe = ep["path"].strip("/").replace("/", "_") or "root"
+                _auth_file = output.output_path(
+                    "auth_bypass",
+                    f"missing_auth_{ep['method'].lower()}_{_ep_safe}.txt",
+                )
+                _auth_file.write_text(
+                    f"Request: {ep['method']} {url}\n"
+                    f"Status:  {resp.status_code}\n"
+                    f"Headers: {dict(resp.headers)}\n\n"
+                    f"Response body:\n{resp.text[:4000]}",
+                    encoding="utf-8",
+                )
                 output.add_finding(
                     phase="auth_bypass",
                     title="Missing Authentication Enforcement",
@@ -3403,6 +3397,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                             f"without authentication."),
                     evidence=f"HTTP {resp.status_code}: {resp.text[:200]}",
                     remediation="Enforce authentication on all protected endpoints.",
+                    output_file=str(_auth_file),
                 )
 
     # JWT attacks (only if auth session has a JWT)
@@ -3532,19 +3527,36 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
 
     test_url = (root + auth_endpoints[0]["path"]) if auth_endpoints else base_url
 
-    # Rapid fire test
+    # Rapid fire test — track status codes for evidence
     got_429 = False
     rate_limited_at = None
+    _rl_statuses: list[int] = []
     for i in range(threshold):
         if _shutdown_requested:
             break
         resp = _safe_get(sess, test_url, timeout=timeout)
-        if resp and resp.status_code == 429:
-            got_429 = True
-            rate_limited_at = i + 1
-            break
+        if resp:
+            _rl_statuses.append(resp.status_code)
+            if resp.status_code == 429:
+                got_429 = True
+                rate_limited_at = i + 1
+                break
 
     if not got_429:
+        _rl_file = output.output_path("rate_limiting", "missing_rate_limit.txt")
+        _status_summary = ", ".join(str(s) for s in _rl_statuses[:20])
+        if len(_rl_statuses) > 20:
+            _status_summary += f" … ({len(_rl_statuses)} total)"
+        _rl_file.write_text(
+            f"Rate Limit Test\n"
+            f"Target:         {test_url}\n"
+            f"Requests sent:  {len(_rl_statuses)}\n"
+            f"429 received:   No\n\n"
+            f"Status codes:   {_status_summary}\n\n"
+            f"All {len(_rl_statuses)} requests completed without HTTP 429 (Too Many Requests).\n"
+            f"The API does not appear to enforce rate limiting on this endpoint.",
+            encoding="utf-8",
+        )
         output.add_finding(
             phase="rate_limiting",
             title="Missing Rate Limiting",
@@ -3554,6 +3566,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
                     f"API may be vulnerable to brute force and DoS attacks."),
             evidence=f"{threshold} requests sent without receiving HTTP 429",
             remediation="Implement rate limiting per IP and per user on sensitive endpoints.",
+            output_file=str(_rl_file),
         )
     else:
         con.info(f"Rate limit detected at request #{rate_limited_at}")
@@ -4778,6 +4791,10 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
         con.status("tls", "skip", "TLS tool produced no output")
         return
 
+    # Write full tool output to an evidence file shared by all TLS findings
+    _tls_file = output.output_path("tls", f"tls_scan_{host_port.replace(':', '_')}.txt")
+    _tls_file.write_text(tool_output, encoding="utf-8")
+
     for vuln_name, (pat, severity) in _TLS_VULN_PATTERNS.items():
         if pat.search(tool_output):
             output.add_finding(
@@ -4792,6 +4809,7 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
                     "Use TLSv1.2+ with strong cipher suites only. "
                     "Renew expired or self-signed certificates."
                 ),
+                output_file=str(_tls_file),
             )
 
     con.status("tls", "done", f"TLS analysis complete for {host_port}")
