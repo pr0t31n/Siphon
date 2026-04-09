@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -718,6 +718,7 @@ class OutputManager:
         remediation: str = "",
         extra: dict | None = None,
         output_file: str = "",
+        source: str | None = None,
     ) -> dict:
         ts = datetime.now(timezone.utc).isoformat()
         sev_upper = severity.upper()
@@ -763,7 +764,7 @@ class OutputManager:
             "description":     detail,
             "output":          evidence,
             "cves":            cves,
-            "sources":         f"siphon-{phase}",
+            "sources":         source if source is not None else f"siphon-{phase}",
             "service":         service,
             "output_file":     output_file,
             "affected":        url,
@@ -2134,6 +2135,7 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
                     evidence=f"{method} {path} → {status}",
                     output_file=str(out_file),
                     extra={"owasp": "API9"},
+                    source="kiterunner",
                 )
         con.info(f"Kiterunner: {len(results)} route(s) found")
     except subprocess.TimeoutExpired:
@@ -2224,6 +2226,7 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
                                   f"{r.get('lines', 0)} lines)"),
                         output_file=str(out_file),
                         extra={"owasp": "API9"},
+                        source="ffuf",
                     )
         con.info(f"FFUF: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
@@ -2314,6 +2317,7 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
                     evidence=f"GET {path} → {status}",
                     output_file=str(out_file),
                     extra={"owasp": "API9"},
+                    source="feroxbuster",
                 )
         con.info(f"Feroxbuster: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
@@ -2396,6 +2400,7 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
                                   f"({r.get('content-length', r.get('length', 0))} bytes)"),
                         output_file=str(out_file),
                         extra={"owasp": "API9"},
+                        source="dirsearch",
                     )
             except Exception:
                 pass
@@ -2471,6 +2476,7 @@ def _run_ffuf_params(endpoint_url: str, phase: str, scan: dict,
                     evidence=f"GET {endpoint_url}?{param}=siphon_test → {status}",
                     output_file=str(out_file),
                     extra={"owasp": "API3"},
+                    source="ffuf",
                 )
     except Exception:
         pass
@@ -4723,10 +4729,9 @@ def phase_sensitive_files(settings: dict, sess: requests.Session,
 # ---------------------------------------------------------------------------
 
 def phase_tls(settings: dict, output: OutputManager) -> None:
-    """Phase 16: TLS/SSL analysis using testssl.sh or sslscan."""
+    """Phase 16: TLS/SSL analysis using sslscan and testssl.sh."""
     scan = settings["scan"]
     base_url = scan["api_base_url"]
-    timeout = scan.get("timeout", 10)
     target = _parse_target(base_url)
 
     host = target["host"]
@@ -4735,7 +4740,6 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
 
     con.status("tls", "running", f"TLS analysis on {host_port}")
 
-    # Try sslscan first
     sslscan = shutil.which("sslscan")
     testssl = shutil.which("testssl.sh") or shutil.which("testssl")
 
@@ -4744,73 +4748,132 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
         con.status("tls", "skip", "No TLS tool available")
         return
 
+    # More precise patterns to avoid false positives:
+    # - NULL- matches cipher suite names (e.g. NULL-SHA) rather than bare NULL keyword
+    # - DES negative lookahead avoids matching 3DES/DES-CBC3 as a separate DES finding
+    # - VULNERABLE anchor variants catch testssl's explicit "VULNERABLE" output format
     _TLS_VULN_PATTERNS = {
-        "SSLv2 Enabled":         (re.compile(r'SSLv2\s+enabled', re.I),    "CRITICAL"),
-        "SSLv3 Enabled":         (re.compile(r'SSLv3\s+enabled', re.I),    "HIGH"),
-        "TLSv1.0 Enabled":       (re.compile(r'TLSv1\.0\s+enabled', re.I), "MEDIUM"),
-        "TLSv1.1 Enabled":       (re.compile(r'TLSv1\.1\s+enabled', re.I), "MEDIUM"),
-        "RC4 Cipher Accepted":   (re.compile(r'RC4',               re.I),   "HIGH"),
-        "NULL Cipher Accepted":  (re.compile(r'NULL',              re.I),   "CRITICAL"),
-        "EXPORT Cipher Accepted":(re.compile(r'EXPORT',            re.I),   "HIGH"),
-        "DES Cipher Accepted":   (re.compile(r'\bDES\b',           re.I),   "HIGH"),
-        "Heartbleed":            (re.compile(r'heartbleed',        re.I),   "CRITICAL"),
-        "POODLE":                (re.compile(r'poodle',            re.I),   "HIGH"),
-        "BEAST":                 (re.compile(r'\bBEAST\b',         re.I),   "MEDIUM"),
-        "CRIME":                 (re.compile(r'\bCRIME\b',         re.I),   "MEDIUM"),
-        "DROWN":                 (re.compile(r'\bDROWN\b',         re.I),   "HIGH"),
-        "LOGJAM":                (re.compile(r'\bLOGJAM\b',        re.I),   "HIGH"),
-        "FREAK":                 (re.compile(r'\bFREAK\b',         re.I),   "HIGH"),
-        "SWEET32":               (re.compile(r'sweet32|3DES',      re.I),   "MEDIUM"),
-        "Self-Signed Cert":      (re.compile(r'self.?signed',      re.I),   "HIGH"),
-        "Expired Certificate":   (re.compile(r'certif.*expir|expir.*certif', re.I), "HIGH"),
+        "TLS Vulnerability: SSLv2 Enabled":        (re.compile(r'SSLv2\s+enabled|Accepted\s+SSLv2', re.I),          "CRITICAL"),
+        "TLS Vulnerability: SSLv3 Enabled":        (re.compile(r'SSLv3\s+enabled|Accepted\s+SSLv3', re.I),          "HIGH"),
+        "TLS Vulnerability: TLSv1.0 Enabled":      (re.compile(r'TLSv1\.0\s+enabled|Accepted\s+TLSv1\.0\b', re.I), "MEDIUM"),
+        "TLS Vulnerability: TLSv1.1 Enabled":      (re.compile(r'TLSv1\.1\s+enabled|Accepted\s+TLSv1\.1', re.I),   "MEDIUM"),
+        "TLS Vulnerability: RC4 Cipher Accepted":  (re.compile(r'\bRC4\b', re.I),                                   "HIGH"),
+        "TLS Vulnerability: NULL Cipher Accepted": (re.compile(r'NULL\s+Cipher|NULL-', re.I),                       "CRITICAL"),
+        "TLS Vulnerability: EXPORT Cipher Accepted": (re.compile(r'\bEXPORT\b', re.I),                              "HIGH"),
+        "TLS Vulnerability: DES Cipher Accepted":  (re.compile(r'\bDES\b(?!-CBC3)', re.I),                          "HIGH"),
+        "TLS Vulnerability: Heartbleed":           (re.compile(r'heartbleed|VULNERABLE.*heartbleed', re.I),          "CRITICAL"),
+        "TLS Vulnerability: POODLE":               (re.compile(r'POODLE|VULNERABLE.*poodle', re.I),                  "HIGH"),
+        "TLS Vulnerability: BEAST":                (re.compile(r'BEAST|VULNERABLE.*beast', re.I),                    "MEDIUM"),
+        "TLS Vulnerability: CRIME":                (re.compile(r'CRIME|VULNERABLE.*crime', re.I),                    "MEDIUM"),
+        "TLS Vulnerability: DROWN":                (re.compile(r'DROWN|VULNERABLE.*drown', re.I),                    "HIGH"),
+        "TLS Vulnerability: LOGJAM":               (re.compile(r'LOGJAM|VULNERABLE.*logjam', re.I),                  "HIGH"),
+        "TLS Vulnerability: FREAK":                (re.compile(r'FREAK|VULNERABLE.*freak', re.I),                    "HIGH"),
+        "TLS Vulnerability: SWEET32":              (re.compile(r'sweet32|DES-CBC3', re.I),                           "MEDIUM"),
+        "TLS Vulnerability: LUCKY13":              (re.compile(r'lucky13', re.I),                                    "MEDIUM"),
+        "TLS Vulnerability: Self-Signed Cert":     (re.compile(r'self.?signed|Self signed', re.I),                   "HIGH"),
+        "TLS Vulnerability: Expired Certificate":  (re.compile(r'certif.*expir|expir.*certif|expired', re.I),        "HIGH"),
     }
 
-    tool_output = ""
+    _tls_remediation = (
+        "Disable deprecated TLS protocols and weak cipher suites. "
+        "Use TLSv1.2+ with strong cipher suites only. "
+        "Renew expired or self-signed certificates."
+    )
 
+    ran_any = False
+
+    # ── sslscan ──────────────────────────────────────────────────────────────
     if sslscan:
+        _ss_file = output.output_path("tls", f"sslscan_{host}_{port}.txt")
         try:
             result = subprocess.run(
                 [sslscan, "--no-colour", host_port],
-                capture_output=True, text=True, timeout=60
+                capture_output=True, text=True, timeout=60,
             )
-            tool_output = result.stdout + result.stderr
+            _ss_out = result.stdout + result.stderr
+            _ss_file.write_text(_ss_out, encoding="utf-8")
+            ran_any = True
+
+            # False positive filtering (aligned with Fracture's sslscan parser):
+            # 1. Lines containing "not vulnerable" — sslscan explicitly clears the check.
+            # 2. Bare section-header lines: sslscan emits "  Heartbleed:" with no value
+            #    before per-protocol result lines; the header alone would false-match the
+            #    heartbleed pattern even when no vulnerability is present.
+            _SSL_SECTION_HDR = re.compile(r'^\s+[\w ,()/-]+:\s*$')
+            _ss_filtered = "\n".join(
+                ln for ln in _ss_out.splitlines()
+                if "not vulnerable" not in ln.lower()
+                and not _SSL_SECTION_HDR.match(ln)
+            )
+            for _title, (pat, severity) in _TLS_VULN_PATTERNS.items():
+                if pat.search(_ss_filtered):
+                    _vuln = _title.replace("TLS Vulnerability: ", "")
+                    output.add_finding(
+                        phase="tls",
+                        title=_title,
+                        severity=severity,
+                        url=base_url,
+                        detail=f"{_vuln} detected on {host_port}.",
+                        evidence=f"sslscan output matched pattern for: {_vuln}",
+                        remediation=_tls_remediation,
+                        output_file=str(_ss_file),
+                        source="sslscan",
+                    )
         except Exception as e:
             con.warn(f"[tls] sslscan error: {e}")
 
-    if testssl and not tool_output:
+    # ── testssl.sh ────────────────────────────────────────────────────────────
+    if testssl:
+        _ts_file = output.output_path("tls", f"testssl_{host}_{port}.txt")
         try:
             result = subprocess.run(
                 [testssl, "--fast", "--quiet", host_port],
-                capture_output=True, text=True, timeout=120
+                capture_output=True, text=True, timeout=120,
             )
-            tool_output = result.stdout + result.stderr
+            _ts_out = result.stdout + result.stderr
+            _ts_file.write_text(_ts_out, encoding="utf-8")
+            ran_any = True
+
+            # False positive filtering (aligned with Fracture's testssl parser):
+            # - "(OK)" lines: testssl marks passing checks with (OK); not a vulnerability.
+            # - "Testing robust forward secrecy": section header, no finding.
+            # - "User-agent:" / "Disallow:": embedded HTTP content in testssl output that
+            #   can contain keywords matching cipher/protocol patterns.
+            # - "not offered": cipher or protocol absent — explicitly safe.
+            # - DROWN advisory continuation line contains "make sure you don't use this
+            #   certificate" which itself references the word "DROWN" in context.
+            _TESTSSL_NOISE = re.compile(
+                r'Testing robust forward secrecy'
+                r'|User-agent:'
+                r'|Disallow:'
+                r'|not offered'
+                r'|make sure you don.t use this certificate',
+                re.I,
+            )
+            _ts_filtered = "\n".join(
+                ln for ln in _ts_out.splitlines()
+                if "(OK)" not in ln and not _TESTSSL_NOISE.search(ln)
+            )
+            for _title, (pat, severity) in _TLS_VULN_PATTERNS.items():
+                if pat.search(_ts_filtered):
+                    _vuln = _title.replace("TLS Vulnerability: ", "")
+                    output.add_finding(
+                        phase="tls",
+                        title=_title,
+                        severity=severity,
+                        url=base_url,
+                        detail=f"{_vuln} detected on {host_port}.",
+                        evidence=f"testssl.sh output matched pattern for: {_vuln}",
+                        remediation=_tls_remediation,
+                        output_file=str(_ts_file),
+                        source="testssl.sh",
+                    )
         except Exception as e:
             con.warn(f"[tls] testssl error: {e}")
 
-    if not tool_output:
+    if not ran_any:
         con.status("tls", "skip", "TLS tool produced no output")
         return
-
-    # Write full tool output to an evidence file shared by all TLS findings
-    _tls_file = output.output_path("tls", f"tls_scan_{host_port.replace(':', '_')}.txt")
-    _tls_file.write_text(tool_output, encoding="utf-8")
-
-    for vuln_name, (pat, severity) in _TLS_VULN_PATTERNS.items():
-        if pat.search(tool_output):
-            output.add_finding(
-                phase="tls",
-                title=f"TLS Vulnerability: {vuln_name}",
-                severity=severity,
-                url=base_url,
-                detail=f"{vuln_name} detected on {host_port}.",
-                evidence=f"TLS tool output matched pattern for: {vuln_name}",
-                remediation=(
-                    "Disable deprecated TLS protocols and weak cipher suites. "
-                    "Use TLSv1.2+ with strong cipher suites only. "
-                    "Renew expired or self-signed certificates."
-                ),
-                output_file=str(_tls_file),
-            )
 
     con.status("tls", "done", f"TLS analysis complete for {host_port}")
 
