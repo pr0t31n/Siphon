@@ -16,6 +16,11 @@ auto-mapping on all non-INFO findings; CVE enrichment from title keywords;
 evidence file capturing via OutputManager.output_path(); Fracture-compatible
 output_file field in findings.json; summary.json for Crucible summary panel.
 
+v1.4.0 additions: Wildcard/catch-all detection (ported from Fracture) — Phase 0
+skips FFUF/Feroxbuster/dirsearch and Phase 2 skips entirely when wildcard
+detected; VantageConsole protocol tokens now emit correct JSON for Crucible
+log/status/error storage; fixed Gin framework false-positive on nginx headers.
+
 Works on Linux, macOS, and Windows.
 """
 
@@ -41,12 +46,15 @@ import hmac
 import struct
 import time
 import copy
+import secrets
+import difflib
+import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -170,6 +178,176 @@ def _cve_lookup(title: str) -> str:
     if "sslv2" in t or "ssl 2" in t or "sslv2" in t or "deprecated.*sslv2" in t:
         cves.add("CVE-2016-0800")
     return ",".join(sorted(cves))
+
+
+# ---------------------------------------------------------------------------
+# Wildcard / catch-all detection
+# ---------------------------------------------------------------------------
+#
+# Ported from Fracture: send 3 probes to randomly-generated paths that cannot
+# plausibly exist on the target. If all probes agree on status code AND their
+# normalised bodies are structurally similar, the server is treating every path
+# as valid (wildcard / catch-all behaviour). At least 2 of 3 signals must agree.
+
+_WC_LEN_TOLERANCE    = 0.08   # 8 % body-length difference
+_WC_WORD_TOLERANCE   = 0.10   # 10 % word-count difference
+_WC_SIMILARITY_RATIO = 0.88   # difflib SequenceMatcher ratio threshold
+_WC_SAMPLE_SIZE      = 8192   # bytes fed to SequenceMatcher (cap for O(n²))
+
+
+def _wc_body_fp(text: str, probe_paths: list) -> dict:
+    """Return a multi-signal fingerprint of *text* after stripping injected probe paths."""
+    norm = text
+    from urllib.parse import quote as _q
+    for p in probe_paths:
+        if not p:
+            continue
+        norm = norm.replace(p, "__WC_PROBE__")
+        norm = norm.replace(_q(p), "__WC_PROBE__")
+        norm = norm.replace(_q(p, safe=""), "__WC_PROBE__")
+    sample = norm[:_WC_SAMPLE_SIZE]
+    return {
+        "hash":   hashlib.md5(sample.encode("utf-8", errors="replace")).hexdigest(),
+        "words":  len(norm.split()),
+        "lines":  norm.count("\n") + 1,
+        "length": len(text),
+        "sample": sample,
+    }
+
+
+def _detect_wildcard(base_url: str, sess: "requests.Session",
+                     timeout: int = 10) -> "dict | None":
+    """Probe *base_url* with three random paths to detect catch-all/wildcard behaviour.
+
+    Returns a baseline dict when wildcard is confirmed, or None when the server
+    responds normally (404/410 for nonexistent paths, or probe responses differ).
+    """
+    base = base_url.rstrip("/")
+
+    probe_paths = [
+        f"/{secrets.token_hex(12)}-notfound",
+        f"/nonexistent-{secrets.token_hex(8)}/deep/{secrets.token_hex(6)}.html",
+        f"/{secrets.token_hex(14)}.php",
+    ]
+
+    responses: list = []
+    for path in probe_paths:
+        try:
+            r = sess.get(base + path, timeout=timeout, allow_redirects=False)
+            responses.append((path, r))
+        except Exception:
+            pass
+
+    if len(responses) < 2:
+        return None
+
+    statuses = [r.status_code for _, r in responses]
+    if len(set(statuses)) != 1:
+        return None
+
+    status = statuses[0]
+
+    if status in (404, 410):
+        return None
+
+    if status in (301, 302, 303, 307, 308):
+        locations = [r.headers.get("Location", "") for _, r in responses]
+        if len(set(locations)) == 1 and locations[0]:
+            return {
+                "status":      status,
+                "location":    locations[0],
+                "body_len":    0.0,
+                "word_count":  0.0,
+                "line_count":  0.0,
+                "body_hash":   "",
+                "sample":      "",
+                "probe_paths": probe_paths,
+                "redirect":    True,
+            }
+        return None
+
+    fps = [_wc_body_fp(r.text, probe_paths) for _, r in responses]
+
+    def _ratio_ok(a: float, b: float, tol: float) -> bool:
+        mx = max(a, b, 1)
+        return abs(a - b) / mx < tol
+
+    votes = 0
+    if _ratio_ok(fps[0]["length"], fps[1]["length"], _WC_LEN_TOLERANCE):
+        votes += 1
+    if _ratio_ok(fps[0]["words"], fps[1]["words"], _WC_WORD_TOLERANCE):
+        votes += 1
+    sm_ratio = difflib.SequenceMatcher(
+        None, fps[0]["sample"], fps[1]["sample"], autojunk=True
+    ).ratio()
+    if sm_ratio >= _WC_SIMILARITY_RATIO:
+        votes += 1
+
+    if votes < 2:
+        return None
+
+    lengths = [f["length"] for f in fps]
+    words   = [f["words"]  for f in fps]
+    lines   = [f["lines"]  for f in fps]
+    med_len = statistics.median(lengths)
+    rep_idx = min(range(len(fps)), key=lambda i: abs(fps[i]["length"] - med_len))
+
+    return {
+        "status":      status,
+        "location":    None,
+        "body_len":    med_len,
+        "word_count":  statistics.median(words),
+        "line_count":  statistics.median(lines),
+        "body_hash":   fps[rep_idx]["hash"],
+        "sample":      fps[rep_idx]["sample"],
+        "probe_paths": probe_paths,
+        "redirect":    False,
+    }
+
+
+def _is_wildcard_match(r: "requests.Response",
+                       baseline: "dict | None") -> bool:
+    """Return True when *r* matches the wildcard baseline (i.e. is a false positive)."""
+    if baseline is None:
+        return False
+    if r.status_code != baseline["status"]:
+        return False
+    if baseline.get("redirect"):
+        return r.headers.get("Location", "") == baseline["location"]
+
+    probe_paths = baseline.get("probe_paths", [])
+    fp = _wc_body_fp(r.text, probe_paths)
+
+    if fp["hash"] == baseline["body_hash"]:
+        return True
+
+    def _ratio_ok(a: float, b: float, tol: float) -> bool:
+        mx = max(a, b, 1)
+        return abs(a - b) / mx < tol
+
+    votes = 0
+    bl = baseline["body_len"]
+    if bl > 0:
+        if _ratio_ok(fp["length"], bl, _WC_LEN_TOLERANCE):
+            votes += 1
+    elif fp["length"] < 50:
+        votes += 1
+
+    bw = baseline["word_count"]
+    if bw > 0:
+        if _ratio_ok(fp["words"], bw, _WC_WORD_TOLERANCE):
+            votes += 1
+    elif fp["words"] < 5:
+        votes += 1
+
+    if baseline["sample"]:
+        sm_ratio = difflib.SequenceMatcher(
+            None, fp["sample"], baseline["sample"], autojunk=True
+        ).ratio()
+        if sm_ratio >= _WC_SIMILARITY_RATIO:
+            votes += 1
+
+    return votes >= 2
 
 
 def _clients_base() -> Path:
@@ -320,20 +498,43 @@ class VantageConsole:
     def log(self, msg: str, level: str = "INFO") -> None:
         color = self._SEV_COLOR.get(level, "")
         if self.managed:
-            self._emit(self.LOG, f"[{level}] {msg}")
+            entry = {
+                "ts":      datetime.now().isoformat(),
+                "level":   level,
+                "message": msg,
+            }
+            self._emit(self.LOG, json.dumps(entry))
         else:
             print(f"{color}[{level}]{Style.RESET_ALL} {msg}")
 
     def err(self, msg: str) -> None:
         if self.managed:
-            self._emit(self.ERR, msg)
+            entry = {
+                "ts":       datetime.now().isoformat(),
+                "source":   "siphon",
+                "tool":     "siphon",
+                "message":  msg,
+                "detail":   "",
+                "category": "",
+            }
+            with self._lock:
+                sys.stderr.write(f"{self.ERR}{json.dumps(entry)}\n")
+                sys.stderr.flush()
         else:
             print(f"{Fore.RED}[ERROR]{Style.RESET_ALL} {msg}", file=sys.stderr)
 
     def status(self, phase: str, state: str, detail: str = "") -> None:
-        payload = json.dumps({"phase": phase, "state": state, "detail": detail})
         if self.managed:
-            self._emit(self.STATUS, payload)
+            entry = {
+                "phase":    phase,
+                "label":    detail or phase,
+                "status":   state,
+                "step":     detail,
+                "progress": 0,
+                "total":    0,
+                "ts":       datetime.now().isoformat(),
+            }
+            self._emit(self.STATUS, json.dumps(entry))
         else:
             icon = {"running": ">>", "done": "OK", "skip": "--", "fail": "!!"}.get(state, "::")
             color = {"running": Fore.CYAN, "done": Fore.GREEN,
@@ -379,14 +580,14 @@ class VantageConsole:
 
     def banner(self, text: str) -> None:
         if self.managed:
-            self._emit(self.LOG, text)
+            self.log(text, "INFO")
         else:
             print(f"{Fore.CYAN}{Style.BRIGHT}{text}{Style.RESET_ALL}")
 
     def section(self, title: str) -> None:
         bar = "─" * 60
         if self.managed:
-            self._emit(self.LOG, f"\n{bar}\n  {title}\n{bar}")
+            self.log(f"{bar}  {title}  {bar}", "INFO")
         else:
             print(f"\n{Fore.BLUE}{Style.BRIGHT}{bar}\n  {title}\n{bar}{Style.RESET_ALL}")
 
@@ -2418,7 +2619,32 @@ def phase_discovery(settings: dict, sess: requests.Session,
         _probe_undocumented_endpoints(settings, sess, output, inventory, target_root)
 
     # ------------------------------------------------------------------ #
-    # 6. External tool discovery (Kiterunner, FFUF, Feroxbuster, dirsearch)
+    # 6. Wildcard / catch-all probe                                       #
+    # ------------------------------------------------------------------ #
+    con.info("Discovery: probing for wildcard/catch-all behaviour …")
+    _wc_baseline = _detect_wildcard(target_root, sess, timeout)
+    if _wc_baseline is not None:
+        _wc_detail = (
+            f"Wildcard/catch-all detected — server returns HTTP {_wc_baseline['status']} "
+            f"for all unknown paths"
+            + (f", redirecting to {_wc_baseline['location']}" if _wc_baseline.get("redirect") else "")
+            + ". Path-based discovery tools (FFUF, Feroxbuster, dirsearch) are skipped; "
+            "results would be all false positives. Kiterunner still runs (API-aware)."
+        )
+        con.warn(f"[discovery] Wildcard detected — skipping path-fuzzing tools")
+        output.add_finding(
+            phase="discovery",
+            title="Wildcard Routing Detected",
+            severity="INFO",
+            url=target_root,
+            detail=_wc_detail,
+            evidence=f"All random probe paths return HTTP {_wc_baseline['status']}",
+            remediation="Ensure the API returns 404 for non-existent routes rather than catch-all responses.",
+            extra={"owasp": "API9"},
+        )
+
+    # ------------------------------------------------------------------ #
+    # 7. External tool discovery (Kiterunner, FFUF, Feroxbuster, dirsearch)
     # ------------------------------------------------------------------ #
     tools_cfg = scan.get("tools", {})
     _seen_paths = set((ep["method"], ep["path"]) for ep in inventory)
@@ -2438,20 +2664,25 @@ def phase_discovery(settings: dict, sess: requests.Session,
                     "summary": f"Discovered via tool ({status})",
                 })
 
+    # Kiterunner: API-aware, not path-fuzzing — safe to run even on wildcard hosts
     if tools_cfg.get("kiterunner", True):
         _add_tool_paths(_run_kiterunner(target_root, target, scan, output))
 
-    if tools_cfg.get("ffuf", True):
-        _add_tool_paths(_run_ffuf_discovery(target_root, target, scan, output))
+    # FFUF, Feroxbuster, dirsearch: path-fuzzers — skip when wildcard detected
+    if _wc_baseline is not None:
+        con.info("Discovery: wildcard active — skipping FFUF/Feroxbuster/dirsearch")
+    else:
+        if tools_cfg.get("ffuf", True):
+            _add_tool_paths(_run_ffuf_discovery(target_root, target, scan, output))
 
-    if tools_cfg.get("feroxbuster", True):
-        _add_tool_paths(_run_feroxbuster(target_root, target, scan, output))
+        if tools_cfg.get("feroxbuster", True):
+            _add_tool_paths(_run_feroxbuster(target_root, target, scan, output))
 
-    if tools_cfg.get("dirsearch", True):
-        _add_tool_paths(_run_dirsearch(target_root, target, scan, output))
+        if tools_cfg.get("dirsearch", True):
+            _add_tool_paths(_run_dirsearch(target_root, target, scan, output))
 
     # ------------------------------------------------------------------ #
-    # 7. Save inventory                                                   #
+    # 8. Save inventory                                                   #
     # ------------------------------------------------------------------ #
     output.save_inventory(inventory)
     con.status("discovery", "done", f"{len(inventory)} endpoints in inventory")
@@ -2588,7 +2819,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         (re.compile(r'Laravel',        re.I),    "Laravel (PHP)"),
         (re.compile(r'Rails|rack',     re.I),    "Ruby on Rails"),
         (re.compile(r'ASP\.NET|aspnet',re.I),    "ASP.NET"),
-        (re.compile(r'Gin\b',          re.I),    "Gin (Go)"),
+        (re.compile(r'\bGin\b',         re.I),    "Gin (Go)"),
         (re.compile(r'Fiber\b',        re.I),    "Fiber (Go)"),
         (re.compile(r'Actix|actix',    re.I),    "Actix (Rust)"),
     ]
@@ -2630,6 +2861,33 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
     timeout = scan.get("timeout", 10)
     target = _parse_target(base_url)
     root = f"{target['scheme']}://{target['netloc']}"
+
+    # Wildcard check: if every path returns a response, fuzzing produces only
+    # false positives — skip the entire phase.
+    con.info("Fuzzing: probing for wildcard/catch-all behaviour …")
+    _fuzz_wc = _detect_wildcard(root, sess, timeout)
+    if _fuzz_wc is not None:
+        con.warn(
+            f"[fuzzing] Wildcard/catch-all detected (HTTP {_fuzz_wc['status']}) — "
+            "skipping entire fuzzing phase to prevent false positives"
+        )
+        output.add_finding(
+            phase="fuzzing",
+            title="Fuzzing Skipped: Wildcard Routing Detected",
+            severity="INFO",
+            url=root,
+            detail=(
+                f"The server returns HTTP {_fuzz_wc['status']} for all unknown paths"
+                + (f", redirecting to {_fuzz_wc['location']}" if _fuzz_wc.get("redirect") else "")
+                + ". HTTP method and parameter fuzzing would generate innumerable false positives "
+                "and has been skipped."
+            ),
+            evidence=f"All random probe paths return HTTP {_fuzz_wc['status']}",
+            remediation="Ensure the API returns 404 for non-existent routes.",
+            extra={"owasp": "API9"},
+        )
+        con.status("fuzzing", "skip", "Wildcard detected — fuzzing skipped")
+        return
 
     con.status("fuzzing", "running", f"Fuzzing {len(inventory)} endpoints")
 
@@ -4420,12 +4678,8 @@ def phase_sensitive_files(settings: dict, sess: requests.Session,
 
     con.status("sensitive_files", "running", f"Probing {len(_API_SENSITIVE_FILES)} paths")
 
-    # Detect wildcard/catch-all: if random path returns 200, validate all hits
-    import secrets as _s
-    _rnd = f"/siphon-{_s.token_hex(8)}-notfound"
-    _wc_resp = _safe_get(sess, base_url + _rnd, timeout=timeout)
-    _wc_body = _wc_resp.text if (_wc_resp and _wc_resp.status_code == 200) else None
-    _wc_len  = len(_wc_body) if _wc_body else 0
+    # Detect wildcard/catch-all: validate all hits against the baseline
+    _sf_wc = _detect_wildcard(base_url, sess, timeout)
 
     for fpath, severity, desc in _API_SENSITIVE_FILES:
         if _shutdown_requested:
@@ -4434,8 +4688,7 @@ def phase_sensitive_files(settings: dict, sess: requests.Session,
             resp = sess.get(base_url + fpath, timeout=timeout, allow_redirects=False)
             if resp.status_code != 200 or len(resp.text) < 5:
                 continue
-            # Skip if response matches wildcard baseline (same length ±20 bytes)
-            if _wc_body and abs(len(resp.text) - _wc_len) < 20:
+            if _is_wildcard_match(resp, _sf_wc):
                 continue
             output.add_finding(
                 phase="sensitive_files",
