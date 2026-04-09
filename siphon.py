@@ -10,6 +10,12 @@ v1.2.0 additions: XSS, CMDi, CRLF, Path Traversal in injection phase;
 sensitive file exposure probe; TLS/SSL analysis; default API credential
 testing; wildcard routing detection; API framework fingerprinting.
 
+v1.3.0 additions: Kiterunner, FFUF, Feroxbuster, dirsearch tool integration
+in Phase 0 (discovery) and Phase 2 (fuzzing); OWASP API Security Top 10 2023
+auto-mapping on all non-INFO findings; CVE enrichment from title keywords;
+evidence file capturing via OutputManager.output_path(); Fracture-compatible
+output_file field in findings.json; summary.json for Crucible summary panel.
+
 Works on Linux, macOS, and Windows.
 """
 
@@ -36,11 +42,134 @@ import struct
 import time
 import copy
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
+
+# ---------------------------------------------------------------------------
+# OWASP API Security Top 10 2023 mapping
+# ---------------------------------------------------------------------------
+
+_OWASP_API_TOP10: dict = {
+    "API1":  ("API1:2023 - Broken Object Level Authorization",
+              "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/"),
+    "API2":  ("API2:2023 - Broken Authentication",
+              "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"),
+    "API3":  ("API3:2023 - Broken Object Property Level Authorization",
+              "https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/"),
+    "API4":  ("API4:2023 - Unrestricted Resource Consumption",
+              "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"),
+    "API5":  ("API5:2023 - Broken Function Level Authorization",
+              "https://owasp.org/API-Security/editions/2023/en/0xa5-broken-function-level-authorization/"),
+    "API6":  ("API6:2023 - Unrestricted Access to Sensitive Business Flows",
+              "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/"),
+    "API7":  ("API7:2023 - Server Side Request Forgery",
+              "https://owasp.org/API-Security/editions/2023/en/0xa7-server-side-request-forgery/"),
+    "API8":  ("API8:2023 - Security Misconfiguration",
+              "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"),
+    "API9":  ("API9:2023 - Improper Inventory Management",
+              "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/"),
+    "API10": ("API10:2023 - Unsafe Consumption of APIs",
+              "https://owasp.org/API-Security/editions/2023/en/0xaa-unsafe-consumption-of-apis/"),
+}
+
+
+def _owasp_api_auto(title: str) -> str:
+    """Return the OWASP API Security Top 10 2023 code best matching a finding title."""
+    t = (title or "").lower()
+    if any(k in t for k in ("ssrf", "server side request forgery", "server-side request forgery",
+                             "open redirect")):
+        return "API7"
+    if any(k in t for k in ("bola", "idor", "broken object level", "insecure direct object",
+                             "object level authorization", "cross-user", "cross user")):
+        return "API1"
+    if any(k in t for k in ("jwt", "authentication", "brute force", "credential", "login",
+                             "token", "broken auth", "password", "api key", "default cred",
+                             "session fixation", "account lockout", "weak.*auth")):
+        return "API2"
+    if any(k in t for k in ("mass assignment", "over-posting", "parameter binding",
+                             "excessive field", "object property", "excessive data",
+                             "data exposure")):
+        return "API3"
+    if any(k in t for k in ("rate limit", "resource consumption", "throttl",
+                             "quota", "burst", "no rate", "unrestricted resource")):
+        return "API4"
+    if any(k in t for k in ("bfla", "function level", "admin function",
+                             "undocumented.*method", "http method", "privilege escal",
+                             "role bypass", "unauthorized method")):
+        return "API5"
+    if any(k in t for k in ("business flow", "workflow", "sensitive.*flow",
+                             "business logic")):
+        return "API6"
+    if any(k in t for k in ("third.party", "external api", "unsafe consumption",
+                             "supply chain")):
+        return "API10"
+    if any(k in t for k in ("inventory", "undocumented endpoint", "shadow api",
+                             "api version", "deprecated api", "exposed.*api",
+                             "sensitive file", "env file", "gitconfig", "swagger.*expos",
+                             "openapi.*expos", "specification exposed", "spec.*expos",
+                             "catch-all", "wildcard routing")):
+        return "API9"
+    # Default: Security Misconfiguration covers injections, headers, CORS, TLS, framework exposure
+    return "API8"
+
+
+def _owasp_api_resolve(owasp: str, title: str = "") -> tuple:
+    """Return (canonical_name, url) for an OWASP API code or auto-detect from title."""
+    m = re.match(r'API(\d+)', owasp or "", re.I)
+    if m:
+        key = f"API{int(m.group(1))}"
+        entry = _OWASP_API_TOP10.get(key)
+        if entry:
+            return entry
+    key = _owasp_api_auto(title)
+    return _OWASP_API_TOP10.get(key, ("", ""))
+
+
+def _cve_lookup(title: str) -> str:
+    """Return comma-separated CVE IDs for known vulnerability patterns in a finding title."""
+    t = (title or "").lower()
+    cves: set = set()
+    if any(k in t for k in ("jwt", "alg.*none", "none.*alg", "algorithm confusion",
+                             "algorithm substitution")):
+        cves.update(["CVE-2015-9235", "CVE-2016-10555"])
+    if "heartbleed" in t:
+        cves.add("CVE-2014-0160")
+    if any(k in t for k in ("log4j", "log4shell")):
+        cves.add("CVE-2021-44228")
+    if "shellshock" in t:
+        cves.add("CVE-2014-6271")
+    if any(k in t for k in ("spring4shell", "spring rce")):
+        cves.add("CVE-2022-22965")
+    if "struts" in t:
+        cves.add("CVE-2017-5638")
+    if any(k in t for k in ("swagger-ui xss", "swagger xss")):
+        cves.add("CVE-2019-17495")
+    if "poodle" in t:
+        cves.add("CVE-2014-3566")
+    if "beast" in t:
+        cves.add("CVE-2011-3389")
+    if "robot" in t:
+        cves.add("CVE-2017-13099")
+    if "drown" in t:
+        cves.add("CVE-2016-0800")
+    if "logjam" in t:
+        cves.add("CVE-2015-4000")
+    if "freak" in t:
+        cves.add("CVE-2015-0204")
+    if any(k in t for k in ("lucky13", "lucky 13")):
+        cves.add("CVE-2013-0169")
+    if "sweet32" in t:
+        cves.add("CVE-2016-2183")
+    if any(k in t for k in ("ccs injection", "openssl ccs")):
+        cves.add("CVE-2014-0224")
+    if "rc4" in t and ("ssl" in t or "tls" in t or "cipher" in t):
+        cves.add("CVE-2013-2566")
+    if "sslv2" in t or "ssl 2" in t or "sslv2" in t or "deprecated.*sslv2" in t:
+        cves.add("CVE-2016-0800")
+    return ",".join(sorted(cves))
 
 
 def _clients_base() -> Path:
@@ -133,8 +262,12 @@ def _ensure_dependencies() -> None:
 _ensure_dependencies()
 
 import requests
+import urllib3
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+# Suppress InsecureRequestWarning — siphon intentionally probes self-signed/internal APIs
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
     from colorama import init as _colorama_init, Fore, Style
@@ -336,13 +469,41 @@ class OutputManager:
 
     SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
 
+    TOOL_DIRS = [
+        "discovery", "recon", "fuzzing", "injection", "auth_bypass",
+        "rate_limiting", "mass_assignment", "ssrf", "data_exposure",
+        "graphql", "bola", "bfla", "cross_user", "session", "jwt",
+        "sensitive_files", "tls",
+    ]
+
+    _RE_UNSAFE = re.compile(r'[^\w._-]')
+
     def __init__(self, project: str):
         self.project = project
         self.out_dir = Path(project)
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.findings: list[dict] = []
         self._lock = threading.Lock()
-        self._start_time = datetime.utcnow()
+        self._start_time = datetime.now(timezone.utc)
+        self.findings_json = self.out_dir / "findings.json"
+        self._setup_dirs()
+        if not self.findings_json.exists():
+            self.findings_json.write_text("[]", encoding="utf-8")
+
+    def _setup_dirs(self) -> None:
+        for d in self.TOOL_DIRS:
+            (self.out_dir / d).mkdir(exist_ok=True)
+
+    def output_path(self, phase: str, *parts) -> Path:
+        """Return a Path for an evidence file under <out_dir>/<phase>/."""
+        name = "_".join(str(p) for p in parts)
+        name = self._RE_UNSAFE.sub("_", name)
+        if not any(name.endswith(ext) for ext in
+                   (".txt", ".json", ".html", ".xml", ".csv", ".png", ".jpg", ".log")):
+            name += ".txt"
+        d = self.out_dir / phase
+        d.mkdir(parents=True, exist_ok=True)
+        return d / name
 
     # ---------------------------------------------------------------- adding
     def add_finding(
@@ -355,23 +516,120 @@ class OutputManager:
         evidence: str = "",
         remediation: str = "",
         extra: dict | None = None,
+        output_file: str = "",
     ) -> dict:
-        entry = {
-            "id": len(self.findings) + 1,
-            "phase": phase,
-            "title": title,
-            "severity": severity.upper(),
-            "url": url,
-            "detail": detail,
-            "evidence": evidence,
-            "remediation": remediation,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+        ts = datetime.now(timezone.utc).isoformat()
+        sev_upper = severity.upper()
+
+        # Parse hostname and port from URL
+        try:
+            _parsed  = urlparse(url)
+            hostname = _parsed.hostname or url
+            port     = _parsed.port or (443 if _parsed.scheme == "https" else 80)
+            service  = _parsed.scheme or "http"
+        except Exception:
+            hostname = url
+            port     = 0
+            service  = "http"
+
+        # Extract optional fields from extra dict
+        _extra   = extra or {}
+        nist     = _extra.get("nist", "")
+        command  = _extra.get("command", "")
+
+        # Auto-resolve OWASP API category for non-INFO findings
+        if sev_upper != "INFO":
+            _owasp_name, _owasp_url = _owasp_api_resolve(_extra.get("owasp", ""), title)
+        else:
+            _owasp_name, _owasp_url = "", ""
+
+        # Auto-enrich CVEs from title keywords, merge with any explicitly passed CVEs
+        _auto_cves = _cve_lookup(title)
+        _extra_cves = _extra.get("cves", "")
+        _all_cve_parts = [c.strip() for c in (_auto_cves + "," + _extra_cves).split(",")
+                          if c.strip()]
+        cves = ",".join(sorted(set(_all_cve_parts)))
+
+        # Fracture-compatible entry written to findings.json for Crucible
+        fr_entry = {
+            "title":           title,
+            "datetime":        ts,
+            "ip":              url,
+            "port":            int(port) if port else 0,
+            "hostname":        hostname,
+            "risk":            sev_upper,
+            "command":         command,
+            "description":     detail,
+            "output":          evidence,
+            "cves":            cves,
+            "sources":         f"siphon-{phase}",
+            "service":         service,
+            "output_file":     output_file,
+            "affected":        url,
+            "exploitdb":       False,
+            "metasploit":      False,
+            "exploit_details": [],
+            "owasp":           _owasp_name,
+            "owasp_url":       _owasp_url,
+            "nist":            nist,
+            "remediation":     remediation,
         }
-        if extra:
-            entry.update(extra)
+
+        # Native Siphon entry kept in self.findings for supplementary reports
+        native_entry = {
+            "id":          len(self.findings) + 1,
+            "phase":       phase,
+            "title":       title,
+            "severity":    sev_upper,
+            "url":         url,
+            "detail":      detail,
+            "evidence":    evidence,
+            "remediation": remediation,
+            "timestamp":   ts,
+        }
+
         with self._lock:
-            self.findings.append(entry)
-        return entry
+            self.findings.append(native_entry)
+
+            # Read existing findings.json, dedup by (title, ip, port), atomic write
+            try:
+                existing_all: list = json.loads(
+                    self.findings_json.read_text(encoding="utf-8"))
+                if not isinstance(existing_all, list):
+                    existing_all = []
+            except Exception:
+                existing_all = []
+
+            _norm_key = (title.strip().lower(), url.strip(), int(port) if port else 0)
+            merged = False
+            for ex in existing_all:
+                ex_key = (
+                    (ex.get("title") or "").strip().lower(),
+                    (ex.get("ip") or "").strip(),
+                    int(ex.get("port") or 0),
+                )
+                if ex_key == _norm_key:
+                    # Merge output_file paths (comma-separated)
+                    if output_file:
+                        ex_files = set(f.strip() for f in (ex.get("output_file") or "").split(",") if f.strip())
+                        ex_files.add(output_file.strip())
+                        ex["output_file"] = ",".join(sorted(ex_files))
+                    # Merge CVEs
+                    if cves:
+                        ex_cves = set(c.strip() for c in (ex.get("cves") or "").split(",") if c.strip())
+                        new_cves = set(c.strip() for c in cves.split(",") if c.strip())
+                        ex["cves"] = ",".join(sorted(ex_cves | new_cves))
+                    merged = True
+                    break
+
+            if not merged:
+                existing_all.append(fr_entry)
+
+            tmp = self.findings_json.with_suffix(".tmp")
+            tmp.write_text(json.dumps(existing_all, indent=2), encoding="utf-8")
+            tmp.replace(self.findings_json)
+
+        return native_entry
 
     def count_by_severity(self) -> dict:
         counts = {s: 0 for s in self.SEVERITIES}
@@ -382,12 +640,33 @@ class OutputManager:
         return counts
 
     # ---------------------------------------------------------------- saving
+    def write_summary(self) -> None:
+        """Write summary.json for Crucible's summary panel."""
+        counts = self.count_by_severity()
+        elapsed = (datetime.now(timezone.utc) - self._start_time).total_seconds()
+        summary = {
+            "tool":      "siphon",
+            "version":   VERSION,
+            "generated": datetime.now(timezone.utc).isoformat(),
+            "duration":  round(elapsed, 1),
+            "total":     len(self.findings),
+            "risk_counts": counts,
+        }
+        try:
+            existing_all: list = json.loads(self.findings_json.read_text(encoding="utf-8"))
+            summary["findings_count"] = len(existing_all)
+        except Exception:
+            summary["findings_count"] = len(self.findings)
+        tmp = (self.out_dir / "summary.json").with_suffix(".tmp")
+        tmp.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        tmp.replace(self.out_dir / "summary.json")
+
     def save_json(self, filename: str = "siphon_output.json") -> Path:
         path = self.out_dir / filename
         data = {
             "tool": "siphon",
             "version": VERSION,
-            "generated": datetime.utcnow().isoformat() + "Z",
+            "generated": datetime.now(timezone.utc).isoformat(),
             "summary": self.count_by_severity(),
             "findings": self.findings,
         }
@@ -408,7 +687,7 @@ class OutputManager:
         path = self.out_dir / filename
         lines = [
             f"Siphon API Penetration Testing Report",
-            f"Generated : {datetime.utcnow().isoformat()}Z",
+            f"Generated : {datetime.now(timezone.utc).isoformat()}",
             f"Version   : {VERSION}",
             "=" * 60,
         ]
@@ -443,10 +722,11 @@ class OutputManager:
         self.save_text()
         if inventory:
             self.save_inventory(inventory)
+        self.write_summary()
 
     def print_summary(self) -> None:
         counts = self.count_by_severity()
-        elapsed = (datetime.utcnow() - self._start_time).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - self._start_time).total_seconds()
         con.section("Scan Complete")
         con.info(f"Duration : {elapsed:.1f}s")
         con.info(f"Findings : {len(self.findings)} total")
@@ -643,6 +923,16 @@ DEFAULT_SETTINGS: dict = {
         "jwt_secret":              "",
         "rate_limit_threshold":    50,
         "mass_assignment_fields":  [],
+        "tools": {
+            "kiterunner":   True,
+            "ffuf":         True,
+            "feroxbuster":  True,
+            "dirsearch":    True,
+        },
+        "wordlist":            "",
+        "max_tool_time":       120,
+        "tool_threads":        20,
+        "tool_rate":           50,
     },
 }
 
@@ -651,9 +941,9 @@ DEFAULT_SETTINGS: dict = {
 # ---------------------------------------------------------------------------
 
 PHASE_LIST = [
-    ("discovery",       "Phase 0:  OpenAPI/Swagger discovery, endpoint inventory"),
-    ("recon",           "Phase 1:  API fingerprinting, server headers, version info"),
-    ("fuzzing",         "Phase 2:  HTTP method fuzzing, parameter fuzzing"),
+    ("discovery",       "Phase 0:  OpenAPI/Swagger discovery + Kiterunner/FFUF/Feroxbuster/dirsearch"),
+    ("recon",           "Phase 1:  API fingerprinting, server headers, CORS, framework detection"),
+    ("fuzzing",         "Phase 2:  HTTP method fuzzing, FFUF parameter fuzzing"),
     ("injection",       "Phase 3:  SQLi, NoSQLi, SSTI, XXE, LDAP, XSS, CMDi, CRLF, Path Traversal"),
     ("auth_bypass",     "Phase 4:  JWT algorithm confusion, none-alg, key confusion"),
     ("rate_limiting",   "Phase 5:  Rate limit detection and bypass techniques"),
@@ -1497,6 +1787,500 @@ def _fetch_spec(url_or_path: str, sess: requests.Session, timeout: int) -> dict 
     return None
 
 
+# ---------------------------------------------------------------------------
+# Embedded API path wordlist (fallback when no system wordlist found)
+# ---------------------------------------------------------------------------
+
+_SIPHON_API_PATHS = [
+    # Versioned API roots
+    "/api", "/api/v1", "/api/v2", "/api/v3", "/api/latest", "/v1", "/v2", "/v3",
+    # Core resources
+    "/api/v1/users", "/api/v1/user", "/api/v1/accounts", "/api/v1/account",
+    "/api/v1/admin", "/api/v1/health", "/api/v1/status", "/api/v1/me",
+    "/api/v1/profile", "/api/v1/settings", "/api/v1/config",
+    "/api/v2/users", "/api/v2/admin", "/api/v2/health", "/api/v2/me",
+    # Auth
+    "/auth", "/auth/login", "/auth/token", "/auth/refresh", "/auth/logout",
+    "/oauth", "/oauth/token", "/oauth2/token", "/oauth2/authorize",
+    "/login", "/logout", "/signin", "/signout", "/register",
+    "/api/auth", "/api/login", "/api/token", "/api/logout",
+    "/api/v1/auth", "/api/v1/login", "/api/v1/token",
+    # Documentation / specs
+    "/swagger", "/swagger-ui", "/swagger-ui.html", "/swagger.json", "/swagger.yaml",
+    "/openapi.json", "/openapi.yaml", "/api-docs", "/api-docs.json",
+    "/docs", "/redoc", "/graphql", "/graphiql", "/playground",
+    # Health / monitoring
+    "/health", "/healthz", "/health/live", "/health/ready", "/health/ping",
+    "/status", "/ping", "/ready", "/live",
+    "/api/health", "/api/status", "/api/ping",
+    "/metrics", "/prometheus", "/stats",
+    # Spring Boot Actuator
+    "/actuator", "/actuator/health", "/actuator/env", "/actuator/metrics",
+    "/actuator/mappings", "/actuator/beans", "/actuator/info",
+    "/actuator/loggers", "/actuator/heapdump", "/actuator/threaddump",
+    "/actuator/shutdown",
+    # Admin / internal
+    "/admin", "/admin/api", "/management", "/internal",
+    "/api/admin", "/api/internal", "/api/debug", "/debug", "/console",
+    # Sensitive files
+    "/.env", "/.env.local", "/.env.production", "/.git/config",
+    "/config", "/config.json", "/config.yaml", "/settings.json",
+    "/secrets", "/credentials",
+    # GraphQL
+    "/api/graphql", "/query", "/gql",
+    # Webhooks
+    "/webhook", "/webhooks", "/callback", "/callbacks", "/hooks",
+    # Files / uploads
+    "/upload", "/uploads", "/files", "/file", "/media", "/attachments",
+    # Common REST patterns
+    "/api/v1/products", "/api/v1/orders", "/api/v1/payments",
+    "/api/v1/roles", "/api/v1/permissions", "/api/v1/groups",
+    "/api/v1/reports", "/api/v1/logs", "/api/v1/events",
+    "/api/v1/notifications", "/api/v1/messages", "/api/v1/search",
+]
+
+# Common system wordlist paths to try before falling back to embedded list
+_WORDLIST_SEARCH_PATHS = [
+    "/usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt",
+    "/opt/SecLists/Discovery/Web-Content/api/api-endpoints.txt",
+    "/usr/share/seclists/Discovery/Web-Content/common.txt",
+    "/opt/SecLists/Discovery/Web-Content/common.txt",
+    "/usr/share/wordlists/dirb/common.txt",
+    "/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt",
+    "/usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt",
+]
+
+
+def _find_wordlist() -> str | None:
+    """Return the path to the best available API wordlist, or None to use embedded list."""
+    for p in _WORDLIST_SEARCH_PATHS:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _make_temp_wordlist() -> str:
+    """Write the embedded API path list to a temp file and return its path."""
+    fd, path = tempfile.mkstemp(suffix=".txt", prefix="siphon_wl_")
+    with os.fdopen(fd, "w") as f:
+        f.write("\n".join(_SIPHON_API_PATHS))
+    return path
+
+
+# ---------------------------------------------------------------------------
+# External tool runners
+# ---------------------------------------------------------------------------
+
+def _run_kiterunner(base_url: str, target: dict, scan: dict,
+                    output: OutputManager) -> list:
+    """Run Kiterunner API route discovery. Returns list of (method, path, status) tuples."""
+    kr_bin = shutil.which("kr")
+    if not kr_bin:
+        for p in ["/usr/local/bin/kr", "/opt/kiterunner/dist/kr"]:
+            if os.path.isfile(p):
+                kr_bin = p
+                break
+    if not kr_bin:
+        con.info("Kiterunner (kr) not found — skipping. Install: https://github.com/assetnote/kiterunner")
+        return []
+
+    con.info("Kiterunner: scanning API routes …")
+    wordlist = _find_wordlist()
+    _tmp_wl  = None
+    if not wordlist:
+        _tmp_wl  = _make_temp_wordlist()
+        wordlist = _tmp_wl
+
+    out_file = output.output_path("discovery", f"kiterunner_{target['host']}.txt")
+    threads  = min(scan.get("tool_threads", 20), 10)  # kr recommends ≤ 10
+
+    cmd = [
+        kr_bin, "scan", base_url,
+        "-w", wordlist,
+        "-x", str(threads),
+        "-d", "1",
+        "--output-file", str(out_file),
+        "--fail-status-codes", "400,404,405,501",
+        "--ignore-length", "0",
+    ]
+    if scan.get("proxy"):
+        cmd += ["--proxy", scan["proxy"]]
+
+    results: list = []
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=scan.get("max_tool_time", 120),
+        )
+        raw = proc.stdout + ("\n" + out_file.read_text(encoding="utf-8")
+                             if out_file.exists() else "")
+        # Parse: METHOD  STATUS [bytes,lines,words] URL
+        _kr_re = re.compile(
+            r'(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+(\d{3})\s+\[.*?\]\s+(https?://\S+)'
+        )
+        for m in _kr_re.finditer(raw):
+            method, status, url = m.group(1), int(m.group(2)), m.group(3)
+            path = urlparse(url).path or "/"
+            if status not in (404, 400, 405, 501):
+                results.append((method, path, status))
+                output.add_finding(
+                    phase="discovery",
+                    title="API Endpoint Discovered (Kiterunner)",
+                    severity="INFO",
+                    url=url,
+                    detail=(f"Kiterunner discovered {method} {path} — "
+                            f"HTTP {status}"),
+                    evidence=f"{method} {path} → {status}",
+                    output_file=str(out_file),
+                    extra={"owasp": "API9"},
+                )
+        con.info(f"Kiterunner: {len(results)} route(s) found")
+    except subprocess.TimeoutExpired:
+        con.info("Kiterunner: scan timed out")
+    except Exception as exc:
+        con.info(f"Kiterunner: error — {exc}")
+    finally:
+        if _tmp_wl:
+            try:
+                os.unlink(_tmp_wl)
+            except Exception:
+                pass
+    return results
+
+
+def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
+                        output: OutputManager) -> list:
+    """Run FFUF endpoint discovery. Returns list of (method, path, status) tuples."""
+    ffuf_bin = shutil.which("ffuf")
+    if not ffuf_bin:
+        for p in ["/usr/local/bin/ffuf", "/go/bin/ffuf"]:
+            if os.path.isfile(p):
+                ffuf_bin = p
+                break
+    if not ffuf_bin:
+        con.info("ffuf not found — skipping. Install: brew install ffuf")
+        return []
+
+    con.info("FFUF: endpoint discovery …")
+    wordlist = _find_wordlist()
+    _tmp_wl  = None
+    if not wordlist:
+        _tmp_wl  = _make_temp_wordlist()
+        wordlist = _tmp_wl
+
+    out_file = output.output_path("discovery", f"ffuf_{target['host']}.json")
+    threads  = scan.get("tool_threads", 20)
+    rate     = scan.get("tool_rate", 50)
+    timeout  = scan.get("timeout", 10)
+
+    # Build auth headers for ffuf
+    hdrs = []
+    for k, v in (scan.get("extra_headers") or {}).items():
+        hdrs += ["-H", f"{k}: {v}"]
+    auth_cfg = scan.get("auth", {})
+    if auth_cfg.get("enabled") and auth_cfg.get("auth_token"):
+        token_type = auth_cfg.get("token_type", "Bearer")
+        hdrs += ["-H", f"Authorization: {token_type} {auth_cfg['auth_token']}"]
+
+    cmd = [
+        ffuf_bin,
+        "-u", base_url.rstrip("/") + "/FUZZ",
+        "-w", wordlist,
+        "-mc", "200,201,202,204,301,302,307,401,403,405",
+        "-t", str(threads),
+        "-rate", str(rate),
+        "-timeout", str(timeout),
+        "-o", str(out_file),
+        "-of", "json",
+        "-s",  # silent (suppress progress)
+    ] + hdrs
+    if scan.get("proxy"):
+        cmd += ["-x", scan["proxy"]]
+
+    results: list = []
+    try:
+        subprocess.run(
+            cmd, capture_output=True,
+            timeout=scan.get("max_tool_time", 120),
+        )
+        if out_file.exists():
+            data = json.loads(out_file.read_text(encoding="utf-8"))
+            for r in data.get("results", []):
+                status = r.get("status", 0)
+                url    = r.get("url", "")
+                path   = urlparse(url).path or "/"
+                if status not in (404, 400):
+                    results.append(("GET", path, status))
+                    output.add_finding(
+                        phase="discovery",
+                        title="API Endpoint Discovered (FFUF)",
+                        severity="INFO",
+                        url=url,
+                        detail=(f"FFUF discovered {path} — "
+                                f"HTTP {status} ({r.get('length', 0)} bytes)"),
+                        evidence=(f"GET {path} → {status} "
+                                  f"({r.get('words', 0)} words, "
+                                  f"{r.get('lines', 0)} lines)"),
+                        output_file=str(out_file),
+                        extra={"owasp": "API9"},
+                    )
+        con.info(f"FFUF: {len(results)} path(s) found")
+    except subprocess.TimeoutExpired:
+        con.info("FFUF: scan timed out")
+    except Exception as exc:
+        con.info(f"FFUF: error — {exc}")
+    finally:
+        if _tmp_wl:
+            try:
+                os.unlink(_tmp_wl)
+            except Exception:
+                pass
+    return results
+
+
+def _run_feroxbuster(base_url: str, target: dict, scan: dict,
+                     output: OutputManager) -> list:
+    """Run Feroxbuster recursive discovery. Returns list of (method, path, status) tuples."""
+    fb_bin = shutil.which("feroxbuster")
+    if not fb_bin:
+        for p in ["/usr/local/bin/feroxbuster", "/usr/bin/feroxbuster"]:
+            if os.path.isfile(p):
+                fb_bin = p
+                break
+    if not fb_bin:
+        con.info("feroxbuster not found — skipping. Install: brew install feroxbuster")
+        return []
+
+    con.info("Feroxbuster: recursive discovery …")
+    wordlist = _find_wordlist()
+    _tmp_wl  = None
+    if not wordlist:
+        _tmp_wl  = _make_temp_wordlist()
+        wordlist = _tmp_wl
+
+    out_file = output.output_path("discovery", f"feroxbuster_{target['host']}.txt")
+    threads  = scan.get("tool_threads", 20)
+    rate     = scan.get("tool_rate", 50)
+    timeout  = scan.get("timeout", 10)
+
+    cmd = [
+        fb_bin,
+        "-u", base_url,
+        "-w", wordlist,
+        "-x", "json,yaml,xml,txt,env,conf",
+        "-t", str(threads),
+        "--rate-limit", str(rate),
+        "--timeout", str(timeout),
+        "--status-codes", "200,201,202,204,301,302,307,401,403,405",
+        "--output", str(out_file),
+        "--no-recursion",  # avoid runaway recursion on APIs
+        "--silent",
+        "--auto-tune",
+    ]
+    if not scan.get("verify_ssl", False):
+        cmd.append("-k")
+    if scan.get("proxy"):
+        cmd += ["--proxy", scan["proxy"]]
+    # Pass auth header if configured
+    auth_cfg = scan.get("auth", {})
+    if auth_cfg.get("enabled") and auth_cfg.get("auth_token"):
+        token_type = auth_cfg.get("token_type", "Bearer")
+        cmd += ["-H", f"Authorization: {token_type} {auth_cfg['auth_token']}"]
+
+    results: list = []
+    try:
+        subprocess.run(
+            cmd, capture_output=True,
+            timeout=scan.get("max_tool_time", 120),
+        )
+        if out_file.exists():
+            # Feroxbuster text output: "STATUS  METHOD  LINES WORDS CHARS URL"
+            _fb_re = re.compile(
+                r'(\d{3})\s+\w+\s+\d+l\s+\d+w\s+\d+c\s+(https?://\S+)'
+            )
+            raw = out_file.read_text(encoding="utf-8")
+            for m in _fb_re.finditer(raw):
+                status = int(m.group(1))
+                url    = m.group(2)
+                path   = urlparse(url).path or "/"
+                results.append(("GET", path, status))
+                output.add_finding(
+                    phase="discovery",
+                    title="API Endpoint Discovered (Feroxbuster)",
+                    severity="INFO",
+                    url=url,
+                    detail=f"Feroxbuster discovered {path} — HTTP {status}",
+                    evidence=f"GET {path} → {status}",
+                    output_file=str(out_file),
+                    extra={"owasp": "API9"},
+                )
+        con.info(f"Feroxbuster: {len(results)} path(s) found")
+    except subprocess.TimeoutExpired:
+        con.info("Feroxbuster: scan timed out")
+    except Exception as exc:
+        con.info(f"Feroxbuster: error — {exc}")
+    finally:
+        if _tmp_wl:
+            try:
+                os.unlink(_tmp_wl)
+            except Exception:
+                pass
+    return results
+
+
+def _run_dirsearch(base_url: str, target: dict, scan: dict,
+                   output: OutputManager) -> list:
+    """Run dirsearch path discovery. Returns list of (method, path, status) tuples."""
+    # Try installed binary first, then common git-clone paths
+    ds_bin = shutil.which("dirsearch")
+    if not ds_bin:
+        for p in ["/opt/dirsearch/dirsearch.py", "/usr/local/bin/dirsearch"]:
+            if os.path.isfile(p):
+                ds_bin = p
+                break
+    if not ds_bin:
+        con.info("dirsearch not found — skipping. Install: git clone https://github.com/maurosoria/dirsearch /opt/dirsearch")
+        return []
+
+    con.info("dirsearch: path scanning …")
+    out_file = output.output_path("discovery", f"dirsearch_{target['host']}.json")
+    threads  = scan.get("tool_threads", 20)
+    rate     = scan.get("tool_rate", 50)
+    timeout  = scan.get("timeout", 10)
+
+    # dirsearch.py requires python3 prefix when invoked as script
+    cmd_prefix = [sys.executable] if ds_bin.endswith(".py") else []
+
+    cmd = cmd_prefix + [
+        ds_bin,
+        "-u", base_url,
+        "-e", "json,yaml,xml,conf,env,txt,ini,bak,config",
+        "-t", str(threads),
+        "--max-rate", str(rate),
+        "--timeout", str(timeout),
+        "-o", str(out_file),
+        "--format", "json",
+        "-q",  # quiet
+        "-x", "400,404,500-599",
+    ]
+    if not scan.get("verify_ssl", False):
+        cmd.append("--no-tls-errors")
+    if scan.get("proxy"):
+        cmd += ["--proxy", scan["proxy"]]
+
+    results: list = []
+    try:
+        subprocess.run(
+            cmd, capture_output=True,
+            timeout=scan.get("max_tool_time", 120),
+        )
+        if out_file.exists():
+            try:
+                data = json.loads(out_file.read_text(encoding="utf-8"))
+                items = data if isinstance(data, list) else data.get("results", [])
+                for r in items:
+                    status = r.get("status", 0)
+                    url    = r.get("url", "")
+                    if not url:
+                        continue
+                    path = urlparse(url).path or "/"
+                    results.append(("GET", path, status))
+                    output.add_finding(
+                        phase="discovery",
+                        title="API Endpoint Discovered (dirsearch)",
+                        severity="INFO",
+                        url=url,
+                        detail=f"dirsearch discovered {path} — HTTP {status}",
+                        evidence=(f"GET {path} → {status} "
+                                  f"({r.get('content-length', r.get('length', 0))} bytes)"),
+                        output_file=str(out_file),
+                        extra={"owasp": "API9"},
+                    )
+            except Exception:
+                pass
+        con.info(f"dirsearch: {len(results)} path(s) found")
+    except subprocess.TimeoutExpired:
+        con.info("dirsearch: scan timed out")
+    except Exception as exc:
+        con.info(f"dirsearch: error — {exc}")
+    return results
+
+
+def _run_ffuf_params(endpoint_url: str, phase: str, scan: dict,
+                     output: OutputManager, sess: requests.Session) -> None:
+    """Run FFUF to fuzz query parameters and POST fields on a single endpoint."""
+    ffuf_bin = shutil.which("ffuf")
+    if not ffuf_bin:
+        return
+
+    timeout = scan.get("timeout", 10)
+    rate    = scan.get("tool_rate", 50)
+    out_file = output.output_path(phase, f"ffuf_params_{re.sub(r'[^\\w]', '_', endpoint_url)[:60]}.json")
+
+    # Common API parameter wordlist (minimal inline)
+    _param_words = [
+        "id", "user_id", "account_id", "admin", "debug", "format", "callback",
+        "token", "key", "api_key", "page", "limit", "sort", "filter", "search",
+        "q", "query", "data", "field", "fields", "include", "exclude", "expand",
+        "type", "status", "role", "action", "cmd", "command", "file", "path",
+        "url", "redirect", "next", "return", "from", "to", "start", "end",
+        "username", "password", "email", "name", "value", "param", "input",
+        "output", "mode", "version", "lang", "locale", "timezone",
+    ]
+    _tmp_wl = None
+    try:
+        fd, _tmp_wl = tempfile.mkstemp(suffix=".txt", prefix="siphon_pw_")
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(_param_words))
+
+        cmd = [
+            ffuf_bin,
+            "-u", endpoint_url + "?FUZZ=siphon_test",
+            "-w", _tmp_wl,
+            "-mc", "200,201,202,204,500",
+            "-rate", str(rate),
+            "-timeout", str(timeout),
+            "-o", str(out_file),
+            "-of", "json",
+            "-s",
+        ]
+        # Build auth headers
+        hdrs = []
+        auth_cfg = scan.get("auth", {})
+        if auth_cfg.get("enabled") and auth_cfg.get("auth_token"):
+            token_type = auth_cfg.get("token_type", "Bearer")
+            hdrs += ["-H", f"Authorization: {token_type} {auth_cfg['auth_token']}"]
+        cmd += hdrs
+
+        subprocess.run(cmd, capture_output=True, timeout=30)
+
+        if out_file.exists():
+            data = json.loads(out_file.read_text(encoding="utf-8"))
+            for r in data.get("results", []):
+                param = (r.get("input") or {}).get("FUZZ", "?")
+                status = r.get("status", 0)
+                fuzz_url = r.get("url", endpoint_url)
+                output.add_finding(
+                    phase=phase,
+                    title="Undocumented API Parameter Accepted",
+                    severity="LOW",
+                    url=fuzz_url,
+                    detail=(f"Parameter '{param}' accepted at {endpoint_url} — "
+                            f"HTTP {status}"),
+                    evidence=f"GET {endpoint_url}?{param}=siphon_test → {status}",
+                    output_file=str(out_file),
+                    extra={"owasp": "API3"},
+                )
+    except Exception:
+        pass
+    finally:
+        if _tmp_wl:
+            try:
+                os.unlink(_tmp_wl)
+            except Exception:
+                pass
+
+
 def phase_discovery(settings: dict, sess: requests.Session,
                     output: OutputManager) -> list:
     """Phase 0: Discover API endpoints via spec file(s) or active probing.
@@ -1634,7 +2418,40 @@ def phase_discovery(settings: dict, sess: requests.Session,
         _probe_undocumented_endpoints(settings, sess, output, inventory, target_root)
 
     # ------------------------------------------------------------------ #
-    # 6. Save inventory                                                   #
+    # 6. External tool discovery (Kiterunner, FFUF, Feroxbuster, dirsearch)
+    # ------------------------------------------------------------------ #
+    tools_cfg = scan.get("tools", {})
+    _seen_paths = set((ep["method"], ep["path"]) for ep in inventory)
+
+    def _add_tool_paths(tool_results: list) -> None:
+        for method, path, status in tool_results:
+            if (method, path) not in _seen_paths and path:
+                _seen_paths.add((method, path))
+                inventory.append({
+                    "method": method,
+                    "path": path,
+                    "params": [],
+                    "body_fields": [],
+                    "auth_required": status in (401, 403),
+                    "operation_id": f"discovered_{method.lower()}_{path.strip('/').replace('/', '_')}",
+                    "tags": ["discovered"],
+                    "summary": f"Discovered via tool ({status})",
+                })
+
+    if tools_cfg.get("kiterunner", True):
+        _add_tool_paths(_run_kiterunner(target_root, target, scan, output))
+
+    if tools_cfg.get("ffuf", True):
+        _add_tool_paths(_run_ffuf_discovery(target_root, target, scan, output))
+
+    if tools_cfg.get("feroxbuster", True):
+        _add_tool_paths(_run_feroxbuster(target_root, target, scan, output))
+
+    if tools_cfg.get("dirsearch", True):
+        _add_tool_paths(_run_dirsearch(target_root, target, scan, output))
+
+    # ------------------------------------------------------------------ #
+    # 7. Save inventory                                                   #
     # ------------------------------------------------------------------ #
     output.save_inventory(inventory)
     con.status("discovery", "done", f"{len(inventory)} endpoints in inventory")
@@ -1869,7 +2686,17 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
                         )
                     break
 
-    con.status("fuzzing", "done", "Method and parameter fuzzing complete")
+    # FFUF parameter fuzzing on top endpoints
+    tools_cfg = scan.get("tools", {})
+    if tools_cfg.get("ffuf", True) and shutil.which("ffuf"):
+        _ffuf_targets = [root + ep["path"] for ep in endpoints_to_fuzz
+                         if ep.get("path") and ep["path"] != "/"][:10]
+        for ep_url in _ffuf_targets:
+            if _shutdown_requested:
+                break
+            _run_ffuf_params(ep_url, "fuzzing", scan, output, sess)
+
+    con.status("fuzzing", "done", "Method, parameter, and FFUF fuzzing complete")
 
 
 # ---------------------------------------------------------------------------

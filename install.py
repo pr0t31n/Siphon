@@ -18,7 +18,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # ---------------------------------------------------------------------------
 # ANSI colours (same convention as Fracture)
@@ -176,6 +176,8 @@ APT_PACKAGES = [
     "python3-dev",
     "git",
     "golang-go",
+    "feroxbuster",
+    "ffuf",
 ]
 
 DNF_PACKAGES = [
@@ -193,6 +195,8 @@ BREW_PACKAGES = [
     "curl",
     "jq",
     "git",
+    "ffuf",
+    "feroxbuster",
 ]
 
 
@@ -202,13 +206,20 @@ def install_system() -> None:
         apt_install(APT_PACKAGES)
     elif OS == "dnf":
         dnf_install(DNF_PACKAGES)
+        # feroxbuster/ffuf not in default dnf repos — install via go
+        go_bin = find_go()
+        if go_bin:
+            env = os.environ.copy()
+            env["GOBIN"] = "/usr/local/bin"
+            if not shutil.which("ffuf"):
+                run([go_bin, "install", "github.com/ffuf/ffuf/v2@latest"], check=False, env=env)
     elif OS == "zypper":
         zypper_install(["sslscan", "curl", "jq", "python3-pip", "git", "golang"])
     elif OS == "macos":
         for pkg in BREW_PACKAGES:
             brew_install(pkg)
     elif OS == "windows":
-        warn("Windows: install sslscan, curl, jq manually.")
+        warn("Windows: install sslscan, curl, jq, ffuf manually.")
     else:
         warn(f"Unknown OS '{OS}' — skipping system packages.")
 
@@ -240,7 +251,12 @@ GO_TOOLS = [
     (
         "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
         "nuclei",
-        "nuclei",   # brew formula
+        "nuclei",       # brew formula
+    ),
+    (
+        "github.com/ffuf/ffuf/v2@latest",
+        "ffuf",
+        "ffuf",         # brew formula
     ),
 ]
 
@@ -332,6 +348,40 @@ def install_git() -> None:
         "/opt/nuclei-templates",
     )
 
+    # dirsearch — Python web path scanner
+    git_clone_or_update("https://github.com/maurosoria/dirsearch.git", "/opt/dirsearch")
+    ds_req = "/opt/dirsearch/requirements.txt"
+    if os.path.isfile(ds_req):
+        run(
+            [sys.executable, "-m", "pip", "install",
+             "--break-system-packages", "-r", ds_req],
+            check=False,
+        )
+    ds_bin = "/opt/dirsearch/dirsearch.py"
+    if os.path.isfile(ds_bin):
+        os.chmod(ds_bin, 0o755)
+        symlink_force(ds_bin, "/usr/local/bin/dirsearch")
+        info("dirsearch symlinked to /usr/local/bin/dirsearch")
+
+    # Kiterunner — API route brute-forcer (requires Go to build)
+    git_clone_or_update("https://github.com/assetnote/kiterunner.git", "/opt/kiterunner")
+    kr_dist = "/opt/kiterunner/dist/kr"
+    if not os.path.isfile(kr_dist):
+        go_bin = find_go()
+        if go_bin:
+            info("Building kiterunner (make build) ...")
+            run(["make", "build"], check=False, cwd="/opt/kiterunner")
+        else:
+            warn("Go not found — cannot build kiterunner. Install Go then run: cd /opt/kiterunner && make build")
+    if os.path.isfile(kr_dist):
+        os.chmod(kr_dist, 0o755)
+        symlink_force(kr_dist, "/usr/local/bin/kr")
+        info("kiterunner (kr) symlinked to /usr/local/bin/kr")
+    # On macOS, try brew if build failed
+    elif OS == "macos":
+        info("Attempting kiterunner via brew tap ...")
+        brew_install("assetnote/tap/kiterunner")
+
 
 # ---------------------------------------------------------------------------
 # Symlinks
@@ -363,6 +413,10 @@ VERIFY_CLI = [
     ("testssl.sh",  "TLS scanner (testssl)"),
     ("jwt_tool",    "JWT testing utility"),
     ("nuclei",      "Vulnerability scanner"),
+    ("kr",          "Kiterunner API route brute-forcer"),
+    ("ffuf",        "Fast web fuzzer (FFUF)"),
+    ("feroxbuster", "Recursive web content discovery"),
+    ("dirsearch",   "Web path scanner (dirsearch)"),
     ("curl",        "HTTP client"),
     ("jq",          "JSON processor"),
 ]
@@ -371,6 +425,8 @@ VERIFY_GIT = [
     ("/opt/testssl.sh",       "testssl.sh"),
     ("/opt/jwt_tool",         "jwt_tool"),
     ("/opt/nuclei-templates", "nuclei-templates"),
+    ("/opt/dirsearch",        "dirsearch"),
+    ("/opt/kiterunner",       "kiterunner"),
 ]
 
 
@@ -424,9 +480,13 @@ def print_summary(skips: set) -> None:
         print(f"  {p:10s} {status}")
     print()
     info("Run: siphon --help")
-    warn("testssl.sh installed from git (/opt/testssl.sh) — use the git version.")
-    warn("jwt_tool installed from git (/opt/jwt_tool) — available as /usr/local/bin/jwt_tool.")
+    warn("testssl.sh    installed from git (/opt/testssl.sh).")
+    warn("jwt_tool      installed from git (/opt/jwt_tool).")
     warn("nuclei-templates cloned to /opt/nuclei-templates.")
+    warn("dirsearch     installed from git (/opt/dirsearch) — available as /usr/local/bin/dirsearch.")
+    warn("kiterunner    installed from git (/opt/kiterunner) — available as /usr/local/bin/kr.")
+    warn("ffuf          installed via go/brew — available as /usr/local/bin/ffuf.")
+    warn("feroxbuster   installed via apt/brew — available as feroxbuster.")
 
 
 # ---------------------------------------------------------------------------
