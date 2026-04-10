@@ -36,7 +36,7 @@ from urllib3.util.retry import Retry
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-VERSION = "1.4.3"
+VERSION = "1.4.5"
 
 AUTH_METHODS: dict[str, str] = {
     "bearer":              "Bearer Token (Authorization: Bearer <token>)",
@@ -72,29 +72,44 @@ def _login_post(
     auth: dict,
     timeout: int,
 ) -> "requests.Response | None":
-    """POST to login_url with login_data, injecting username/password convenience fields."""
+    """POST to login_url, building the body according to login_mode."""
     url = auth.get("login_url", "")
     if not url:
         return None
-    raw = auth.get("login_data", "{}")
-    try:
-        data = json.loads(raw) if isinstance(raw, str) else dict(raw)
-    except Exception:
-        data = {}
+    login_mode = auth.get("login_mode", "merge")
     uf = auth.get("login_username_field", "username")
     pf = auth.get("login_password_field", "password")
     u  = auth.get("username", "")
     p  = auth.get("password", "")
-    if u and uf not in data:
-        data[uf] = u
-    if p and pf not in data:
-        data[pf] = p
+    if login_mode == "fields":
+        # Body built entirely from the credential field values
+        data: dict = {}
+        if u: data[uf] = u
+        if p: data[pf] = p
+    elif login_mode == "json":
+        # Use the raw JSON body as-is; no credential injection
+        raw = auth.get("login_data", "{}")
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except Exception:
+            data = {}
+    else:
+        # Legacy "merge" behaviour: JSON body with missing creds injected
+        raw = auth.get("login_data", "{}")
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except Exception:
+            data = {}
+        if u and uf not in data:
+            data[uf] = u
+        if p and pf not in data:
+            data[pf] = p
     ct = auth.get("login_content_type", "application/json")
     try:
         if "json" in ct:
             return sess.post(url, json=data, timeout=timeout)
         return sess.post(url, data=data, timeout=timeout)
-    except Exception as exc:
+    except Exception:
         return None  # caller handles
 
 

@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.4.3"
+VERSION = "1.4.5"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -995,20 +995,34 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
     method = (auth_cfg.get("method") or auth_cfg.get("auth_type") or "bearer").strip().lower()
 
     def _login_post(url: str) -> "requests.Response | None":
-        raw = auth_cfg.get("login_data", "{}")
-        try:
-            data = json.loads(raw) if isinstance(raw, str) else raw
-        except Exception:
-            data = {}
-        # Inject convenience username/password fields when not already in the payload
-        u = auth_cfg.get("username", "")
-        p = auth_cfg.get("password", "")
+        login_mode = auth_cfg.get("login_mode", "merge")
         uf = auth_cfg.get("login_username_field", "username")
         pf = auth_cfg.get("login_password_field", "password")
-        if u and uf not in data:
-            data[uf] = u
-        if p and pf not in data:
-            data[pf] = p
+        u  = auth_cfg.get("username", "")
+        p  = auth_cfg.get("password", "")
+        if login_mode == "fields":
+            # Build body solely from the credential field values
+            data: dict = {}
+            if u: data[uf] = u
+            if p: data[pf] = p
+        elif login_mode == "json":
+            # Use the raw JSON body as-is; no credential injection
+            raw = auth_cfg.get("login_data", "{}")
+            try:
+                data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            except Exception:
+                data = {}
+        else:
+            # Legacy "merge" behaviour: start from JSON body, inject missing creds
+            raw = auth_cfg.get("login_data", "{}")
+            try:
+                data = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            except Exception:
+                data = {}
+            if u and uf not in data:
+                data[uf] = u
+            if p and pf not in data:
+                data[pf] = p
         ct = auth_cfg.get("login_content_type", "application/json")
         try:
             if "json" in ct:
@@ -1359,6 +1373,17 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--proxy",        metavar="URL",   help="HTTP proxy")
     ap.add_argument("--version",      action="version", version=f"siphon {VERSION}")
     return ap.parse_args()
+
+
+def _auto_unlock_phases(settings: dict) -> dict:
+    """Enable all phases when auth is configured."""
+    scan = settings.get("scan", {})
+    if not scan.get("auth", {}).get("enabled", False):
+        return settings
+    phases = scan.setdefault("phases", {})
+    for phase in phases:
+        phases[phase] = True
+    return settings
 
 
 def _apply_args(settings: dict, args: argparse.Namespace) -> dict:
@@ -5035,6 +5060,7 @@ def main() -> None:
 
     # Load and merge settings
     settings = _load_settings(args.settings)
+    settings = _auto_unlock_phases(settings)
     settings = _apply_args(settings, args)
     scan = settings["scan"]
 
