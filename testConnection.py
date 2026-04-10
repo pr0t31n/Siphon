@@ -36,7 +36,7 @@ from urllib3.util.retry import Retry
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-VERSION = "1.4.5"
+VERSION = "1.4.6"
 
 AUTH_METHODS: dict[str, str] = {
     "bearer":              "Bearer Token (Authorization: Bearer <token>)",
@@ -184,10 +184,20 @@ def build_auth_session(
         resp = _login_post(sess, auth, timeout)
         if resp is None:
             return sess, f"ERROR: POST to {login_url} failed (network/timeout)"
+        if not resp.ok:
+            return sess, (
+                f"ERROR: POST {login_url} → HTTP {resp.status_code} — "
+                "login rejected (check credentials and login URL)"
+            )
         n = len(sess.cookies)
+        if n == 0:
+            return sess, (
+                f"WARNING: POST {login_url} → HTTP {resp.status_code} — "
+                "login accepted but no session cookies returned"
+            )
         return sess, (
             f"POST {login_url} → HTTP {resp.status_code}, "
-            f"{n} cookie(s) stored in session"
+            f"{n} cookie(s) stored"
         )
 
     # ── Token Login ───────────────────────────────────────────────────────────
@@ -198,10 +208,18 @@ def build_auth_session(
         resp = _login_post(sess, auth, timeout)
         if resp is None:
             return sess, f"ERROR: POST to {login_url} failed (network/timeout)"
+        if not resp.ok:
+            return sess, (
+                f"ERROR: POST {login_url} → HTTP {resp.status_code} — "
+                "login rejected (check credentials and login URL)"
+            )
         try:
             body = resp.json()
         except Exception:
-            return sess, f"POST {login_url} → HTTP {resp.status_code} (non-JSON response)"
+            return sess, (
+                f"ERROR: POST {login_url} → HTTP {resp.status_code} — "
+                "response is not JSON; cannot extract token"
+            )
         # Traverse dot-path (e.g. "data.access_token")
         token_path = auth.get("login_token_path", "token")
         token: object = body
@@ -221,8 +239,9 @@ def build_auth_session(
                 f"token extracted via path='{token_path}'"
             )
         return sess, (
-            f"POST {login_url} → HTTP {resp.status_code}; "
-            f"WARNING: no token found at path='{token_path}'"
+            f"ERROR: POST {login_url} → HTTP {resp.status_code}; "
+            f"no token found at path='{token_path}' — "
+            "check Token Path in Response"
         )
 
     # ── OAuth2 Client Credentials ─────────────────────────────────────────────
@@ -298,6 +317,11 @@ def test_connection(
     """
     Authenticate and probe the API base URL.
 
+    For login-based methods (cookie_login, token_login) the outcome of the
+    login POST is the definitive success indicator.  Probing the base URL
+    would produce a false positive when the root path is publicly accessible
+    (e.g. a web-UI landing page that returns 200 without authentication).
+
     Returns::
 
         {
@@ -308,7 +332,24 @@ def test_connection(
         }
     """
     sess, auth_info = build_auth_session(auth, timeout, proxy, verify_ssl)
+    auth_method = (auth.get("method") or auth.get("auth_type") or "bearer").strip().lower()
 
+    # Login-based methods: build_auth_session already performed the POST and
+    # the result is encoded in auth_info.  Do not probe the base URL.
+    if auth_method in ("cookie_login", "token_login", "form"):
+        failed = auth_info.startswith("ERROR:")
+        return {
+            "success": not failed,
+            "message": auth_info,
+            "status_code": None,
+            "auth_info": auth_info,
+        }
+
+    # For all other methods: any setup error is a hard failure.
+    if auth_info.startswith("ERROR:"):
+        return {"success": False, "message": auth_info, "status_code": None, "auth_info": auth_info}
+
+    # Probe the API base URL to verify credentials are accepted.
     last_exc: str = ""
     for method in ("GET", "HEAD"):
         try:
