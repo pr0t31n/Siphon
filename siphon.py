@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.4.5"
+VERSION = "1.4.6"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -918,12 +918,28 @@ class OutputManager:
         path.write_text(json.dumps(inventory, indent=2))
         return path
 
+    def save_api_map(self, api_map: dict, filename: str = "api_map.json") -> Path:
+        """Persist the endpoint structure map to api_map.json."""
+        path = self.out_dir / filename
+        path.write_text(json.dumps(api_map, indent=2))
+        return path
+
     def save_all(self, inventory: list | None = None) -> None:
         self.save_json()
         self.save_csv()
         self.save_text()
         if inventory:
             self.save_inventory(inventory)
+        # Update and persist api_map if one was built during discovery
+        if hasattr(self, "_api_map") and self._api_map:
+            auth_cfg = None
+            # Try to get auth_cfg from settings stashed on output
+            if hasattr(self, "_auth_cfg"):
+                auth_cfg = self._auth_cfg
+            updated_map = update_api_map_from_findings(
+                dict(self._api_map), self.findings, auth_cfg
+            )
+            self.save_api_map(updated_map)
         self.write_summary()
 
     def print_summary(self) -> None:
@@ -2035,6 +2051,164 @@ def _probe_undocumented_endpoints(
 
 
 # ---------------------------------------------------------------------------
+# API structure map builder
+# ---------------------------------------------------------------------------
+
+def build_api_map(
+    inventory: list,
+    spec_paths: "set[str] | None" = None,
+    rogue_paths: "set[str] | None" = None,
+    auth_cfg: "dict | None" = None,
+) -> dict:
+    """Build a structured API map from the endpoint inventory.
+
+    The map is a dict keyed by path. Each entry has:
+      - methods: {METHOD: {status_codes, max_status, auth_required, auth_users, rogue}}
+      - from_spec: bool
+      - rogue: bool  (path not in spec)
+
+    Args:
+        inventory:   List of endpoint dicts (output of phase_discovery).
+        spec_paths:  Set of paths that came from the provided spec file.
+        rogue_paths: Set of paths that were found during testing but not in spec.
+        auth_cfg:    scan.auth dict; used to annotate auth usernames.
+    """
+    spec_paths  = spec_paths  or set()
+    rogue_paths = rogue_paths or set()
+
+    username = ""
+    if auth_cfg and auth_cfg.get("enabled"):
+        username = auth_cfg.get("username", "")
+
+    map_data: dict = {}
+
+    for ep in inventory:
+        path   = ep.get("path", "/")
+        method = ep.get("method", "GET").upper()
+        # Determine if this endpoint came from the spec
+        path_norm = path.rstrip("/") or "/"
+        from_spec = path_norm in spec_paths or path in spec_paths
+        is_rogue  = path_norm in rogue_paths or path in rogue_paths
+
+        if path not in map_data:
+            map_data[path] = {
+                "from_spec": from_spec or not is_rogue,
+                "rogue":     is_rogue,
+                "methods":   {},
+            }
+        else:
+            # Update flags if more info available
+            if from_spec:
+                map_data[path]["from_spec"] = True
+            if is_rogue:
+                map_data[path]["rogue"] = True
+
+        # Determine response code from inventory (tool-discovered endpoints carry status)
+        summary = ep.get("summary", "")
+        status_code = None
+        m = re.search(r'\((\d{3})\)', summary)
+        if m:
+            status_code = int(m.group(1))
+
+        auth_req = ep.get("auth_required", False)
+        method_entry = map_data[path]["methods"].get(method, {
+            "status_codes": [],
+            "max_status":   None,
+            "auth_required": auth_req,
+            "auth_users":   [],
+            "rogue":        is_rogue,
+        })
+        if status_code and status_code not in method_entry["status_codes"]:
+            method_entry["status_codes"].append(status_code)
+        if auth_req and username and username not in method_entry["auth_users"]:
+            method_entry["auth_users"].append(username)
+        # Most permissive = lowest 2xx/3xx code, or the highest non-4xx
+        if method_entry["status_codes"]:
+            ok_codes = [c for c in method_entry["status_codes"] if c < 400]
+            method_entry["max_status"] = min(ok_codes) if ok_codes else max(method_entry["status_codes"])
+        map_data[path]["methods"][method] = method_entry
+
+    # Sort paths for deterministic output
+    sorted_map = {p: map_data[p] for p in sorted(map_data.keys())}
+    return sorted_map
+
+
+def update_api_map_from_findings(api_map: dict, findings: list, auth_cfg: "dict | None" = None) -> dict:
+    """Enrich the api_map with response codes and auth data from scan findings.
+
+    Iterates findings and records observed status codes and auth annotations
+    for the matching endpoint paths.
+    """
+    username = ""
+    if auth_cfg and auth_cfg.get("enabled"):
+        username = auth_cfg.get("username", "")
+
+    for finding in findings:
+        url = finding.get("url", "")
+        if not url:
+            continue
+        try:
+            parsed = urlparse(url)
+            path = parsed.path or "/"
+        except Exception:
+            continue
+
+        # Extract HTTP method and status code from evidence
+        evidence = finding.get("evidence", "")
+        method_hint = "GET"
+        status_hint = None
+        m = re.search(r'(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+\s+[→->]+\s+(\d{3})', evidence, re.I)
+        if m:
+            method_hint = m.group(1).upper()
+            status_hint = int(m.group(2))
+
+        # Find closest matching path in api_map (exact or prefix)
+        matched_path = None
+        if path in api_map:
+            matched_path = path
+        else:
+            # Try matching by prefix (strip trailing slash)
+            for p in api_map:
+                if path.startswith(p.rstrip("/") + "/") or p.startswith(path.rstrip("/") + "/"):
+                    matched_path = p
+                    break
+
+        if matched_path is None:
+            # Add as new entry if path looks like an API endpoint
+            if any(seg.startswith("v") and seg[1:].isdigit() for seg in path.split("/")):
+                api_map[path] = {
+                    "from_spec": False, "rogue": False,
+                    "methods": {},
+                }
+                matched_path = path
+
+        if matched_path and status_hint:
+            methods = api_map[matched_path]["methods"]
+            if method_hint not in methods:
+                methods[method_hint] = {
+                    "status_codes": [],
+                    "max_status": None,
+                    "auth_required": False,
+                    "auth_users": [],
+                    "rogue": False,
+                }
+            entry = methods[method_hint]
+            if status_hint not in entry["status_codes"]:
+                entry["status_codes"].append(status_hint)
+            # Auth annotation
+            if username and finding.get("severity", "") not in ("INFO",):
+                auth_indicators = ("401", "403", "auth", "token", "session", "credential")
+                if any(ind in evidence.lower() for ind in auth_indicators):
+                    entry["auth_required"] = True
+                    if username not in entry["auth_users"]:
+                        entry["auth_users"].append(username)
+            ok_codes = [c for c in entry["status_codes"] if c < 400]
+            entry["max_status"] = min(ok_codes) if ok_codes else (max(entry["status_codes"]) if entry["status_codes"] else None)
+
+    return api_map
+
+
+# ---------------------------------------------------------------------------
 # Phase 0: Discovery — OpenAPI/Swagger spec parsing + endpoint inventory
 # ---------------------------------------------------------------------------
 
@@ -2664,6 +2838,7 @@ def phase_discovery(settings: dict, sess: requests.Session,
     target_root = f"{target['scheme']}://{target['netloc']}"
     inventory: list = []
     spec_was_provided = False
+    _spec_path_set: set = set()   # paths that came from a spec file
 
     con.status("discovery", "running", "Loading API specifications")
 
@@ -2697,6 +2872,8 @@ def phase_discovery(settings: dict, sess: requests.Session,
                     remediation="Restrict specification access to authorized users in production.",
                 )
             con.info(f"  Loaded {len(ep_list)} endpoints ({fmt}) from {src}")
+            for _ep in ep_list:
+                _spec_path_set.add((_ep.get("path", "/")).rstrip("/") or "/")
             inventory.extend(ep_list)
         if creds:
             all_creds.update(creds)
@@ -2836,6 +3013,19 @@ def phase_discovery(settings: dict, sess: requests.Session,
     # 8. Save inventory                                                   #
     # ------------------------------------------------------------------ #
     output.save_inventory(inventory)
+
+    # Build initial API map from discovered inventory
+    _api_map = build_api_map(
+        inventory,
+        spec_paths=_spec_path_set if spec_was_provided else None,
+        auth_cfg=scan.get("auth"),
+    )
+    output.save_api_map(_api_map)
+    # Stash map on output so later phases can update it
+    output._api_map = _api_map
+    output._spec_was_provided = spec_was_provided
+    output._spec_path_set = _spec_path_set
+
     con.status("discovery", "done", f"{len(inventory)} endpoints in inventory")
     return inventory
 
@@ -5121,6 +5311,7 @@ def main() -> None:
         t_scan["project"] = str(project_dir)
 
         output = OutputManager(str(project_dir))
+        output._auth_cfg = t_scan.get("auth")   # stash for api_map update
         eng = settings.get("engagement", {})
         _write_project_meta(
             base_project,
