@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.5.2"
+VERSION = "1.6.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -1097,6 +1097,14 @@ def _make_session(settings: dict) -> requests.Session:
 
 
 def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Session | None:
+    import base64 as _b64
+    import hashlib as _hashlib
+    import hmac as _hmac
+    import struct as _struct
+    import time as _time
+    import urllib.parse as _urlparse
+    from datetime import datetime as _datetime, timezone as _timezone
+
     scan = settings.get("scan", {})
     auth_cfg = scan.get(auth_key, {})
     if not auth_cfg.get("enabled", False):
@@ -1107,57 +1115,107 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
     # Resolve method: new "method" field takes precedence; fall back to legacy "auth_type"
     method = (auth_cfg.get("method") or auth_cfg.get("auth_type") or "bearer").strip().lower()
 
+    def _csrf_prefetch_internal(login_url: str) -> tuple[str, str]:
+        """GET login page, extract CSRF token. Returns (token, post_url)."""
+        csrf_field  = auth_cfg.get("csrf_field", "")
+        csrf_header = auth_cfg.get("csrf_header", "")
+        if not csrf_field and not csrf_header:
+            return "", login_url
+        try:
+            import re as _re
+            resp = sess.get(login_url, timeout=timeout)
+            body = resp.text
+            if csrf_field:
+                pat = _re.compile(
+                    rf'<input[^>]+name=["\']?{_re.escape(csrf_field)}["\']?[^>]+value=["\']([^"\']+)["\']',
+                    _re.IGNORECASE,
+                )
+                m = pat.search(body)
+                if not m:
+                    pat2 = _re.compile(
+                        rf'<input[^>]+value=["\']([^"\']+)["\'][^>]+name=["\']?{_re.escape(csrf_field)}["\']?',
+                        _re.IGNORECASE,
+                    )
+                    m = pat2.search(body)
+                if m:
+                    return m.group(1), resp.url
+            if csrf_header:
+                hval = resp.headers.get(csrf_header, "")
+                if hval:
+                    return hval, resp.url
+            for ck in sess.cookies:
+                if "csrf" in ck.name.lower() or "xsrf" in ck.name.lower():
+                    return ck.value, resp.url
+        except Exception:
+            pass
+        return "", login_url
+
     def _login_post(url: str) -> "requests.Response | None":
+        csrf_field  = auth_cfg.get("csrf_field", "")
+        csrf_header = auth_cfg.get("csrf_header", "")
+        post_url    = url
+        csrf_token  = ""
+        if csrf_field or csrf_header:
+            csrf_token, post_url = _csrf_prefetch_internal(url)
+        if not post_url:
+            post_url = url
+
         login_mode = auth_cfg.get("login_mode", "merge")
         uf = auth_cfg.get("login_username_field", "username")
         pf = auth_cfg.get("login_password_field", "password")
         u  = auth_cfg.get("username", "")
         p  = auth_cfg.get("password", "")
         if login_mode == "fields":
-            # Build body solely from the credential field values
             data: dict = {}
             if u: data[uf] = u
             if p: data[pf] = p
+            if csrf_token and csrf_field: data[csrf_field] = csrf_token
         elif login_mode == "json":
-            # Use the raw JSON body as-is; no credential injection
             raw = auth_cfg.get("login_data", "{}")
             try:
                 data = json.loads(raw) if isinstance(raw, str) else dict(raw)
             except Exception:
                 data = {}
         else:
-            # Legacy "merge" behaviour: start from JSON body, inject missing creds
             raw = auth_cfg.get("login_data", "{}")
             try:
                 data = json.loads(raw) if isinstance(raw, str) else dict(raw)
             except Exception:
                 data = {}
-            if u and uf not in data:
-                data[uf] = u
-            if p and pf not in data:
-                data[pf] = p
+            if u and uf not in data: data[uf] = u
+            if p and pf not in data: data[pf] = p
+            if csrf_token and csrf_field and csrf_field not in data:
+                data[csrf_field] = csrf_token
         ct = auth_cfg.get("login_content_type", "application/json")
         try:
+            if csrf_header and csrf_token:
+                sess.headers[csrf_header] = csrf_token
             if "json" in ct:
-                return sess.post(url, json=data, timeout=timeout)
-            return sess.post(url, data=data, timeout=timeout)
+                return sess.post(post_url, json=data, timeout=timeout)
+            return sess.post(post_url, data=data, timeout=timeout)
         except Exception as exc:
             con.err(f"Login POST to {url} failed: {exc}")
             return None
 
+    # ── Bearer ────────────────────────────────────────────────────────────────
     if method == "bearer":
         token = auth_cfg.get("auth_token", "").strip()
         if token:
             sess.headers["Authorization"] = f"{auth_cfg.get('token_type', 'Bearer')} {token}"
 
+    # ── JWT Bearer ────────────────────────────────────────────────────────────
+    elif method == "jwt_bearer":
+        token = auth_cfg.get("auth_token", "").strip()
+        if token:
+            sess.headers["Authorization"] = f"Bearer {token}"
+
+    # ── Basic ─────────────────────────────────────────────────────────────────
     elif method in ("basic", "token"):  # "token" is legacy alias
         if method == "token":
-            # legacy: token field first, fall back to cookie
             token = auth_cfg.get("auth_token", "").strip()
             if token:
                 sess.headers["Authorization"] = f"{auth_cfg.get('token_type', 'Bearer')} {token}"
                 return sess
-            # fall through to cookie if no token
             cookie = auth_cfg.get("session_cookie", "").strip()
             if cookie:
                 for part in cookie.split(";"):
@@ -1171,6 +1229,7 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
             if username:
                 sess.auth = (username, password)
 
+    # ── Digest ────────────────────────────────────────────────────────────────
     elif method == "digest":
         from requests.auth import HTTPDigestAuth
         username = auth_cfg.get("username", "")
@@ -1178,58 +1237,70 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
         if username:
             sess.auth = HTTPDigestAuth(username, password)
 
-    elif method == "apikey":
-        key = auth_cfg.get("api_key", "").strip()
-        header = auth_cfg.get("api_key_header", "X-API-Key")
-        if key and header:
-            sess.headers[header] = key
-        # Query-param API keys are injected at request time via extra_headers convention;
-        # store in session params so all requests carry it automatically.
-        qp = auth_cfg.get("api_key_query", "")
-        if key and qp:
-            sess.params = {qp: key}  # type: ignore[assignment]
+    # ── NTLM ──────────────────────────────────────────────────────────────────
+    elif method == "ntlm":
+        username = auth_cfg.get("username", "")
+        password = auth_cfg.get("password", "")
+        domain   = auth_cfg.get("domain", "")
+        if username:
+            try:
+                from requests_ntlm import HttpNtlmAuth  # type: ignore[import]
+                ntlm_user = f"{domain}\\{username}" if domain else username
+                sess.auth = HttpNtlmAuth(ntlm_user, password)
+            except ImportError:
+                con.err("NTLM auth requires: pip install requests-ntlm")
 
-    elif method == "cookie_login":
-        login_url = auth_cfg.get("login_url", "")
-        if login_url:
-            _login_post(login_url)  # cookies captured into sess.cookies automatically
+    # ── NTLMv2 ────────────────────────────────────────────────────────────────
+    elif method == "ntlm_v2":
+        username = auth_cfg.get("username", "")
+        password = auth_cfg.get("password", "")
+        domain   = auth_cfg.get("domain", "")
+        if username:
+            try:
+                from requests_ntlm import HttpNtlmAuth  # type: ignore[import]
+                ntlm_user = f"{domain}\\{username}" if domain else username
+                sess.auth = HttpNtlmAuth(ntlm_user, password, send_cbt=True)
+            except ImportError:
+                con.err("NTLMv2 auth requires: pip install requests-ntlm")
 
-    elif method in ("token_login", "form"):
-        login_url = auth_cfg.get("login_url", "")
-        if login_url:
-            resp = _login_post(login_url)
-            if resp is not None:
-                try:
-                    body = resp.json()
-                    # Navigate dot-path (e.g. "data.token" or "access_token")
-                    token_path = auth_cfg.get("login_token_path", "token")
-                    token: "str | None" = body
-                    for key in token_path.split("."):
-                        token = token.get(key) if isinstance(token, dict) else None  # type: ignore[union-attr]
-                    if not token or not isinstance(token, str):
-                        # Fallback: scan common token keys
-                        for key in ("token", "access_token", "jwt", "id_token", "auth_token"):
-                            if key in body:
-                                token = body[key]
-                                break
-                    if token and isinstance(token, str):
-                        sess.headers["Authorization"] = f"{auth_cfg.get('token_type', 'Bearer')} {token}"
-                except Exception:
-                    pass
+    # ── Kerberos ──────────────────────────────────────────────────────────────
+    elif method == "kerberos":
+        try:
+            from requests_kerberos import HTTPKerberosAuth, REQUIRED  # type: ignore[import]
+            principal = auth_cfg.get("kerberos_principal", "")
+            sess.auth  = HTTPKerberosAuth(
+                mutual_authentication=REQUIRED,
+                principal=principal or None,
+            )
+        except ImportError:
+            con.err("Kerberos auth requires: pip install requests-kerberos")
 
+    # ── Kerberos Delegation ───────────────────────────────────────────────────
+    elif method == "kerberos_delegation":
+        try:
+            from requests_kerberos import HTTPKerberosAuth, REQUIRED  # type: ignore[import]
+            principal = auth_cfg.get("kerberos_principal", "")
+            sess.auth  = HTTPKerberosAuth(
+                mutual_authentication=REQUIRED,
+                delegate=True,
+                principal=principal or None,
+            )
+        except ImportError:
+            con.err("Kerberos delegation requires: pip install requests-kerberos")
+
+    # ── OAuth2 Client Credentials ─────────────────────────────────────────────
     elif method == "oauth2_client_creds":
-        token_url = auth_cfg.get("oauth_token_url", "")
-        client_id = auth_cfg.get("oauth_client_id", "")
+        token_url     = auth_cfg.get("oauth_token_url", "")
+        client_id     = auth_cfg.get("oauth_client_id", "")
         client_secret = auth_cfg.get("oauth_client_secret", "")
-        scope = auth_cfg.get("oauth_scope", "")
+        scope         = auth_cfg.get("oauth_scope", "")
         if token_url and client_id:
             data: dict = {
-                "grant_type": "client_credentials",
-                "client_id": client_id,
+                "grant_type":    "client_credentials",
+                "client_id":     client_id,
                 "client_secret": client_secret,
             }
-            if scope:
-                data["scope"] = scope
+            if scope: data["scope"] = scope
             try:
                 resp = sess.post(token_url, data=data, timeout=timeout)
                 body = resp.json()
@@ -1240,22 +1311,283 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
             except Exception as exc:
                 con.err(f"OAuth2 client_credentials failed: {exc}")
 
+    # ── OAuth2 Password ───────────────────────────────────────────────────────
+    elif method == "oauth2_password":
+        token_url     = auth_cfg.get("oauth_token_url", "")
+        client_id     = auth_cfg.get("oauth_client_id", "")
+        client_secret = auth_cfg.get("oauth_client_secret", "")
+        scope         = auth_cfg.get("oauth_scope", "")
+        username      = auth_cfg.get("username", "")
+        password      = auth_cfg.get("password", "")
+        if token_url and username:
+            data = {"grant_type": "password", "username": username, "password": password}
+            if client_id:     data["client_id"]     = client_id
+            if client_secret: data["client_secret"] = client_secret
+            if scope:         data["scope"]         = scope
+            try:
+                resp = sess.post(token_url, data=data, timeout=timeout)
+                body = resp.json()
+                token = body.get("access_token", "")
+                if token:
+                    token_type = body.get("token_type", "Bearer")
+                    sess.headers["Authorization"] = f"{token_type} {token}"
+            except Exception as exc:
+                con.err(f"OAuth2 password flow failed: {exc}")
+
+    # ── OAuth 1.0a ────────────────────────────────────────────────────────────
+    elif method == "oauth1a":
+        try:
+            from requests_oauthlib import OAuth1  # type: ignore[import]
+            ck = auth_cfg.get("oauth1_consumer_key", "")
+            cs = auth_cfg.get("oauth1_consumer_secret", "")
+            tk = auth_cfg.get("oauth1_token", "") or None
+            ts = auth_cfg.get("oauth1_token_secret", "") or None
+            if ck:
+                sess.auth = OAuth1(ck, cs, tk, ts, signature_method="HMAC-SHA1")
+        except ImportError:
+            con.err("OAuth1a requires: pip install requests-oauthlib")
+
+    # ── OIDC Token ────────────────────────────────────────────────────────────
+    elif method == "oidc_token":
+        id_token = auth_cfg.get("oidc_id_token", "").strip()
+        if id_token:
+            sess.headers["Authorization"] = f"Bearer {id_token}"
+        else:
+            token_url = auth_cfg.get("oauth_token_url", "")
+            client_id = auth_cfg.get("oauth_client_id", "")
+            client_secret = auth_cfg.get("oauth_client_secret", "")
+            scope = auth_cfg.get("oauth_scope", "openid")
+            if token_url and client_id:
+                data = {
+                    "grant_type": "client_credentials",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "scope": scope,
+                }
+                try:
+                    resp = sess.post(token_url, data=data, timeout=timeout)
+                    body = resp.json()
+                    tok = body.get("id_token", body.get("access_token", ""))
+                    if tok:
+                        sess.headers["Authorization"] = f"Bearer {tok}"
+                except Exception as exc:
+                    con.err(f"OIDC token request failed: {exc}")
+
+    # ── SAML Assertion ────────────────────────────────────────────────────────
+    elif method == "saml_assertion":
+        assertion = auth_cfg.get("saml_assertion", "").strip()
+        token_url = auth_cfg.get("saml_token_url", "").strip()
+        if assertion and token_url:
+            data = {
+                "grant_type": "urn:ietf:params:oauth:grant-type:saml2-bearer",
+                "assertion":  _b64.b64encode(assertion.encode()).decode(),
+            }
+            client_id = auth_cfg.get("oauth_client_id", "")
+            if client_id: data["client_id"] = client_id
+            try:
+                resp = sess.post(token_url, data=data, timeout=timeout)
+                body = resp.json()
+                token = body.get("access_token", "")
+                if token:
+                    sess.headers["Authorization"] = f"Bearer {token}"
+            except Exception as exc:
+                con.err(f"SAML assertion exchange failed: {exc}")
+        elif assertion:
+            hdr = auth_cfg.get("saml_assertion_header", "Authorization")
+            sess.headers[hdr] = f"SAML {assertion}"
+
+    # ── Mutual TLS ────────────────────────────────────────────────────────────
+    elif method == "mtls":
+        cert_file = auth_cfg.get("mtls_cert", "")
+        key_file  = auth_cfg.get("mtls_key", "")
+        if cert_file and key_file:
+            sess.cert = (cert_file, key_file)
+            ca_bundle = auth_cfg.get("mtls_ca_bundle", "")
+            if ca_bundle:
+                sess.verify = ca_bundle
+
+    # ── TOTP MFA ──────────────────────────────────────────────────────────────
+    elif method == "totp_mfa":
+        login_url   = auth_cfg.get("login_url", "")
+        totp_secret = auth_cfg.get("totp_secret", "").strip().replace(" ", "").upper()
+        if login_url and totp_secret:
+            try:
+                key  = _b64.b32decode(totp_secret)
+                step = int(_time.time()) // 30
+                msg  = _struct.pack(">Q", step)
+                h    = _hmac.new(key, msg, _hashlib.sha1).digest()
+                off  = h[-1] & 0x0F
+                code = str((_struct.unpack(">I", h[off:off+4])[0] & 0x7FFFFFFF) % 1_000_000).zfill(6)
+                totp_field = auth_cfg.get("totp_field", "otp")
+                uf = auth_cfg.get("login_username_field", "username")
+                pf = auth_cfg.get("login_password_field", "password")
+                u  = auth_cfg.get("username", "")
+                p  = auth_cfg.get("password", "")
+                data = {}
+                if u: data[uf] = u
+                if p: data[pf] = p
+                data[totp_field] = code
+                ct = auth_cfg.get("login_content_type", "application/json")
+                if "json" in ct:
+                    resp = sess.post(login_url, json=data, timeout=timeout)
+                else:
+                    resp = sess.post(login_url, data=data, timeout=timeout)
+                if resp.ok:
+                    try:
+                        body = resp.json()
+                        tok = (
+                            body.get("access_token") or body.get("token") or
+                            body.get("jwt") or body.get("id_token") or ""
+                        )
+                        if tok:
+                            tt = auth_cfg.get("token_type", "Bearer")
+                            sess.headers["Authorization"] = f"{tt} {tok}"
+                    except Exception:
+                        pass
+            except Exception as exc:
+                con.err(f"TOTP MFA failed: {exc}")
+
+    # ── API Key (header / query) ───────────────────────────────────────────────
+    elif method == "apikey":
+        key    = auth_cfg.get("api_key", "").strip()
+        header = auth_cfg.get("api_key_header", "X-API-Key")
+        if key and header:
+            sess.headers[header] = key
+        qp = auth_cfg.get("api_key_query", "")
+        if key and qp:
+            sess.params = {qp: key}  # type: ignore[assignment]
+
+    # ── API Key Cookie ────────────────────────────────────────────────────────
+    elif method == "apikey_cookie":
+        key         = auth_cfg.get("api_key", "").strip()
+        cookie_name = auth_cfg.get("api_key_cookie_name", "api_key")
+        domain      = auth_cfg.get("api_key_cookie_domain", "")
+        if key:
+            sess.cookies.set(cookie_name, key, domain=domain or None)
+
+    # ── Cookie Login ──────────────────────────────────────────────────────────
+    elif method == "cookie_login":
+        login_url = auth_cfg.get("login_url", "")
+        if login_url:
+            _login_post(login_url)
+
+    # ── Session Cookie (CSRF prefetch) ────────────────────────────────────────
+    elif method == "session_cookie":
+        login_url = auth_cfg.get("login_url", "")
+        if login_url:
+            orig_ct = auth_cfg.get("login_content_type", "")
+            if not orig_ct:
+                auth_cfg["login_content_type"] = "application/x-www-form-urlencoded"
+            _login_post(login_url)
+            if not orig_ct:
+                auth_cfg.pop("login_content_type", None)
+
+    # ── Token Login ───────────────────────────────────────────────────────────
+    elif method in ("token_login", "form"):
+        login_url = auth_cfg.get("login_url", "")
+        if login_url:
+            resp = _login_post(login_url)
+            if resp is not None:
+                try:
+                    body = resp.json()
+                    token_path = auth_cfg.get("login_token_path", "token")
+                    token: "str | None" = body
+                    for key in token_path.split("."):
+                        token = token.get(key) if isinstance(token, dict) else None  # type: ignore[union-attr]
+                    if not token or not isinstance(token, str):
+                        for key in ("token", "access_token", "jwt", "id_token", "auth_token"):
+                            if key in body:
+                                token = body[key]
+                                break
+                    if token and isinstance(token, str):
+                        sess.headers["Authorization"] = f"{auth_cfg.get('token_type', 'Bearer')} {token}"
+                except Exception:
+                    pass
+
+    # ── HMAC Signature ────────────────────────────────────────────────────────
+    elif method == "hmac_signature":
+        key_id  = auth_cfg.get("hmac_key_id", "")
+        secret  = auth_cfg.get("hmac_secret", "")
+        algo    = auth_cfg.get("hmac_algorithm", "sha256").lower()
+        hdr_fmt = auth_cfg.get("hmac_header", "Authorization")
+        if secret:
+            _secret_bytes = secret.encode() if isinstance(secret, str) else secret
+            _key_id, _algo, _hdr = key_id, algo, hdr_fmt
+
+            class _HmacAuth(requests.auth.AuthBase):  # type: ignore[misc]
+                def __call__(self, r):
+                    ts   = str(int(_time.time()))
+                    meth = r.method.upper()
+                    path = _urlparse.urlparse(r.url).path or "/"
+                    body = (r.body or b"")
+                    if isinstance(body, str): body = body.encode()
+                    msg  = f"{meth}\n{path}\n{ts}".encode() + b"\n" + body
+                    h    = getattr(_hashlib, _algo, _hashlib.sha256)
+                    sig  = _hmac.new(_secret_bytes, msg, h).hexdigest()
+                    val  = f'key="{_key_id}",ts="{ts}",sig="{sig}"' if _key_id else f'ts="{ts}",sig="{sig}"'
+                    r.headers[_hdr] = f"HMAC {val}"
+                    return r
+
+            sess.auth = _HmacAuth()
+
+    # ── AWS SigV4 ─────────────────────────────────────────────────────────────
+    elif method == "aws_sigv4":
+        access_key = auth_cfg.get("aws_access_key_id", "").strip()
+        secret_key = auth_cfg.get("aws_secret_access_key", "").strip()
+        region     = auth_cfg.get("aws_region", "us-east-1")
+        service    = auth_cfg.get("aws_service", "execute-api")
+        session_tk = auth_cfg.get("aws_session_token", "")
+        if access_key and secret_key:
+            _ak, _sk, _reg, _svc, _stk = access_key, secret_key, region, service, session_tk
+
+            def _sign(key, msg):
+                return _hmac.new(key, msg.encode(), _hashlib.sha256).digest()
+
+            def _sig_key(sk, date, reg, svc):
+                k = _sign(("AWS4" + sk).encode(), date)
+                k = _sign(k, reg)
+                k = _sign(k, svc)
+                k = _sign(k, "aws4_request")
+                return k
+
+            class _SigV4Auth(requests.auth.AuthBase):  # type: ignore[misc]
+                def __call__(self, r):
+                    t = _datetime.now(tz=_timezone.utc)
+                    amz_date   = t.strftime("%Y%m%dT%H%M%SZ")
+                    date_stamp = t.strftime("%Y%m%d")
+                    parsed  = _urlparse.urlparse(r.url)
+                    host    = parsed.netloc
+                    path    = parsed.path or "/"
+                    body    = r.body or b""
+                    if isinstance(body, str): body = body.encode()
+                    ph = _hashlib.sha256(body).hexdigest()
+                    ch = f"host:{host}\nx-amz-date:{amz_date}\n"
+                    sh = "host;x-amz-date"
+                    if _stk:
+                        ch += f"x-amz-security-token:{_stk}\n"
+                        sh += ";x-amz-security-token"
+                    cr = "\n".join([r.method, path, parsed.query, ch, sh, ph])
+                    cs = f"{date_stamp}/{_reg}/{_svc}/aws4_request"
+                    sts = "\n".join(["AWS4-HMAC-SHA256", amz_date, cs,
+                                     _hashlib.sha256(cr.encode()).hexdigest()])
+                    sig = _hmac.new(_sig_key(_sk, date_stamp, _reg, _svc),
+                                    sts.encode(), _hashlib.sha256).hexdigest()
+                    r.headers["X-Amz-Date"] = amz_date
+                    r.headers["Authorization"] = (
+                        f"AWS4-HMAC-SHA256 Credential={_ak}/{cs},"
+                        f"SignedHeaders={sh},Signature={sig}"
+                    )
+                    if _stk:
+                        r.headers["X-Amz-Security-Token"] = _stk
+                    return r
+
+            sess.auth = _SigV4Auth()
+
+    # ── Custom Headers ────────────────────────────────────────────────────────
     elif method == "header_creds":
         hdrs = auth_cfg.get("custom_headers", {})
         if isinstance(hdrs, dict):
             sess.headers.update(hdrs)
-
-    elif method == "ntlm":
-        username = auth_cfg.get("username", "")
-        password = auth_cfg.get("password", "")
-        domain = auth_cfg.get("domain", "")
-        if username:
-            try:
-                from requests_ntlm import HttpNtlmAuth  # type: ignore[import]
-                ntlm_user = f"{domain}\\{username}" if domain else username
-                sess.auth = HttpNtlmAuth(ntlm_user, password)
-            except ImportError:
-                con.err("NTLM auth requires: pip install requests-ntlm")
 
     return sess
 
@@ -1337,31 +1669,66 @@ DEFAULT_SETTINGS: dict = {
         },
         "auth": {
             "enabled":                 False,
-            "method":                  "bearer",   # bearer|basic|digest|apikey|cookie_login|token_login|oauth2_client_creds|header_creds|ntlm
-            # Bearer / token
+            "method":                  "bearer",   # bearer|jwt_bearer|basic|digest|ntlm|ntlm_v2|kerberos|kerberos_delegation|oauth2_client_creds|oauth2_password|oauth1a|oidc_token|saml_assertion|mtls|totp_mfa|apikey|apikey_cookie|cookie_login|session_cookie|token_login|hmac_signature|aws_sigv4|header_creds
+            # Bearer / JWT
             "auth_token":              "",
             "token_type":              "Bearer",
-            # Basic / Digest / NTLM
+            # Basic / Digest / NTLM / Kerberos
             "username":                "",
             "password":                "",
-            "domain":                  "",         # NTLM domain
+            "domain":                  "",         # NTLM/Kerberos domain
+            "kerberos_principal":      "",         # Kerberos principal (optional)
             # API Key
             "api_key":                 "",
             "api_key_header":          "X-API-Key",
             "api_key_query":           "",         # query-param name (alternative to header)
-            # Login endpoint (cookie_login + token_login)
+            "api_key_cookie_name":     "api_key",  # cookie name for apikey_cookie
+            "api_key_cookie_domain":   "",
+            # Login endpoint (cookie_login / session_cookie / token_login / totp_mfa)
             "login_url":               "",
             "login_method":            "POST",
-            "login_data":              "{}",       # JSON string, e.g. '{"username":"u","password":"p"}'
+            "login_data":              "{}",
             "login_content_type":      "application/json",
-            "login_username_field":    "username", # convenience: injected into login_data
+            "login_username_field":    "username",
             "login_password_field":    "password",
             "login_token_path":        "token",    # dot-path into JSON response (token_login)
-            # OAuth2 Client Credentials
+            # CSRF (session_cookie)
+            "csrf_field":              "",         # hidden input field name
+            "csrf_header":             "",         # response header / request header name
+            # OAuth2 (client_creds, password, oidc_token)
             "oauth_token_url":         "",
             "oauth_client_id":         "",
             "oauth_client_secret":     "",
             "oauth_scope":             "",
+            # OAuth 1.0a
+            "oauth1_consumer_key":     "",
+            "oauth1_consumer_secret":  "",
+            "oauth1_token":            "",
+            "oauth1_token_secret":     "",
+            # OIDC
+            "oidc_id_token":           "",         # direct id_token (optional)
+            # SAML
+            "saml_assertion":          "",         # raw XML assertion
+            "saml_token_url":          "",         # exchange endpoint (optional)
+            "saml_assertion_header":   "Authorization",
+            # mTLS
+            "mtls_cert":               "",         # path to PEM client certificate
+            "mtls_key":                "",         # path to PEM private key
+            "mtls_ca_bundle":          "",         # path to CA bundle (optional)
+            # TOTP MFA
+            "totp_secret":             "",         # base32 TOTP secret
+            "totp_field":              "otp",      # form field name for OTP
+            # HMAC Signature
+            "hmac_key_id":             "",
+            "hmac_secret":             "",
+            "hmac_algorithm":          "sha256",
+            "hmac_header":             "Authorization",
+            # AWS SigV4
+            "aws_access_key_id":       "",
+            "aws_secret_access_key":   "",
+            "aws_region":              "us-east-1",
+            "aws_service":             "execute-api",
+            "aws_session_token":       "",
             # Custom headers
             "custom_headers":          {},
             # Legacy compat
