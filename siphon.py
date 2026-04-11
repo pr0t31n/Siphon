@@ -21,6 +21,13 @@ skips FFUF/Feroxbuster/dirsearch and Phase 2 skips entirely when wildcard
 detected; VantageConsole protocol tokens now emit correct JSON for Crucible
 log/status/error storage; fixed Gin framework false-positive on nginx headers.
 
+v1.5.0 additions: ProgressManager checkpoint/resume system (mirrors Fracture
+pattern) — checkpoint.json tracks completed phases, _skip() checks both
+settings and checkpoint; HTTP method probing on tool-discovered paths (OPTIONS
+then per-method fallback); INFO findings for endpoints and HTTP methods not
+present in scope/spec file; VantageConsole.status() now emits proper phase
+label and detail fields for Crucible Status tab.
+
 Works on Linux, macOS, and Windows.
 """
 
@@ -54,7 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.4.6"
+VERSION = "1.5.2"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -523,12 +530,35 @@ class VantageConsole:
         else:
             print(f"{Fore.RED}[ERROR]{Style.RESET_ALL} {msg}", file=sys.stderr)
 
+    _PHASE_LABELS: dict = {
+        "discovery":      "Discovery",
+        "recon":          "Reconnaissance",
+        "fuzzing":        "Fuzzing",
+        "injection":      "Injection",
+        "auth_bypass":    "Auth Bypass",
+        "rate_limiting":  "Rate Limiting",
+        "mass_assignment":"Mass Assignment",
+        "ssrf":           "SSRF",
+        "data_exposure":  "Data Exposure",
+        "graphql":          "GraphQL",
+        "business_flows":   "Business Flows",
+        "bola":             "BOLA",
+        "bfla":           "BFLA",
+        "cross_user":     "Cross-User",
+        "session":        "Session",
+        "jwt":            "JWT",
+        "sensitive_files":    "Sensitive Files",
+        "tls":                "TLS",
+        "unsafe_consumption": "Unsafe Consumption",
+    }
+
     def status(self, phase: str, state: str, detail: str = "") -> None:
         if self.managed:
             entry = {
                 "phase":    phase,
-                "label":    detail or phase,
+                "label":    self._PHASE_LABELS.get(phase, phase.replace("_", " ").title()),
                 "status":   state,
+                "detail":   detail,
                 "step":     detail,
                 "progress": 0,
                 "total":    0,
@@ -955,6 +985,73 @@ class OutputManager:
 
 
 # ---------------------------------------------------------------------------
+# Checkpoint / progress manager
+# ---------------------------------------------------------------------------
+
+class ProgressManager:
+    """Thread-safe checkpoint manager for scan recovery (mirrors Fracture pattern)."""
+
+    def __init__(self, checkpoint_file: "str | Path") -> None:
+        self._file  = Path(checkpoint_file)
+        self._lock  = threading.Lock()
+        self._state = self._load()
+
+    def _load(self) -> dict:
+        if self._file.exists():
+            try:
+                data = json.loads(self._file.read_text(encoding="utf-8"))
+                data.setdefault("version", 1)
+                data.setdefault("started", datetime.now().isoformat())
+                data.setdefault("completed_phases", [])
+                data.setdefault("phase_status", {})
+                return data
+            except Exception:
+                pass
+        return {
+            "version":          1,
+            "started":          datetime.now().isoformat(),
+            "completed_phases": [],
+            "phase_status":     {},
+        }
+
+    def _save(self) -> None:
+        self._file.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(self._file.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self._state, f, indent=2)
+            os.replace(tmp, str(self._file))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+
+    def is_phase_complete(self, phase: str) -> bool:
+        with self._lock:
+            return phase in self._state.get("completed_phases", [])
+
+    def set_phase_status(self, phase: str, status: str,
+                         label: str = "", detail: str = "") -> None:
+        with self._lock:
+            self._state.setdefault("phase_status", {})[phase] = {
+                "status":     status,
+                "label":      label or phase,
+                "detail":     detail,
+                "updated_at": datetime.now().isoformat(),
+            }
+            if status == "complete":
+                lst = self._state.setdefault("completed_phases", [])
+                if phase not in lst:
+                    lst.append(phase)
+            self._save()
+
+    def get_state(self) -> dict:
+        with self._lock:
+            return dict(self._state)
+
+
+# ---------------------------------------------------------------------------
 # Signal handling
 # ---------------------------------------------------------------------------
 
@@ -1228,13 +1325,15 @@ DEFAULT_SETTINGS: dict = {
             "ssrf":             True,
             "data_exposure":    True,
             "graphql":          False,
+            "business_flows":   True,
             "bola":             False,
             "bfla":             False,
             "cross_user":       False,
             "session":          False,
             "jwt":              False,
-            "sensitive_files":  True,
+            "sensitive_files":    True,
             "tls":              True,
+            "unsafe_consumption": True,
         },
         "auth": {
             "enabled":                 False,
@@ -1309,13 +1408,15 @@ PHASE_LIST = [
     ("ssrf",            "Phase 7:  SSRF via API URL parameters"),
     ("data_exposure",   "Phase 8:  Excessive data exposure in API responses"),
     ("graphql",         "Phase 9:  GraphQL introspection and query fuzzing"),
+    ("business_flows",  "Phase 9b: Business flow abuse — workflow skip, race conditions, value manipulation (API6)"),
     ("bola",            "Phase 10: BOLA/IDOR — cross-user object access (auth required)"),
     ("bfla",            "Phase 11: BFLA — function-level authorization bypass (auth required)"),
     ("cross_user",      "Phase 12: Cross-user data leakage (auth + auth2 required)"),
     ("session",         "Phase 13: API session / token management analysis (auth required)"),
     ("jwt",             "Phase 14: JWT advanced attacks — jku, kid, HMAC cracking (auth required)"),
     ("sensitive_files", "Phase 15: Sensitive file exposure — .env, config, git, swagger (API9)"),
-    ("tls",             "Phase 16: TLS/SSL analysis — deprecated protocols, weak ciphers (API8)"),
+    ("tls",                 "Phase 16:  TLS/SSL analysis — deprecated protocols, weak ciphers (API8)"),
+    ("unsafe_consumption",  "Phase 16b: Unsafe API consumption — webhook SSRF, open redirect, deser (API10)"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -2157,7 +2258,7 @@ def update_api_map_from_findings(api_map: dict, findings: list, auth_cfg: "dict 
         evidence = finding.get("evidence", "")
         method_hint = "GET"
         status_hint = None
-        m = re.search(r'(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+\s+[→->]+\s+(\d{3})', evidence, re.I)
+        m = re.search(r'(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+\S+\s+(?:→|->)\s+(\d{3})', evidence, re.I)
         if m:
             method_hint = m.group(1).upper()
             status_hint = int(m.group(2))
@@ -2977,6 +3078,8 @@ def phase_discovery(settings: dict, sess: requests.Session,
     tools_cfg = scan.get("tools", {})
     _seen_paths = set((ep["method"], ep["path"]) for ep in inventory)
 
+    _tool_discovered_paths: set = set()  # paths found exclusively by tools (not in spec)
+
     def _add_tool_paths(tool_results: list) -> None:
         for method, path, status in tool_results:
             if (method, path) not in _seen_paths and path:
@@ -2991,6 +3094,10 @@ def phase_discovery(settings: dict, sess: requests.Session,
                     "tags": ["discovered"],
                     "summary": f"Discovered via tool ({status})",
                 })
+                # Track paths not present in the spec for INFO findings
+                path_norm = path.rstrip("/") or "/"
+                if path_norm not in _spec_path_set and path not in _spec_path_set:
+                    _tool_discovered_paths.add(path_norm)
 
     # Kiterunner: API-aware, not path-fuzzing — safe to run even on wildcard hosts
     if tools_cfg.get("kiterunner", True):
@@ -3008,6 +3115,109 @@ def phase_discovery(settings: dict, sess: requests.Session,
 
         if tools_cfg.get("dirsearch", True):
             _add_tool_paths(_run_dirsearch(target_root, target, scan, output))
+
+    # ------------------------------------------------------------------ #
+    # 7b. Emit INFO findings for endpoints not in scope file              #
+    # ------------------------------------------------------------------ #
+    if spec_was_provided and _tool_discovered_paths:
+        for dp in sorted(_tool_discovered_paths):
+            output.add_finding(
+                phase="discovery",
+                title="Endpoint Not in Scope File",
+                severity="INFO",
+                url=target_root.rstrip("/") + dp,
+                detail=(f"Endpoint '{dp}' was discovered during active probing but is "
+                        f"not listed in the provided API specification/scope file."),
+                evidence=f"Discovered via tool scan — not in spec",
+                remediation=(
+                    "Review whether this endpoint is intentional and update the API "
+                    "specification if it should be in scope."
+                ),
+                extra={"owasp": "API9"},
+            )
+
+    # ------------------------------------------------------------------ #
+    # 7c. HTTP method probing on tool-discovered paths                    #
+    # ------------------------------------------------------------------ #
+    _HTTP_PROBE_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+    _method_probe_paths = {
+        ep["path"] for ep in inventory if "discovered" in ep.get("tags", [])
+    }
+    if _method_probe_paths:
+        con.status("discovery", "running",
+                   f"HTTP method probing {len(_method_probe_paths)} discovered paths")
+        threads = min(scan.get("threads", 10), 20)
+        timeout_s = scan.get("timeout", 10)
+
+        def _probe_methods(path: str) -> list:
+            results = []
+            url = target_root.rstrip("/") + path
+            # OPTIONS first — may return Allow header listing all methods
+            try:
+                r = sess.options(url, timeout=timeout_s, allow_redirects=False,
+                                 verify=False)
+                allow_hdr = r.headers.get("Allow", "")
+                if allow_hdr:
+                    for m in allow_hdr.upper().split(","):
+                        m = m.strip()
+                        if m in _HTTP_PROBE_METHODS:
+                            results.append((m, path, r.status_code))
+            except Exception:
+                pass
+            if results:
+                return results
+            # Probe each method individually
+            for method in _HTTP_PROBE_METHODS:
+                try:
+                    r = _safe_request(sess, method, url, timeout=timeout_s,
+                                      allow_redirects=False)
+                    if r and r.status_code not in (405, 501):
+                        results.append((method, path, r.status_code))
+                except Exception:
+                    pass
+            return results
+
+        with ThreadPoolExecutor(max_workers=threads) as pool:
+            futures = {pool.submit(_probe_methods, p): p for p in _method_probe_paths}
+            for fut in as_completed(futures):
+                path = futures[fut]
+                try:
+                    method_results = fut.result() or []
+                except Exception:
+                    method_results = []
+                spec_methods_for_path: set = set()
+                for ep in inventory:
+                    if ep.get("path") == path and "discovered" not in ep.get("tags", []):
+                        spec_methods_for_path.add(ep.get("method", "GET").upper())
+                for method, p, status in method_results:
+                    if (method, p) not in _seen_paths:
+                        _seen_paths.add((method, p))
+                        inventory.append({
+                            "method": method,
+                            "path": p,
+                            "params": [],
+                            "body_fields": [],
+                            "auth_required": status in (401, 403),
+                            "operation_id": f"probed_{method.lower()}_{p.strip('/').replace('/', '_')}",
+                            "tags": ["discovered", "method_probed"],
+                            "summary": f"Method probe ({status})",
+                        })
+                    # Emit INFO finding if this method was not in spec
+                    if spec_was_provided and method not in spec_methods_for_path:
+                        output.add_finding(
+                            phase="discovery",
+                            title="HTTP Method Not in Scope File",
+                            severity="INFO",
+                            url=target_root.rstrip("/") + p,
+                            detail=(f"HTTP {method} on '{p}' returned {status} but "
+                                    f"this method is not listed in the API specification."),
+                            evidence=f"{method} {target_root.rstrip('/')}{p} → {status}",
+                            remediation=(
+                                "Verify whether this HTTP method is intentionally exposed. "
+                                "Update the API spec if it is expected, or disable if not."
+                            ),
+                            extra={"owasp": "API9"},
+                        )
 
     # ------------------------------------------------------------------ #
     # 8. Save inventory                                                   #
@@ -3953,6 +4163,105 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
                 )
                 break
 
+    # Retry-After header parsing — check server communicates cooldown correctly
+    if got_429 and _rl_statuses:
+        # Re-hit to get a 429 and inspect the Retry-After header
+        try:
+            r429 = _safe_get(sess, test_url, timeout=timeout)
+            if r429 and r429.status_code == 429:
+                retry_after = r429.headers.get("Retry-After", "")
+                if not retry_after:
+                    output.add_finding(
+                        phase="rate_limiting",
+                        title="Rate Limit Response Missing Retry-After Header",
+                        severity="LOW",
+                        url=test_url,
+                        detail=(
+                            "Server returns HTTP 429 but no Retry-After header. "
+                            "Clients cannot implement exponential backoff correctly."
+                        ),
+                        evidence=f"HTTP 429 response headers: {dict(r429.headers)}",
+                        remediation=(
+                            "Add Retry-After: <seconds> header to all 429 responses. "
+                            "Also consider RateLimit-Limit, RateLimit-Remaining (IETF draft)."
+                        ),
+                        extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+                    )
+        except Exception:
+            pass
+
+    # Per-user rate limiting — test if rate limit resets across different users
+    auth_cfg = scan.get("auth", {})
+    if auth_cfg.get("enabled") and got_429:
+        con.status("rate_limiting", "running", "Per-user rate limit test")
+        # Create a fresh session with a different auth token to see if limit is per-user
+        fresh_sess = _make_session(settings)
+        # Try without auth to see if anonymous users share the same bucket
+        anon_bypass = True
+        for i in range(min(10, threshold)):
+            resp = _safe_get(fresh_sess, test_url, timeout=timeout)
+            if resp and resp.status_code == 429:
+                anon_bypass = False
+                break
+        if anon_bypass:
+            output.add_finding(
+                phase="rate_limiting",
+                title="Rate Limit Bypass — Unauthenticated Session Has Separate Bucket",
+                severity="MEDIUM",
+                url=test_url,
+                detail=(
+                    "Rate limit is enforced per-session/token but unauthenticated requests "
+                    "use a different bucket. Attackers can bypass per-user rate limits by "
+                    "dropping authentication headers."
+                ),
+                evidence=(
+                    "Authenticated session was rate-limited; "
+                    "unauthenticated session was not (within 10 requests)"
+                ),
+                remediation=(
+                    "Apply rate limits per IP address in addition to per-user/token. "
+                    "Ensure unauthenticated traffic shares the same IP-based rate limit bucket."
+                ),
+                extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+            )
+
+    # Per-endpoint rate limiting — test multiple different endpoints for missing rate limits
+    con.status("rate_limiting", "running", "Per-endpoint rate limit coverage")
+    sensitive_endpoints = [ep for ep in inventory
+                           if any(kw in ep["path"].lower()
+                                  for kw in ("password", "reset", "register", "signup",
+                                             "email", "verify", "otp", "2fa", "mfa"))]
+    for ep in sensitive_endpoints[:5]:
+        if _shutdown_requested:
+            break
+        ep_url = root + re.sub(r'\{[^}]+\}|:\w+', '1', ep["path"])
+        ep_statuses: list = []
+        for _ in range(20):
+            resp = _safe_get(sess, ep_url, timeout=timeout)
+            if resp:
+                ep_statuses.append(resp.status_code)
+                if resp.status_code == 429:
+                    break
+        if ep_statuses and 429 not in ep_statuses:
+            output.add_finding(
+                phase="rate_limiting",
+                title=f"Missing Rate Limit on Sensitive Endpoint: {ep['path']}",
+                severity="HIGH",
+                url=ep_url,
+                detail=(
+                    f"Sensitive endpoint {ep['method']} {ep['path']} accepted 20 rapid "
+                    f"requests without rate limiting. This endpoint may be vulnerable to "
+                    f"automated abuse (password reset flooding, OTP brute-force, etc.)."
+                ),
+                evidence=f"20 requests → status codes: {ep_statuses[:10]}",
+                remediation=(
+                    "Apply strict per-IP and per-user rate limits on all sensitive endpoints "
+                    "(password reset, OTP, registration, email verification)."
+                ),
+                extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+            )
+            con.log(f"[rate_limiting] No rate limit on sensitive: {ep_url}", "SUCCESS")
+
     con.status("rate_limiting", "done", "Rate limiting tests complete")
 
 
@@ -4065,6 +4374,85 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
                     )
             except Exception:
                 pass
+
+    # Extended mass assignment: nested objects, arrays, type confusion, case bypass
+    _NESTED_PAYLOADS = [
+        {"user": {"role": "admin", "is_admin": True, "is_staff": True}},
+        {"profile": {"permissions": ["admin", "superuser"], "premium": True}},
+        {"account": {"balance": 99999, "credit": 1000, "is_vip": True}},
+    ]
+    _TYPE_CONFUSION = [
+        {"role": 1},
+        {"admin": 1},
+        {"is_admin": "1"},
+        {"permissions": "admin"},
+        {"account_balance": "99999"},
+    ]
+    _CASE_BYPASS = [
+        {"ROLE": "admin"},
+        {"Role": "admin"},
+        {"is_Admin": True},
+        {"isAdmin": True},
+        {"IS_ADMIN": True},
+        {"PERMISSIONS": ["admin"]},
+    ]
+
+    for ep in inventory[:15]:
+        if _shutdown_requested:
+            break
+        if ep["method"].upper() not in ("POST", "PUT", "PATCH"):
+            continue
+        path       = ep["path"]
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        url        = root + probe_path
+        method     = ep["method"].upper()
+        body_fields = ep.get("body_fields", [])
+        normal_body = {f: "" for f in body_fields if isinstance(f, str)}
+
+        for extra_payloads, attack_label in [
+            (_NESTED_PAYLOADS,  "nested object"),
+            (_TYPE_CONFUSION,   "type confusion"),
+            (_CASE_BYPASS,      "case bypass"),
+        ]:
+            for extra in extra_payloads:
+                attack_body = {**normal_body, **extra}
+                try:
+                    ar = active_sess.request(method, url, json=attack_body, timeout=timeout)
+                    if ar and ar.status_code in (200, 201):
+                        try:
+                            resp_data = ar.json()
+                            resp_str  = json.dumps(resp_data).lower()
+                            # Check if any privileged field appears reflected
+                            priv_keys = {"is_admin", "admin", "role", "is_vip", "premium",
+                                         "is_staff", "superuser", "permissions", "balance"}
+                            flat_keys = set(k.lower() for k in _extract_json_keys(resp_data))
+                            if priv_keys & flat_keys:
+                                output.add_finding(
+                                    phase="mass_assignment",
+                                    title=f"Mass Assignment — {attack_label.title()} Accepted",
+                                    severity="HIGH",
+                                    url=url,
+                                    detail=(
+                                        f"Endpoint {method} {path} accepted a {attack_label} "
+                                        f"mass-assignment payload and reflected privileged fields "
+                                        f"in the response."
+                                    ),
+                                    evidence=(
+                                        f"Payload: {json.dumps(extra)}\n"
+                                        f"Reflected keys: {list(priv_keys & flat_keys)}"
+                                    ),
+                                    remediation=(
+                                        "Use strict allowlist-based field binding. "
+                                        "Reject unknown fields including nested objects, "
+                                        "type-coerced values, and case variants."
+                                    ),
+                                    extra={"owasp": "API3:2023 Broken Object Property Level Authorization"},
+                                )
+                                con.log(f"[mass_assignment] {attack_label}: {url}", "SUCCESS")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
 
     con.status("mass_assignment", "done", "Mass assignment testing complete")
 
@@ -4393,7 +4781,364 @@ def phase_graphql(settings: dict, sess: requests.Session,
         except Exception:
             pass
 
+    # Directive abuse — @include / @skip infinite loop
+    directive_query = {"query": "{ __typename @include(if: true) @skip(if: false) @include(if: true) }"}
+    resp = _safe_request(active_sess, "POST", gql_found,
+                         json=directive_query, timeout=timeout)
+    if resp and resp.status_code == 200:
+        try:
+            data = resp.json()
+            if "errors" not in data:
+                output.add_finding(
+                    phase="graphql",
+                    title="GraphQL Directive Abuse — Accepted Without Limit",
+                    severity="LOW",
+                    url=gql_found,
+                    detail=(
+                        "GraphQL endpoint accepted a query with multiple conflicting "
+                        "@include and @skip directives on the same field. "
+                        "Without directive-count limits, this can be used to trigger "
+                        "excessive query planning overhead."
+                    ),
+                    evidence="Directive-stacked query → HTTP 200 without error",
+                    remediation=(
+                        "Implement directive count limits per field. "
+                        "Reject queries with conflicting @include/@skip pairs."
+                    ),
+                    extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+                )
+        except Exception:
+            pass
+
+    # Fragment sprawl — many fragments pointing to same type
+    fragment_q = (
+        "fragment f1 on __Schema { types { name } } "
+        "fragment f2 on __Schema { types { name } } "
+        "fragment f3 on __Schema { types { name } } "
+        "{ __schema { ...f1 ...f2 ...f3 } }"
+    )
+    resp = _safe_request(active_sess, "POST", gql_found,
+                         json={"query": fragment_q}, timeout=timeout)
+    if resp and resp.status_code == 200:
+        try:
+            data = resp.json()
+            if "data" in data and not data.get("errors"):
+                output.add_finding(
+                    phase="graphql",
+                    title="GraphQL Fragment Sprawl — No Fragment Count Limit",
+                    severity="MEDIUM",
+                    url=gql_found,
+                    detail=(
+                        "GraphQL endpoint accepted a query with 3 fragments on the same "
+                        "type without restriction. Attackers can use hundreds of fragments "
+                        "to force O(n²) resolver execution (fragment amplification attack)."
+                    ),
+                    evidence="3-fragment sprawl query → HTTP 200 with data",
+                    remediation=(
+                        "Limit the number of fragments per query (e.g. max 10). "
+                        "Implement query complexity scoring that accounts for fragment expansion."
+                    ),
+                    extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+                )
+        except Exception:
+            pass
+
+    # Error message leakage — probe for verbose server errors in response
+    bad_query = {"query": "{ nonExistentField123_fracture_siphon }"}
+    resp = _safe_request(active_sess, "POST", gql_found,
+                         json=bad_query, timeout=timeout)
+    if resp and resp.status_code in (200, 400):
+        try:
+            data = resp.json()
+            errors = data.get("errors", [])
+            if errors:
+                err_text = json.dumps(errors)
+                # Check for stack traces or detailed internal paths
+                if re.search(r'at [A-Z][\w]+\.|File ".*\.py"|Traceback|stack.?trace|'
+                             r'StackTrace|java\.|NullPointer', err_text, re.I):
+                    output.add_finding(
+                        phase="graphql",
+                        title="GraphQL Error Response Leaks Internal Details",
+                        severity="MEDIUM",
+                        url=gql_found,
+                        detail=(
+                            "GraphQL error response for an invalid field query contains "
+                            "internal implementation details (stack traces, file paths, "
+                            "or class names). This assists attackers in mapping the server."
+                        ),
+                        evidence=f"Error response: {err_text[:500]}",
+                        remediation=(
+                            "Configure the GraphQL server to return generic error messages "
+                            "in production. Log full errors server-side only."
+                        ),
+                        extra={"owasp": "API7:2023 Server Side Request Forgery"},
+                    )
+        except Exception:
+            pass
+
+    # Subscription endpoint probe (DoS potential)
+    sub_paths = ["/graphql", "/subscriptions", "/ws", "/graphql/subscriptions"]
+    for sub_path in sub_paths:
+        sub_url = root + sub_path
+        try:
+            r = active_sess.get(sub_url, timeout=5,
+                                headers={"Upgrade": "websocket",
+                                         "Connection": "Upgrade",
+                                         "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+                                         "Sec-WebSocket-Version": "13"})
+            if r and r.status_code in (101, 200, 400):
+                output.add_finding(
+                    phase="graphql",
+                    title="GraphQL Subscription Endpoint Detected",
+                    severity="INFO",
+                    url=sub_url,
+                    detail=(
+                        f"A WebSocket/subscription endpoint at {sub_path} responded "
+                        f"to an upgrade request (HTTP {r.status_code}). "
+                        f"Without subscription limits, clients can open unlimited "
+                        f"subscriptions consuming server resources."
+                    ),
+                    evidence=f"GET {sub_url} with WebSocket upgrade → HTTP {r.status_code}",
+                    remediation=(
+                        "Limit the number of concurrent subscriptions per client. "
+                        "Authenticate subscription connections. "
+                        "Apply rate limiting to subscription creation."
+                    ),
+                    extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+                )
+                con.log(f"[graphql] Subscription endpoint: {sub_url}", "INFO")
+                break
+        except Exception:
+            pass
+
     con.status("graphql", "done", f"GraphQL testing complete at {gql_found}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 9b: Business Flows (OWASP API6:2023)
+# ---------------------------------------------------------------------------
+
+_BF_WORKFLOW_RE = re.compile(
+    r'checkout|confirm|payment|pay|order|purchase|cart|complete|'
+    r'transfer|send|submit|process|finalize|approve|step\d|coupon|promo', re.I
+)
+_BF_NUMERIC_FIELDS_RE = re.compile(
+    r'qty|quantity|amount|price|cost|total|count|num|value|'
+    r'discount|fee|rate|balance|credit|units|items', re.I
+)
+
+
+def phase_business_flows(settings: dict, sess: requests.Session,
+                         auth_sess, output: OutputManager,
+                         inventory: list) -> None:
+    """Phase 9b: Business flow abuse — OWASP API6:2023."""
+    scan     = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout  = scan.get("timeout", 10)
+    threads  = min(scan.get("threads", 10), 10)
+    target   = _parse_target(base_url)
+    root     = f"{target['scheme']}://{target['netloc']}"
+
+    con.status("business_flows", "running", "Identifying workflow endpoints")
+
+    # Classify endpoints into workflow (order/payment/submit), numeric-field, and all
+    workflow_eps = [ep for ep in inventory
+                    if _BF_WORKFLOW_RE.search(ep.get("path", "") +
+                                               " ".join(ep.get("body_fields", [])))]
+    numeric_eps  = [ep for ep in inventory
+                    if any(_BF_NUMERIC_FIELDS_RE.search(f)
+                           for f in ep.get("body_fields", []) + ep.get("params", [{"name":""}])
+                           if isinstance(f, str) or isinstance(f, dict) and _BF_NUMERIC_FIELDS_RE.search(f.get("name","")))]
+
+    # ── 1. Workflow step skipping ────────────────────────────────────────────
+    con.status("business_flows", "running", "Workflow skip detection")
+    skip_sess = requests.Session()
+    skip_sess.headers["User-Agent"] = scan.get("user_agent", "Siphon/1.0")
+    skip_sess.verify = False
+
+    for ep in workflow_eps[:20]:
+        if _shutdown_requested:
+            break
+        if ep["method"].upper() not in ("GET", "HEAD"):
+            continue
+        path = ep["path"]
+        # Replace path params with integer placeholders for probing
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        url = root + probe_path
+        try:
+            r = skip_sess.get(url, timeout=timeout, allow_redirects=False)
+            if r and r.status_code in (200, 201):
+                output.add_finding(
+                    phase="business_flows",
+                    title="Business Flow — Workflow Step Directly Accessible",
+                    severity="HIGH",
+                    url=url,
+                    detail=(
+                        f"Workflow endpoint '{path}' returned HTTP {r.status_code} "
+                        f"when accessed directly with no session. This may allow "
+                        f"skipping payment, verification, or approval steps."
+                    ),
+                    evidence=f"GET {url} → HTTP {r.status_code} (unauthenticated)",
+                    remediation=(
+                        "Enforce server-side workflow state machine. Validate that all "
+                        "prerequisite steps are complete before accepting late-stage requests."
+                    ),
+                    extra={"owasp": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+                           "nist": "AC-3"},
+                )
+                con.log(f"[business_flows] Workflow skip: {url}", "SUCCESS")
+        except Exception:
+            pass
+
+    # ── 2. Race condition — concurrent duplicate submission ──────────────────
+    con.status("business_flows", "running", "Race condition testing")
+    for ep in workflow_eps[:5]:
+        if _shutdown_requested:
+            break
+        method = ep["method"].upper()
+        if method not in ("POST", "PUT", "PATCH"):
+            continue
+        path       = ep["path"]
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        url        = root + probe_path
+        test_sess  = auth_sess if auth_sess else sess
+        body_fields = ep.get("body_fields", [])
+        payload     = {f: "test" for f in body_fields if isinstance(f, str)}
+
+        results: list = []
+
+        def _race(idx, _url=url, _method=method, _payload=payload, _sess=test_sess):
+            try:
+                fn = getattr(_sess, _method.lower(), None)
+                if fn:
+                    r = fn(_url, json=_payload, timeout=timeout)
+                    results.append(r.status_code)
+            except Exception:
+                pass
+
+        with ThreadPoolExecutor(max_workers=threads) as pool:
+            list(pool.map(_race, range(threads)))
+
+        successes = [s for s in results if s in (200, 201)]
+        if len(successes) > 1:
+            output.add_finding(
+                phase="business_flows",
+                title="Business Flow — Race Condition (Duplicate Operation)",
+                severity="HIGH",
+                url=url,
+                detail=(
+                    f"Sending {len(results)} concurrent {method} requests to {url} "
+                    f"yielded {len(successes)} successful responses. This may allow "
+                    f"duplicate operations: double-spend, coupon reuse, duplicate orders."
+                ),
+                evidence=(
+                    f"Concurrent requests: {len(results)}\n"
+                    f"Successful: {len(successes)}"
+                ),
+                remediation=(
+                    "Use idempotency keys on all transaction-forming endpoints. "
+                    "Apply atomic check-and-set operations or database-level locks. "
+                    "Track per-session request deduplication with short TTL."
+                ),
+                extra={"owasp": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+                       "nist": "SC-5"},
+            )
+            con.log(f"[business_flows] Race condition: {url} ({len(successes)}/{len(results)})", "SUCCESS")
+
+    # ── 3. Negative / zero value injection ──────────────────────────────────
+    con.status("business_flows", "running", "Negative value injection")
+    ep_sess = auth_sess if auth_sess else sess
+    for ep in inventory[:40]:
+        if _shutdown_requested:
+            break
+        method = ep["method"].upper()
+        if method not in ("POST", "PUT", "PATCH"):
+            continue
+        bf = ep.get("body_fields", [])
+        num_fields = [f for f in bf
+                      if isinstance(f, str) and _BF_NUMERIC_FIELDS_RE.search(f)]
+        if not num_fields:
+            continue
+        path       = ep["path"]
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        url        = root + probe_path
+        for test_val, label in [("-1", "negative"), ("0", "zero")]:
+            payload = {f: "test" for f in bf if isinstance(f, str)}
+            for nf in num_fields:
+                payload[nf] = test_val
+            try:
+                fn = getattr(ep_sess, method.lower(), None)
+                if not fn:
+                    continue
+                r = fn(url, json=payload, timeout=timeout)
+                if r and r.status_code in (200, 201) and not re.search(
+                        r'error|invalid|rejected|negative|below.zero', r.text, re.I):
+                    output.add_finding(
+                        phase="business_flows",
+                        title="Business Flow — Numeric Field Accepts Negative/Zero Value",
+                        severity="HIGH",
+                        url=url,
+                        detail=(
+                            f"API endpoint {method} {path} accepted a {label} value "
+                            f"({test_val}) for field(s): {', '.join(num_fields)}. "
+                            f"This may allow financial manipulation or quantity bypass."
+                        ),
+                        evidence=(
+                            f"Payload: {payload}\nHTTP {r.status_code}"
+                        ),
+                        remediation=(
+                            "Validate all numeric inputs server-side. Reject zero, negative, "
+                            "and implausibly large values. Use server-authoritative pricing."
+                        ),
+                        extra={"owasp": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+                               "nist": "AC-3"},
+                    )
+                    con.log(f"[business_flows] Neg value: {url} field={num_fields[0]}", "SUCCESS")
+                    break
+            except Exception:
+                pass
+
+    # ── 4. Bulk / mass-operation abuse (excessive automation) ────────────────
+    con.status("business_flows", "running", "Bulk operation detection")
+    bulk_eps = [ep for ep in inventory
+                if any(k in ep.get("path", "").lower() for k in
+                       ("bulk", "batch", "mass", "multi", "all", "export", "import"))]
+    for ep in bulk_eps[:10]:
+        if _shutdown_requested:
+            break
+        path       = ep["path"]
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        url        = root + probe_path
+        method     = ep["method"].upper()
+        ep_sess2   = auth_sess if auth_sess else sess
+        # Try a large batch payload
+        large_payload = [{"id": str(i)} for i in range(1, 201)]
+        try:
+            r = ep_sess2.request(method, url, json=large_payload, timeout=timeout)
+            if r and r.status_code in (200, 201):
+                output.add_finding(
+                    phase="business_flows",
+                    title="Business Flow — Bulk Endpoint Accepts Unrestricted Batch Size",
+                    severity="MEDIUM",
+                    url=url,
+                    detail=(
+                        f"Bulk endpoint {method} {path} accepted a 200-item payload "
+                        f"without restriction (HTTP {r.status_code}). Missing batch size "
+                        f"limits enable mass-operation abuse."
+                    ),
+                    evidence=f"Batch size: 200 items → HTTP {r.status_code}",
+                    remediation=(
+                        "Enforce maximum batch sizes on bulk endpoints. Implement "
+                        "per-request and per-session rate limits for bulk operations."
+                    ),
+                    extra={"owasp": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+                           "nist": "SC-5"},
+                )
+                con.log(f"[business_flows] Bulk abuse: {url}", "SUCCESS")
+        except Exception:
+            pass
+
+    con.status("business_flows", "done", "Business flow testing complete")
 
 
 # ---------------------------------------------------------------------------
@@ -5228,6 +5973,180 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 16b: Unsafe Consumption of APIs (OWASP API10:2023)
+# ---------------------------------------------------------------------------
+
+_UC_WEBHOOK_PARAMS = re.compile(
+    r'webhook|callback|redirect.?uri|redirect.?url|notify.?url|'
+    r'return.?url|target.?url|dest.?url|ping.?url|hook', re.I
+)
+_UC_INTERNAL_SSRF = [
+    ("http://169.254.169.254/latest/meta-data/", "AWS metadata service"),
+    ("http://metadata.google.internal/computeMetadata/v1/", "GCP metadata service"),
+    ("http://127.0.0.1/", "localhost loopback"),
+    ("http://localhost/", "localhost (named)"),
+    ("http://192.168.1.1/", "RFC-1918 internal gateway"),
+]
+_UC_DESER_MARKERS = re.compile(
+    r'\xac\xed\x00\x05|rO0AB|KGhv|__reduce__|__getstate__|'
+    r'O:[\d]+:"[a-zA-Z]+"|a:[\d]+:\{i:', re.I
+)
+
+
+def phase_unsafe_consumption(settings: dict, sess: requests.Session,
+                              auth_sess, output: OutputManager,
+                              inventory: list) -> None:
+    """Phase 16b: Unsafe Consumption of APIs — OWASP API10:2023."""
+    scan     = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout  = scan.get("timeout", 10)
+    target   = _parse_target(base_url)
+    root     = f"{target['scheme']}://{target['netloc']}"
+
+    con.status("unsafe_consumption", "running", "Webhook/callback URL injection")
+
+    test_sess = auth_sess if auth_sess else sess
+
+    # 1. Webhook / callback URL injection → internal SSRF
+    for ep in inventory[:50]:
+        if _shutdown_requested:
+            break
+        path   = ep["path"]
+        method = ep["method"].upper()
+        params = ep.get("params", []) or []
+        body_fields = ep.get("body_fields", []) or []
+
+        # Find URL-like parameters
+        url_params = [
+            p.get("name", p) if isinstance(p, dict) else p
+            for p in params + body_fields
+            if _UC_WEBHOOK_PARAMS.search(
+                p.get("name", p) if isinstance(p, dict) else str(p)
+            )
+        ]
+        if not url_params:
+            continue
+
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        ep_url     = root + probe_path
+
+        for ssrf_target, ssrf_desc in _UC_INTERNAL_SSRF[:3]:
+            for pname in url_params[:2]:
+                payload = {pname: ssrf_target}
+                try:
+                    if method in ("GET", "HEAD"):
+                        r = test_sess.request(method, ep_url, params=payload,
+                                              timeout=timeout, allow_redirects=False)
+                    else:
+                        r = test_sess.request(method, ep_url, json=payload,
+                                              timeout=timeout, allow_redirects=False)
+                    if r and r.status_code in (200, 201):
+                        output.add_finding(
+                            phase="unsafe_consumption",
+                            title="Unsafe API Consumption — Webhook URL Accepted (SSRF Risk)",
+                            severity="HIGH",
+                            url=ep_url,
+                            detail=(
+                                f"Endpoint {method} {path} accepted an internal URL "
+                                f"({ssrf_target}) in parameter '{pname}' without rejection. "
+                                f"If the server fetches this URL, it exposes the {ssrf_desc}."
+                            ),
+                            evidence=(
+                                f"Param: {pname} = {ssrf_target}\n"
+                                f"HTTP {r.status_code}"
+                            ),
+                            remediation=(
+                                "Validate and allowlist all URLs accepted from external sources. "
+                                "Block private IP ranges (10/8, 172.16/12, 192.168/16, 169.254/16) "
+                                "and loopback addresses. Use a DNS rebinding-resistant validator."
+                            ),
+                            extra={"owasp": "API10:2023 Unsafe Consumption of APIs",
+                                   "nist": "SI-10"},
+                        )
+                        con.log(f"[unsafe_consumption] Webhook SSRF: {ep_url} param={pname}", "SUCCESS")
+                        break
+                except Exception:
+                    pass
+
+    # 2. Unsafe HTTP redirect following to external resources
+    con.status("unsafe_consumption", "running", "Redirect validation")
+    for ep in inventory[:30]:
+        if _shutdown_requested:
+            break
+        method = ep["method"].upper()
+        if method != "GET":
+            continue
+        path       = ep["path"]
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        ep_url     = root + probe_path
+        params     = {"redirect": "http://evil.example.com/", "url": "http://evil.example.com/"}
+        try:
+            r = test_sess.get(ep_url, params=params, timeout=timeout, allow_redirects=False)
+            if r and r.status_code in (301, 302, 307, 308):
+                loc = r.headers.get("Location", "")
+                if "evil.example.com" in loc:
+                    output.add_finding(
+                        phase="unsafe_consumption",
+                        title="Unsafe Consumption — Open Redirect to External URL",
+                        severity="MEDIUM",
+                        url=ep_url,
+                        detail=(
+                            f"Endpoint GET {path} follows attacker-controlled redirect URL "
+                            f"and returned Location: {loc}. Open redirects in APIs that "
+                            f"consume external data enable phishing and SSRF chain attacks."
+                        ),
+                        evidence=f"GET {ep_url}?redirect=http://evil.example.com → HTTP {r.status_code} Location: {loc}",
+                        remediation=(
+                            "Validate all redirect targets against an allowlist. "
+                            "Never reflect user-provided URLs directly in redirect responses."
+                        ),
+                        extra={"owasp": "API10:2023 Unsafe Consumption of APIs",
+                               "nist": "SI-10"},
+                    )
+                    con.log(f"[unsafe_consumption] Open redirect: {ep_url}", "SUCCESS")
+        except Exception:
+            pass
+
+    # 3. Deserialization markers in API responses
+    con.status("unsafe_consumption", "running", "Deserialization probe")
+    for ep in inventory[:20]:
+        if _shutdown_requested:
+            break
+        if ep["method"].upper() != "GET":
+            continue
+        path       = ep["path"]
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        ep_url     = root + probe_path
+        try:
+            r = test_sess.get(ep_url, timeout=timeout)
+            if r and _UC_DESER_MARKERS.search(r.text):
+                output.add_finding(
+                    phase="unsafe_consumption",
+                    title="Unsafe Consumption — Serialization Markers in API Response",
+                    severity="MEDIUM",
+                    url=ep_url,
+                    detail=(
+                        f"API response from {ep_url} contains serialization markers "
+                        f"(Java, PHP, or Python object serialization patterns). "
+                        f"Serialized data passed between services may be deserialized unsafely."
+                    ),
+                    evidence=f"Response body excerpt: {r.text[:300]}",
+                    remediation=(
+                        "Use language-agnostic data formats (JSON/Protobuf) between services. "
+                        "Never deserialize untrusted data without schema validation. "
+                        "Use a serialization denylist or RASP to block gadget chains."
+                    ),
+                    extra={"owasp": "API10:2023 Unsafe Consumption of APIs",
+                           "nist": "SI-10"},
+                )
+                con.log(f"[unsafe_consumption] Deser markers: {ep_url}", "SUCCESS")
+        except Exception:
+            pass
+
+    con.status("unsafe_consumption", "done", "Unsafe consumption testing complete")
+
+
+# ---------------------------------------------------------------------------
 # main()
 # ---------------------------------------------------------------------------
 
@@ -5321,10 +6240,20 @@ def main() -> None:
             version=VERSION,
         )
 
+        pm = ProgressManager(project_dir / "checkpoint.json")
+        if pm.get_state()["completed_phases"]:
+            con.info(f"Checkpoint found — resuming ({len(pm.get_state()['completed_phases'])} phases already done)")
+
         phases_cfg = t_scan.get("phases", {})
 
         def _skip(phase: str) -> bool:
-            return not phases_cfg.get(phase, True)
+            if not phases_cfg.get(phase, True):
+                con.status(phase, "skip", "Disabled in settings")
+                return True
+            if pm.is_phase_complete(phase):
+                con.status(phase, "skip", "Already complete (checkpoint)")
+                return True
+            return False
 
         sess       = _make_session(t_settings)
         auth_sess  = _build_auth_session(t_settings, "auth")
@@ -5339,16 +6268,37 @@ def main() -> None:
 
         con.section(f"Siphon — {raw_url}")
 
+        def _run_phase(phase: str, fn, *args) -> None:
+            pm.set_phase_status(phase, "running",
+                                VantageConsole._PHASE_LABELS.get(phase, phase))
+            try:
+                fn(*args)
+                pm.set_phase_status(phase, "complete",
+                                    VantageConsole._PHASE_LABELS.get(phase, phase))
+            except Exception as exc:
+                con.err(f"Phase {phase} error: {exc}")
+                pm.set_phase_status(phase, "error", detail=str(exc))
+
+        def _run_phase_ret(phase: str, fn, *args):
+            pm.set_phase_status(phase, "running",
+                                VantageConsole._PHASE_LABELS.get(phase, phase))
+            try:
+                result = fn(*args)
+                pm.set_phase_status(phase, "complete",
+                                    VantageConsole._PHASE_LABELS.get(phase, phase))
+                return result
+            except Exception as exc:
+                con.err(f"Phase {phase} error: {exc}")
+                pm.set_phase_status(phase, "error", detail=str(exc))
+                return None
+
         # ------------------------------------------------------------------
         # Phase 0: Discovery
         # ------------------------------------------------------------------
         if not _skip("discovery"):
-            try:
-                api_inventory = phase_discovery(t_settings, sess, output)
-            except Exception as exc:
-                con.err(f"Phase discovery error: {exc}")
-        else:
-            con.status("discovery", "skip", "Disabled in settings")
+            result = _run_phase_ret("discovery", phase_discovery, t_settings, sess, output)
+            if result is not None:
+                api_inventory = result
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5359,12 +6309,7 @@ def main() -> None:
         # Phase 1: Recon
         # ------------------------------------------------------------------
         if not _skip("recon"):
-            try:
-                phase_recon(t_settings, sess, output)
-            except Exception as exc:
-                con.err(f"Phase recon error: {exc}")
-        else:
-            con.status("recon", "skip", "Disabled in settings")
+            _run_phase("recon", phase_recon, t_settings, sess, output)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5375,12 +6320,7 @@ def main() -> None:
         # Phase 2: Fuzzing
         # ------------------------------------------------------------------
         if not _skip("fuzzing"):
-            try:
-                phase_fuzzing(t_settings, sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase fuzzing error: {exc}")
-        else:
-            con.status("fuzzing", "skip", "Disabled in settings")
+            _run_phase("fuzzing", phase_fuzzing, t_settings, sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5391,12 +6331,7 @@ def main() -> None:
         # Phase 3: Injection
         # ------------------------------------------------------------------
         if not _skip("injection"):
-            try:
-                phase_injection(t_settings, sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase injection error: {exc}")
-        else:
-            con.status("injection", "skip", "Disabled in settings")
+            _run_phase("injection", phase_injection, t_settings, sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5407,12 +6342,7 @@ def main() -> None:
         # Phase 4: Auth Bypass
         # ------------------------------------------------------------------
         if not _skip("auth_bypass"):
-            try:
-                phase_auth_bypass(t_settings, sess, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase auth_bypass error: {exc}")
-        else:
-            con.status("auth_bypass", "skip", "Disabled in settings")
+            _run_phase("auth_bypass", phase_auth_bypass, t_settings, sess, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5423,12 +6353,7 @@ def main() -> None:
         # Phase 5: Rate Limiting
         # ------------------------------------------------------------------
         if not _skip("rate_limiting"):
-            try:
-                phase_rate_limiting(t_settings, sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase rate_limiting error: {exc}")
-        else:
-            con.status("rate_limiting", "skip", "Disabled in settings")
+            _run_phase("rate_limiting", phase_rate_limiting, t_settings, sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5439,12 +6364,7 @@ def main() -> None:
         # Phase 6: Mass Assignment
         # ------------------------------------------------------------------
         if not _skip("mass_assignment"):
-            try:
-                phase_mass_assignment(t_settings, sess, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase mass_assignment error: {exc}")
-        else:
-            con.status("mass_assignment", "skip", "Disabled in settings")
+            _run_phase("mass_assignment", phase_mass_assignment, t_settings, sess, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5455,12 +6375,7 @@ def main() -> None:
         # Phase 7: SSRF
         # ------------------------------------------------------------------
         if not _skip("ssrf"):
-            try:
-                phase_ssrf(t_settings, sess, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase ssrf error: {exc}")
-        else:
-            con.status("ssrf", "skip", "Disabled in settings")
+            _run_phase("ssrf", phase_ssrf, t_settings, sess, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5471,12 +6386,7 @@ def main() -> None:
         # Phase 8: Data Exposure
         # ------------------------------------------------------------------
         if not _skip("data_exposure"):
-            try:
-                phase_data_exposure(t_settings, sess, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase data_exposure error: {exc}")
-        else:
-            con.status("data_exposure", "skip", "Disabled in settings")
+            _run_phase("data_exposure", phase_data_exposure, t_settings, sess, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5487,12 +6397,19 @@ def main() -> None:
         # Phase 9: GraphQL
         # ------------------------------------------------------------------
         if not _skip("graphql"):
-            try:
-                phase_graphql(t_settings, sess, auth_sess, output)
-            except Exception as exc:
-                con.err(f"Phase graphql error: {exc}")
-        else:
-            con.status("graphql", "skip", "Disabled in settings")
+            _run_phase("graphql", phase_graphql, t_settings, sess, auth_sess, output)
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 9b: Business Flows
+        # ------------------------------------------------------------------
+        if not _skip("business_flows"):
+            _run_phase("business_flows", phase_business_flows,
+                       t_settings, sess, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5503,12 +6420,7 @@ def main() -> None:
         # Phase 10: BOLA
         # ------------------------------------------------------------------
         if not _skip("bola"):
-            try:
-                phase_bola(t_settings, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase bola error: {exc}")
-        else:
-            con.status("bola", "skip", "Disabled in settings")
+            _run_phase("bola", phase_bola, t_settings, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5519,12 +6431,7 @@ def main() -> None:
         # Phase 11: BFLA
         # ------------------------------------------------------------------
         if not _skip("bfla"):
-            try:
-                phase_bfla(t_settings, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase bfla error: {exc}")
-        else:
-            con.status("bfla", "skip", "Disabled in settings")
+            _run_phase("bfla", phase_bfla, t_settings, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5535,12 +6442,7 @@ def main() -> None:
         # Phase 12: Cross-User
         # ------------------------------------------------------------------
         if not _skip("cross_user"):
-            try:
-                phase_cross_user(t_settings, auth_sess, auth2_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase cross_user error: {exc}")
-        else:
-            con.status("cross_user", "skip", "Disabled in settings")
+            _run_phase("cross_user", phase_cross_user, t_settings, auth_sess, auth2_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5551,12 +6453,7 @@ def main() -> None:
         # Phase 13: Session
         # ------------------------------------------------------------------
         if not _skip("session"):
-            try:
-                phase_session(t_settings, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase session error: {exc}")
-        else:
-            con.status("session", "skip", "Disabled in settings")
+            _run_phase("session", phase_session, t_settings, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5567,12 +6464,7 @@ def main() -> None:
         # Phase 14: JWT
         # ------------------------------------------------------------------
         if not _skip("jwt"):
-            try:
-                phase_jwt(t_settings, auth_sess, output, api_inventory)
-            except Exception as exc:
-                con.err(f"Phase jwt error: {exc}")
-        else:
-            con.status("jwt", "skip", "Disabled in settings")
+            _run_phase("jwt", phase_jwt, t_settings, auth_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5583,12 +6475,7 @@ def main() -> None:
         # Phase 15: Sensitive Files
         # ------------------------------------------------------------------
         if not _skip("sensitive_files"):
-            try:
-                phase_sensitive_files(t_settings, sess, output)
-            except Exception as exc:
-                con.err(f"Phase sensitive_files error: {exc}")
-        else:
-            con.status("sensitive_files", "skip", "Disabled in settings")
+            _run_phase("sensitive_files", phase_sensitive_files, t_settings, sess, output)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
@@ -5599,12 +6486,19 @@ def main() -> None:
         # Phase 16: TLS
         # ------------------------------------------------------------------
         if not _skip("tls"):
-            try:
-                phase_tls(t_settings, output)
-            except Exception as exc:
-                con.err(f"Phase tls error: {exc}")
-        else:
-            con.status("tls", "skip", "Disabled in settings")
+            _run_phase("tls", phase_tls, t_settings, output)
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 16b: Unsafe Consumption
+        # ------------------------------------------------------------------
+        if not _skip("unsafe_consumption"):
+            _run_phase("unsafe_consumption", phase_unsafe_consumption,
+                       t_settings, sess, auth_sess, output, api_inventory)
 
         # ------------------------------------------------------------------
         # Save results for this target
