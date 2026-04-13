@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -1666,6 +1666,9 @@ DEFAULT_SETTINGS: dict = {
             "sensitive_files":    True,
             "tls":              True,
             "unsafe_consumption": True,
+            "verb_tampering":   True,
+            "soap":             True,
+            "file_upload_info": True,
         },
         "auth": {
             "enabled":                 False,
@@ -1784,6 +1787,9 @@ PHASE_LIST = [
     ("sensitive_files", "Phase 15: Sensitive file exposure — .env, config, git, swagger (API9)"),
     ("tls",                 "Phase 16:  TLS/SSL analysis — deprecated protocols, weak ciphers (API8)"),
     ("unsafe_consumption",  "Phase 16b: Unsafe API consumption — webhook SSRF, open redirect, deser (API10)"),
+    ("verb_tampering",      "Phase 17: HTTP verb tampering — method override header bypass"),
+    ("soap",                "Phase 18: SOAP/WS-Security — WSDL enum, WS-Security bypass, SOAP injection"),
+    ("file_upload_info",    "Phase 19: File upload endpoint detection — accepted types (informational)"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -3768,6 +3774,158 @@ def phase_recon(settings: dict, sess: requests.Session,
             remediation="Remove version-revealing headers and error messages to reduce fingerprint surface.",
         )
 
+    # Debug mode / verbose error detection
+    con.status("recon", "running", "Debug mode and verbose error detection")
+    _debug_paths = ["/debug", "/_debug", "/api/debug", "/console", "/api/console",
+                    "/whoops", "/error", "/api/error", "/api/status/debug"]
+    _debug_body_re = re.compile(
+        r'Traceback \(most recent call last\)|StackTrace|<b>Fatal error</b>|'
+        r'ActiveRecord::|undefined method|NameError|NoMethodError|'
+        r'DEBUG\s*=\s*True|app\.debug\s*=\s*True|"debug"\s*:\s*true|'
+        r'werkzeug\.debug|Werkzeug Debugger|Interactive Console|'
+        r'django\.conf|settings\.DEBUG|DJANGO_SETTINGS_MODULE',
+        re.I
+    )
+    for dpath in _debug_paths:
+        if _shutdown_requested:
+            break
+        durl = base_url.rstrip("/") + dpath
+        dr = _safe_get(sess, durl, timeout=timeout)
+        if dr is not None and dr.status_code == 200 and _debug_body_re.search(dr.text[:4000]):
+            output.add_finding(
+                phase="recon",
+                title="Debug / Developer Console Exposed",
+                severity="HIGH",
+                url=durl,
+                detail=f"A debug or developer console endpoint is accessible at {durl}.",
+                evidence=dr.text[:300],
+                remediation="Disable debug mode in production. Remove debug/console endpoints.",
+            )
+            con.log(f"[recon] Debug endpoint exposed: {durl}", "SUCCESS")
+            break
+
+    # TRACE method detection
+    con.status("recon", "running", "TRACE method detection")
+    try:
+        _trace_resp = sess.request("TRACE", base_url, timeout=timeout, allow_redirects=False)
+        if _trace_resp is not None and _trace_resp.status_code == 200:
+            if "TRACE" in _trace_resp.text.upper() or "Via" in _trace_resp.headers:
+                output.add_finding(
+                    phase="recon",
+                    title="HTTP TRACE Method Enabled",
+                    severity="MEDIUM",
+                    url=base_url,
+                    detail=(
+                        "The HTTP TRACE method is enabled on this API. "
+                        "TRACE allows XST (Cross-Site Tracing) attacks that can be used to steal "
+                        "HTTP-only cookies or authentication headers via XSS."
+                    ),
+                    evidence=f"HTTP TRACE returned {_trace_resp.status_code}; body[:200]: {_trace_resp.text[:200]}",
+                    remediation="Disable the HTTP TRACE method in your web server/proxy configuration.",
+                )
+    except Exception:
+        pass
+
+    # JSONP endpoint detection on common API paths
+    con.status("recon", "running", "JSONP endpoint detection")
+    _jsonp_probe_paths = ["/api", "/api/v1", "/api/v2", base_url.rstrip("/")]
+    _jsonp_cb_re = re.compile(r'^siphon_jsonp_check\s*\(', re.M)
+    for jpath in _jsonp_probe_paths:
+        if _shutdown_requested:
+            break
+        jurl = jpath if jpath.startswith("http") else base_url.rstrip("/") + jpath
+        for cb_param in ["callback", "cb", "jsonp", "jsoncallback"]:
+            try:
+                jr = sess.get(jurl, params={cb_param: "siphon_jsonp_check"},
+                              timeout=timeout, allow_redirects=False)
+                if jr is not None and jr.status_code == 200 and _jsonp_cb_re.search(jr.text[:500]):
+                    output.add_finding(
+                        phase="recon",
+                        title="JSONP Endpoint Detected — Potential Data Leakage",
+                        severity="MEDIUM",
+                        url=jurl,
+                        detail=(
+                            f"The endpoint {jurl} supports JSONP via the '{cb_param}' parameter. "
+                            "JSONP endpoints can leak authenticated data to attacker-controlled pages "
+                            "because browsers do not enforce SOP for script tags."
+                        ),
+                        evidence=f"?{cb_param}=siphon_jsonp_check → {jr.text[:200]}",
+                        remediation=(
+                            "Replace JSONP with CORS. If JSONP must be kept, "
+                            "validate the callback parameter against an allowlist and require authentication."
+                        ),
+                    )
+                    con.log(f"[recon] JSONP endpoint: {jurl}?{cb_param}=...", "SUCCESS")
+                    break
+            except Exception:
+                pass
+
+    # Prometheus metrics / Spring Boot Actuator exposure
+    con.status("recon", "running", "Metrics/actuator endpoint probing")
+    _actuator_paths = [
+        ("/metrics",              "Prometheus Metrics Endpoint Exposed",          "HIGH"),
+        ("/actuator",             "Spring Boot Actuator Root Exposed",             "HIGH"),
+        ("/actuator/env",         "Spring Boot Actuator /env Exposed",             "CRITICAL"),
+        ("/actuator/mappings",    "Spring Boot Actuator /mappings Exposed",        "MEDIUM"),
+        ("/actuator/health",      "Spring Boot Actuator /health Exposed",          "LOW"),
+        ("/actuator/beans",       "Spring Boot Actuator /beans Exposed",           "MEDIUM"),
+        ("/actuator/loggers",     "Spring Boot Actuator /loggers Exposed",         "MEDIUM"),
+        ("/prometheus",           "Prometheus Metrics Endpoint Exposed",           "HIGH"),
+        ("/admin/metrics",        "Admin Metrics Endpoint Exposed",                "HIGH"),
+        ("/api/metrics",          "API Metrics Endpoint Exposed",                  "MEDIUM"),
+    ]
+    _prom_re = re.compile(r'# HELP |# TYPE |process_cpu_|jvm_|http_server_requests', re.I)
+    for act_path, act_title, act_sev in _actuator_paths:
+        if _shutdown_requested:
+            break
+        act_url = base_url.rstrip("/") + act_path
+        ar = _safe_get(sess, act_url, timeout=timeout)
+        if ar is None or ar.status_code not in (200, 206):
+            continue
+        body = ar.text[:1000]
+        # For /metrics and /prometheus check for Prometheus format; for others just 200 is enough
+        if "metrics" in act_path or "prometheus" in act_path:
+            if not _prom_re.search(body):
+                continue
+        output.add_finding(
+            phase="recon",
+            title=act_title,
+            severity=act_sev,
+            url=act_url,
+            detail=f"Sensitive internal endpoint {act_path} is publicly accessible.",
+            evidence=f"HTTP {ar.status_code}; body[:300]: {body[:300]}",
+            remediation=(
+                "Restrict access to metrics and actuator endpoints to internal networks only. "
+                "Require authentication for all management endpoints."
+            ),
+        )
+        con.log(f"[recon] Actuator/metrics exposed: {act_url}", "SUCCESS")
+
+    # API key / secret leakage in response headers
+    con.status("recon", "running", "API key/secret header leakage detection")
+    _secret_header_re = re.compile(
+        r'^(X-API-Key|X-Auth-Token|X-Secret|Authorization|X-Internal-Key|'
+        r'X-App-Secret|X-Service-Token|X-Master-Key|X-Admin-Token)$',
+        re.I
+    )
+    leaked_headers = [h for h in resp.headers if _secret_header_re.match(h)]
+    if leaked_headers:
+        output.add_finding(
+            phase="recon",
+            title="Sensitive Authentication Headers Exposed in Response",
+            severity="HIGH",
+            url=base_url,
+            detail=(
+                f"The API response contains credential-related headers that should not appear "
+                f"in responses: {', '.join(leaked_headers)}."
+            ),
+            evidence="; ".join(f"{h}: {resp.headers[h][:40]}" for h in leaked_headers),
+            remediation=(
+                "Remove authentication/credential headers from API responses. "
+                "These should only appear in requests, not responses."
+            ),
+        )
+
     con.status("recon", "done", f"Server: {server or 'unknown'}")
 
 
@@ -4193,6 +4351,63 @@ def phase_injection(settings: dict, sess: requests.Session,
                     )
                     break
 
+    # CSV / Formula injection
+    _csv_formula_payloads = [
+        "=CMD|'/C echo siphon_csv'!A0",
+        "+cmd|'/C echo siphon_csv'!A0",
+        "@SUM(1+1)*cmd|'/C echo siphon_csv'!A0",
+    ]
+    for ep in test_endpoints[:10]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        body_fields = ep.get("body_fields", []) or []
+        for field in body_fields[:5]:
+            for csv_pay in _csv_formula_payloads[:1]:
+                resp = _test_injection(sess, url, method, field, csv_pay, timeout)
+                if resp and resp.status_code in (200, 201, 202):
+                    output.add_finding(
+                        phase="injection",
+                        title="CSV Injection in User Export",
+                        severity="HIGH",
+                        url=url,
+                        detail=(f"Field '{field}' at {ep['method']} {ep['path']} accepted a CSV formula "
+                                f"injection payload ({csv_pay!r}). If this field is included in CSV/Excel "
+                                f"exports, the formula may execute commands on recipients' workstations."),
+                        evidence=f"Field: {field}  Payload: {csv_pay}  Response: {resp.status_code}",
+                        remediation=(
+                            "Sanitise all text values before CSV export. "
+                            "Prefix cells starting with =, +, -, @ with a single-quote character."
+                        ),
+                    )
+                    break
+
+    # Log injection via request parameters
+    _log_inject_payload = "%0asiphon_log_inject_SUCCESS%0a"
+    for ep in test_endpoints[:10]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        params = ep.get("params", []) or []
+        test_params = [p["name"] for p in params][:4]
+        for param in test_params:
+            resp = _test_injection(sess, url, method, param, _log_inject_payload, timeout)
+            if resp and resp.status_code in (200, 201, 400, 422, 500):
+                output.add_finding(
+                    phase="injection",
+                    title="Log Injection via User-Agent / Query Parameter",
+                    severity="MEDIUM",
+                    url=url,
+                    detail=(f"Parameter '{param}' at {ep['method']} {ep['path']} accepted a newline-embedded "
+                            f"payload. If the server logs this parameter without sanitisation, an attacker "
+                            f"can inject fake log entries to mislead forensic analysis."),
+                    evidence=f"Parameter: {param}  Payload: {repr(_log_inject_payload)}  Response: {resp.status_code}",
+                    remediation="Strip CRLF/newline characters from all inputs written to logs. Use structured logging.",
+                )
+                break
+
     con.status("injection", "done", "Injection tests complete")
 
 
@@ -4416,6 +4631,125 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                     detail=f"JWT was re-signed with weak secret '{secret}' and accepted.",
                     evidence=f"Secret '{secret}' produced valid JWT; HTTP {resp.status_code}",
                     remediation="Use a long, random, cryptographically secure JWT secret.",
+                )
+                break
+
+    # 4. JWT Missing Expiry claim
+    if decoded:
+        header, payload, _ = decoded
+        if "exp" not in payload:
+            output.add_finding(
+                phase="auth_bypass",
+                title="JWT Missing Expiry Claim",
+                severity="MEDIUM",
+                url=base_url,
+                detail=(f"The JWT in use has no 'exp' claim. Without an expiry, the token is "
+                        f"valid indefinitely and cannot be invalidated server-side after issuance."),
+                evidence=f"JWT payload: {json.dumps(payload)[:300]}",
+                remediation="Always include an 'exp' claim in JWTs. Set a short expiry (≤15 minutes for sensitive operations).",
+            )
+
+    # 5. Type juggling / JSON type confusion on login
+    import time as _time_siphon
+    _type_juggling_payloads = [
+        {"username": True,  "password": True},
+        {"username": 0,     "password": 0},
+        {"username": [],    "password": []},
+        {"username": None,  "password": None},
+    ]
+    for login_path in ["/auth/login", "/login", "/api/login", "/api/auth", "/api/token"]:
+        login_url_jt = root + login_path
+        probe = _safe_get(sess, login_url_jt, timeout=timeout)
+        if not probe or probe.status_code in (404, 410):
+            continue
+        for jt_payload in _type_juggling_payloads:
+            try:
+                resp = sess.post(login_url_jt, json=jt_payload, timeout=timeout)
+                if resp and resp.status_code in (200, 201):
+                    if not re.search(r'invalid|incorrect|failed|unauthorized|wrong|error', resp.text, re.I):
+                        output.add_finding(
+                            phase="auth_bypass",
+                            title="Type Juggling / JSON Type Confusion Authentication Bypass",
+                            severity="HIGH",
+                            url=login_url_jt,
+                            detail=(f"API login endpoint accepted a JSON body with non-string types "
+                                    f"({jt_payload}) and returned HTTP {resp.status_code} without an "
+                                    f"error, suggesting a type-confusion bypass."),
+                            evidence=f"POST {login_path} with {jt_payload} → HTTP {resp.status_code}: {resp.text[:200]}",
+                            remediation=(
+                                "Enforce strict type validation on all login inputs. "
+                                "Reject non-string values for username and password fields. "
+                                "Use a typed schema validator (e.g. Pydantic, marshmallow)."
+                            ),
+                        )
+                        break
+            except Exception:
+                pass
+        break
+
+    # 6. Server-Timing header timing attack
+    _timing_urls = [root + p for p in ["/auth/login", "/login", "/api/login", "/api/token"]]
+    for timing_url in _timing_urls:
+        probe = _safe_get(sess, timing_url, timeout=timeout)
+        if not probe or probe.status_code in (404, 410):
+            continue
+        times_invalid: list = []
+        times_valid_fmt: list = []
+        for _ in range(5):
+            t0 = _time_siphon.monotonic()
+            _safe_request(sess, "POST", timing_url,
+                          timeout=timeout,
+                          json={"username": "zzznouserzzzz", "password": "wrong"})
+            times_invalid.append(_time_siphon.monotonic() - t0)
+        for _ in range(5):
+            t0 = _time_siphon.monotonic()
+            _safe_request(sess, "POST", timing_url,
+                          timeout=timeout,
+                          json={"username": "admin", "password": "wrong_password_xyz"})
+            times_valid_fmt.append(_time_siphon.monotonic() - t0)
+        if times_invalid and times_valid_fmt:
+            avg_inv  = sum(times_invalid) / len(times_invalid)
+            avg_val  = sum(times_valid_fmt) / len(times_valid_fmt)
+            if avg_val - avg_inv > 0.15:
+                output.add_finding(
+                    phase="auth_bypass",
+                    title="Server-Timing Header Leaks Authentication Duration",
+                    severity="MEDIUM",
+                    url=timing_url,
+                    detail=(f"API login endpoint shows {(avg_val-avg_inv)*1000:.0f}ms average timing "
+                            f"difference between invalid and valid-format usernames, indicating "
+                            f"non-constant-time credential comparison (timing oracle)."),
+                    evidence=(f"Avg time (invalid user): {avg_inv*1000:.0f}ms  "
+                              f"Avg time (valid-format): {avg_val*1000:.0f}ms  "
+                              f"Delta: {(avg_val-avg_inv)*1000:.0f}ms"),
+                    remediation=(
+                        "Use constant-time comparison for all credential checks. "
+                        "Introduce artificial jitter or a fixed minimum response time on login endpoints."
+                    ),
+                )
+        break
+
+    # 7. Credentials transmitted in URL query parameters
+    _cred_param_url_re = re.compile(
+        r'[?&](password|passwd|pwd|secret|token|api_key|apikey|auth|access_token)'
+        r'=([^&\s]{4,})', re.I
+    )
+    for ep in inventory:
+        ep_url = root + ep["path"]
+        params = ep.get("params", []) or []
+        for p in params:
+            pname = p.get("name", "") if isinstance(p, dict) else str(p)
+            if _cred_param_url_re.search(f"?{pname}=test"):
+                output.add_finding(
+                    phase="auth_bypass",
+                    title="Sensitive Credentials Transmitted in URL Query Parameters",
+                    severity="HIGH",
+                    url=ep_url,
+                    detail=(f"Endpoint {ep['method']} {ep['path']} has parameter '{pname}' in its "
+                            f"query string that appears to carry sensitive credential data. "
+                            f"URL query parameters are logged by proxies, web servers, and browser history."),
+                    evidence=f"Parameter '{pname}' in URL: {ep_url}",
+                    remediation="Move credential parameters to the request body or Authorization header. Never pass secrets in URLs.",
                 )
                 break
 
@@ -6098,6 +6432,607 @@ def phase_jwt(settings: dict, auth_sess, output: OutputManager,
 
 
 # ---------------------------------------------------------------------------
+# Phase 17: HTTP Verb Tampering / Method Override
+# ---------------------------------------------------------------------------
+
+def phase_verb_tampering(settings: dict, sess: requests.Session,
+                         auth_sess, output: OutputManager,
+                         inventory: list) -> None:
+    """Phase 17: HTTP verb tampering via method override headers."""
+    scan     = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout  = scan.get("timeout", 10)
+    target   = _parse_target(base_url)
+    root     = f"{target['scheme']}://{target['netloc']}"
+
+    con.status("verb_tampering", "running", "HTTP method override header testing")
+
+    test_sess = auth_sess if auth_sess else sess
+
+    _override_headers = [
+        "X-HTTP-Method-Override",
+        "X-Method-Override",
+        "X-HTTP-Method",
+        "_method",
+    ]
+    _override_methods = ["DELETE", "PUT", "PATCH", "OPTIONS"]
+
+    # Focus on GET endpoints — probe if override headers tunnel other methods
+    get_endpoints = [ep for ep in inventory[:30] if ep.get("method", "").upper() == "GET"]
+    if not get_endpoints:
+        get_endpoints = [{"path": "/api/v1", "method": "GET", "params": [], "body_fields": []}]
+
+    for ep in get_endpoints:
+        if _shutdown_requested:
+            break
+        path       = ep["path"]
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        ep_url     = root + probe_path
+
+        # Baseline GET
+        try:
+            baseline = test_sess.get(ep_url, timeout=timeout, allow_redirects=False)
+        except Exception:
+            continue
+        if baseline is None:
+            continue
+        baseline_code = baseline.status_code
+
+        for override_hdr in _override_headers:
+            if _shutdown_requested:
+                break
+            for override_method in _override_methods:
+                try:
+                    r = test_sess.get(
+                        ep_url,
+                        headers={override_hdr: override_method},
+                        timeout=timeout,
+                        allow_redirects=False,
+                    )
+                    if r is None:
+                        continue
+                    # Interesting: different status code than baseline GET, especially 2xx or 4xx auth
+                    if r.status_code != baseline_code and r.status_code not in (400, 404, 405, 501):
+                        sev = "HIGH" if r.status_code in (200, 201, 204) else "MEDIUM"
+                        output.add_finding(
+                            phase="verb_tampering",
+                            title=f"HTTP Method Override Accepted — {override_method} via {override_hdr}",
+                            severity=sev,
+                            url=ep_url,
+                            detail=(
+                                f"Sending GET {path} with header '{override_hdr}: {override_method}' "
+                                f"returned HTTP {r.status_code} (baseline GET was {baseline_code}). "
+                                "The server may be processing the overridden method, allowing "
+                                "attackers to bypass firewall or WAF rules that restrict HTTP methods."
+                            ),
+                            evidence=(
+                                f"GET {ep_url} {override_hdr}: {override_method} → HTTP {r.status_code}\n"
+                                f"Baseline GET → HTTP {baseline_code}"
+                            ),
+                            remediation=(
+                                "Do not trust X-HTTP-Method-Override or similar headers unless "
+                                "there is a specific verified need. Apply the same authorization and "
+                                "rate-limiting controls regardless of how the HTTP method is specified."
+                            ),
+                            extra={"owasp": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+                                   "nist": "AC-3"},
+                        )
+                        con.log(f"[verb_tampering] {override_hdr}={override_method} on {ep_url} → {r.status_code}", "SUCCESS")
+                except Exception:
+                    pass
+
+    # Also probe common write endpoints with POST + override header to reach DELETE/PUT
+    _write_paths = ["/api/v1/users/1", "/api/v1/items/1", "/api/users/1", "/api/items/1"]
+    for wp in _write_paths:
+        if _shutdown_requested:
+            break
+        wp_url = root + wp
+        for override_hdr in _override_headers[:2]:
+            try:
+                r = test_sess.post(
+                    wp_url,
+                    headers={override_hdr: "DELETE"},
+                    json={},
+                    timeout=timeout,
+                    allow_redirects=False,
+                )
+                if r is not None and r.status_code in (200, 204):
+                    output.add_finding(
+                        phase="verb_tampering",
+                        title="HTTP Method Override — DELETE via POST Accepted",
+                        severity="HIGH",
+                        url=wp_url,
+                        detail=(
+                            f"POST {wp} with '{override_hdr}: DELETE' returned HTTP {r.status_code}. "
+                            "An attacker may be able to delete arbitrary resources by tunnelling DELETE "
+                            "through POST requests."
+                        ),
+                        evidence=f"POST {wp_url} {override_hdr}: DELETE → HTTP {r.status_code}",
+                        remediation=(
+                            "Reject or ignore HTTP method override headers. "
+                            "Enforce authorization at the resource and method level independently."
+                        ),
+                        extra={"owasp": "API5:2023 Broken Function Level Authorization",
+                               "nist": "AC-3"},
+                    )
+                    con.log(f"[verb_tampering] DELETE-via-POST accepted on {wp_url}", "SUCCESS")
+            except Exception:
+                pass
+
+    con.status("verb_tampering", "done", "Verb tampering testing complete")
+
+
+# ---------------------------------------------------------------------------
+# Phase 18: SOAP / WS-Security Testing
+# ---------------------------------------------------------------------------
+
+def phase_soap(settings: dict, sess: requests.Session,
+               output: OutputManager) -> None:
+    """Phase 18: SOAP and WS-Security testing."""
+    scan     = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout  = scan.get("timeout", 10)
+    target   = _parse_target(base_url)
+    root     = f"{target['scheme']}://{target['netloc']}"
+
+    con.status("soap", "running", "WSDL enumeration")
+
+    # 1. WSDL enumeration — discover operations and types
+    _wsdl_paths = [
+        "/?wsdl", "/?WSDL", "/wsdl", "/service.wsdl", "/api.wsdl",
+        "/ws?wsdl", "/soap?wsdl", "/soap/wsdl", "/services?wsdl",
+    ]
+    wsdl_url    = None
+    wsdl_body   = ""
+    _wsdl_re    = re.compile(r'<wsdl:|<definitions\s|xmlns.*wsdl|<portType|<binding\s', re.I)
+    _op_re      = re.compile(r'<(?:wsdl:)?operation\s+name="([^"]+)"', re.I)
+
+    for wp in _wsdl_paths:
+        if _shutdown_requested:
+            break
+        wurl = root + wp if not wp.startswith("http") else wp
+        wr = _safe_get(sess, wurl, timeout=timeout)
+        if wr is not None and wr.status_code == 200 and _wsdl_re.search(wr.text[:2000]):
+            wsdl_url  = wurl
+            wsdl_body = wr.text
+            operations = _op_re.findall(wsdl_body)
+            output.add_finding(
+                phase="soap",
+                title="WSDL Enumeration — Service Definition Exposed",
+                severity="MEDIUM",
+                url=wurl,
+                detail=(
+                    f"The WSDL service definition is publicly accessible at {wurl}. "
+                    f"Operations discovered: {', '.join(operations[:20]) if operations else 'unknown'}. "
+                    "Exposed WSDL documents reveal service structure, operation names, and data types "
+                    "which aid targeted exploitation."
+                ),
+                evidence=f"HTTP {wr.status_code}; operations found: {len(operations)}; excerpt: {wsdl_body[:300]}",
+                remediation=(
+                    "Restrict WSDL access to authorized clients only. "
+                    "Require authentication before serving the WSDL document. "
+                    "Review all exposed operations for unnecessary exposure."
+                ),
+                extra={"owasp": "API9:2023 Improper Inventory Management", "nist": "CM-7"},
+            )
+            con.log(f"[soap] WSDL found at {wurl}: {len(operations)} operations", "SUCCESS")
+            break
+
+    # 2. SOAPAction header spoofing
+    con.status("soap", "running", "SOAPAction header spoofing")
+    _soap_endpoints = [root + p for p in ["/soap", "/ws", "/services", "/api/soap", "/webservice"]]
+    if wsdl_url:
+        _soap_endpoints.insert(0, wsdl_url.split("?")[0])
+
+    _soap_spoof_actions = [
+        "urn:admin", "urn:AdminService#getUsers", "#getUsers",
+        "http://schemas.xmlsoap.org/soap/envelope/", "",
+    ]
+    _soap_envelope = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">'
+        '<soapenv:Header/>'
+        '<soapenv:Body><req xmlns="urn:test"><param>siphon_soap_probe</param></req></soapenv:Body>'
+        '</soapenv:Envelope>'
+    )
+    _soap_err_re = re.compile(
+        r'<faultstring>|<faultcode>|soap:Fault|soapenv:Fault|'
+        r'NullPointerException|ClassCastException|stack trace',
+        re.I
+    )
+
+    for sep in _soap_endpoints[:3]:
+        if _shutdown_requested:
+            break
+        for spoof_action in _soap_spoof_actions[:3]:
+            try:
+                r = sess.post(
+                    sep,
+                    data=_soap_envelope.encode("utf-8"),
+                    headers={
+                        "Content-Type": "text/xml; charset=UTF-8",
+                        "SOAPAction":   f'"{spoof_action}"',
+                    },
+                    timeout=timeout,
+                    allow_redirects=False,
+                )
+                if r is not None and r.status_code in (200, 500):
+                    body_snip = r.text[:500]
+                    if _soap_err_re.search(body_snip):
+                        output.add_finding(
+                            phase="soap",
+                            title="SOAP Verbose Fault / Error Disclosure",
+                            severity="MEDIUM",
+                            url=sep,
+                            detail=(
+                                f"The SOAP endpoint returned a verbose fault response with SOAPAction "
+                                f"'{spoof_action}'. Verbose SOAP faults disclose server-side implementation "
+                                "details, stack traces, and class names."
+                            ),
+                            evidence=f"SOAPAction: {spoof_action!r} → HTTP {r.status_code}; {body_snip[:300]}",
+                            remediation=(
+                                "Return generic fault messages in production. "
+                                "Log full error details server-side only."
+                            ),
+                            extra={"owasp": "API8:2023 Security Misconfiguration", "nist": "SI-11"},
+                        )
+                        con.log(f"[soap] Verbose fault at {sep} SOAPAction={spoof_action!r}", "SUCCESS")
+                        break
+            except Exception:
+                pass
+
+    # 3. WS-Security bypass — expired timestamp, empty PasswordDigest
+    con.status("soap", "running", "WS-Security bypass testing")
+    _wsse_expired_envelope = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" '
+        'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" '
+        'xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">'
+        '<soapenv:Header>'
+        '<wsse:Security>'
+        '<wsu:Timestamp><wsu:Created>2000-01-01T00:00:00Z</wsu:Created>'
+        '<wsu:Expires>2000-01-01T00:05:00Z</wsu:Expires></wsu:Timestamp>'
+        '<wsse:UsernameToken>'
+        '<wsse:Username>admin</wsse:Username>'
+        '<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest"></wsse:Password>'
+        '</wsse:UsernameToken>'
+        '</wsse:Security>'
+        '</soapenv:Header>'
+        '<soapenv:Body><req xmlns="urn:test"><param>siphon_wsse_probe</param></req></soapenv:Body>'
+        '</soapenv:Envelope>'
+    )
+    for sep in _soap_endpoints[:2]:
+        if _shutdown_requested:
+            break
+        try:
+            r = sess.post(
+                sep,
+                data=_wsse_expired_envelope.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=UTF-8", "SOAPAction": '""'},
+                timeout=timeout,
+                allow_redirects=False,
+            )
+            if r is not None and r.status_code == 200:
+                if "siphon_wsse_probe" in r.text or ("Fault" not in r.text and len(r.text) > 50):
+                    output.add_finding(
+                        phase="soap",
+                        title="WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
+                        severity="HIGH",
+                        url=sep,
+                        detail=(
+                            "The SOAP endpoint accepted a WS-Security token with an expired timestamp "
+                            "(year 2000) and an empty PasswordDigest without returning a fault. "
+                            "This suggests WS-Security validation is disabled or misconfigured, allowing "
+                            "authentication bypass."
+                        ),
+                        evidence=f"HTTP {r.status_code}; response[:300]: {r.text[:300]}",
+                        remediation=(
+                            "Enforce WS-Security timestamp validation with a max skew of 5 minutes. "
+                            "Reject requests with missing or invalid PasswordDigest. "
+                            "Enable UsernameToken authentication validation."
+                        ),
+                        extra={"owasp": "API2:2023 Broken Authentication", "nist": "IA-3"},
+                    )
+                    con.log(f"[soap] WS-Security bypass at {sep}", "SUCCESS")
+                    break
+        except Exception:
+            pass
+
+    # 4. SOAP injection via string parameters
+    con.status("soap", "running", "SOAP injection testing")
+    _soap_inject_payloads = [
+        ("</param><injected>siphon_soap_inject</injected><param>",
+         re.compile(r'siphon_soap_inject', re.I)),
+        ("' or '1'='1",
+         re.compile(r'siphon_soap_inject|sql.*error|ORA-|SQLSTATE|syntax.*error', re.I)),
+    ]
+    _soap_inject_envelope_tpl = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">'
+        '<soapenv:Header/>'
+        '<soapenv:Body><req xmlns="urn:test"><param>{PAYLOAD}</param></req></soapenv:Body>'
+        '</soapenv:Envelope>'
+    )
+    for sep in _soap_endpoints[:2]:
+        if _shutdown_requested:
+            break
+        for payload, sig_re in _soap_inject_payloads:
+            try:
+                body = _soap_inject_envelope_tpl.replace("{PAYLOAD}", payload)
+                r = sess.post(
+                    sep,
+                    data=body.encode("utf-8"),
+                    headers={"Content-Type": "text/xml; charset=UTF-8", "SOAPAction": '""'},
+                    timeout=timeout,
+                    allow_redirects=False,
+                )
+                if r is not None and r.status_code in (200, 500) and sig_re.search(r.text):
+                    output.add_finding(
+                        phase="soap",
+                        title="SOAP Injection — Parameter Reflected or Error Triggered",
+                        severity="HIGH",
+                        url=sep,
+                        detail=(
+                            f"A SOAP injection payload was accepted and produced a detectable response. "
+                            f"Payload: {payload[:80]!r}. This may indicate XML injection or SQL injection "
+                            "within SOAP message processing."
+                        ),
+                        evidence=f"Payload: {payload[:80]!r} → HTTP {r.status_code}; {r.text[:300]}",
+                        remediation=(
+                            "Validate and sanitize all SOAP parameter values server-side. "
+                            "Use schema validation (XSD) for all incoming SOAP messages. "
+                            "Use parameterized queries to prevent SQL injection via SOAP parameters."
+                        ),
+                        extra={"owasp": "API8:2023 Security Misconfiguration", "nist": "SI-10"},
+                    )
+                    con.log(f"[soap] SOAP injection at {sep}: {payload[:40]!r}", "SUCCESS")
+                    break
+            except Exception:
+                pass
+
+    # 5. WS-Addressing header injection (ReplyTo/FaultTo)
+    con.status("soap", "running", "WS-Addressing header injection")
+    _wsa_envelope = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" '
+        'xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+        '<soapenv:Header>'
+        '<wsa:ReplyTo><wsa:Address>http://169.254.169.254/latest/meta-data/</wsa:Address></wsa:ReplyTo>'
+        '<wsa:FaultTo><wsa:Address>http://169.254.169.254/latest/meta-data/</wsa:Address></wsa:FaultTo>'
+        '<wsa:To>{ENDPOINT}</wsa:To>'
+        '<wsa:Action>urn:probe</wsa:Action>'
+        '</soapenv:Header>'
+        '<soapenv:Body><req xmlns="urn:test"><param>siphon_wsa_probe</param></req></soapenv:Body>'
+        '</soapenv:Envelope>'
+    )
+    for sep in _soap_endpoints[:2]:
+        if _shutdown_requested:
+            break
+        try:
+            body = _wsa_envelope.replace("{ENDPOINT}", sep)
+            r = sess.post(
+                sep,
+                data=body.encode("utf-8"),
+                headers={"Content-Type": "text/xml; charset=UTF-8", "SOAPAction": '""'},
+                timeout=timeout,
+                allow_redirects=False,
+            )
+            # 202 Accepted without immediate response body = async callback dispatched
+            if r is not None and r.status_code in (200, 202):
+                if r.status_code == 202 or len(r.text) < 100:
+                    output.add_finding(
+                        phase="soap",
+                        title="WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)",
+                        severity="HIGH",
+                        url=sep,
+                        detail=(
+                            "The SOAP endpoint accepted WS-Addressing headers with an internal "
+                            "IP (169.254.169.254 — AWS metadata) in ReplyTo/FaultTo and returned "
+                            f"HTTP {r.status_code} without rejecting the address. "
+                            "If the server dispatches asynchronous callbacks to those addresses, "
+                            "this is a blind SSRF vulnerability."
+                        ),
+                        evidence=f"WS-Addressing ReplyTo: 169.254.169.254 → HTTP {r.status_code}",
+                        remediation=(
+                            "Validate WS-Addressing ReplyTo and FaultTo addresses against an allowlist. "
+                            "Block private IP ranges and cloud metadata endpoints."
+                        ),
+                        extra={"owasp": "API7:2023 Server Side Request Forgery", "nist": "SI-10"},
+                    )
+                    con.log(f"[soap] WS-Addressing SSRF candidate at {sep}", "SUCCESS")
+                    break
+        except Exception:
+            pass
+
+    con.status("soap", "done", "SOAP testing complete")
+
+
+# ---------------------------------------------------------------------------
+# Phase 19: File Upload Endpoint Detection (Informational)
+# ---------------------------------------------------------------------------
+
+def phase_file_upload_info(settings: dict, sess: requests.Session,
+                           auth_sess, output: OutputManager,
+                           inventory: list) -> None:
+    """Phase 19: Detect file upload endpoints in API inventory (informational)."""
+    scan     = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout  = scan.get("timeout", 10)
+    target   = _parse_target(base_url)
+    root     = f"{target['scheme']}://{target['netloc']}"
+
+    con.status("file_upload_info", "running", "Detecting file upload endpoints")
+
+    test_sess = auth_sess if auth_sess else sess
+
+    # Signals that an endpoint accepts file uploads
+    _upload_path_re  = re.compile(r'/upload|/file|/attachment|/import|/media|/document|/image|/asset', re.I)
+    _upload_field_re = re.compile(r'^(file|upload|attachment|document|image|media|data)$', re.I)
+    _dangerous_ext_re = re.compile(r'\.(php|phtml|php3|php5|phar|asp|aspx|jsx|jsp|jspx|cfm|shtml)\b', re.I)
+    _probe_extensions = [".txt", ".html", ".php", ".jsp", ".aspx", ".svg"]
+
+    upload_endpoints_found = []
+
+    # 1. Scan inventory for upload-like endpoints and body fields
+    for ep in inventory:
+        if _shutdown_requested:
+            break
+        path        = ep.get("path", "")
+        method      = ep.get("method", "").upper()
+        body_fields = ep.get("body_fields", []) or []
+        content_type = ep.get("content_type", "")
+
+        is_upload = False
+        upload_field = None
+
+        # Check path heuristic
+        if _upload_path_re.search(path):
+            is_upload = True
+
+        # Check body fields for file-upload field names
+        if not is_upload:
+            for field in body_fields:
+                fname = field.get("name", field) if isinstance(field, dict) else str(field)
+                if _upload_field_re.match(fname):
+                    is_upload   = True
+                    upload_field = fname
+                    break
+
+        # Check content-type hint
+        if not is_upload and "multipart" in content_type.lower():
+            is_upload = True
+
+        if not is_upload or method not in ("POST", "PUT", "PATCH"):
+            continue
+
+        upload_endpoints_found.append((ep, upload_field))
+        probe_path = re.sub(r'\{[^}]+\}|:\w+', '1', path)
+        ep_url     = root + probe_path
+
+        # Informational finding — upload endpoint detected
+        output.add_finding(
+            phase="file_upload_info",
+            title="File Upload Endpoint Detected",
+            severity="INFO",
+            url=ep_url,
+            detail=(
+                f"Endpoint {method} {path} appears to accept file uploads "
+                f"{'(field: ' + upload_field + ')' if upload_field else '(path heuristic)'}. "
+                "File upload endpoints should be reviewed for unrestricted file type acceptance, "
+                "missing virus scanning, path traversal, and storage misconfigurations."
+            ),
+            evidence=f"Method: {method}, Path: {path}, Upload field: {upload_field or 'heuristic'}",
+            remediation=(
+                "Validate file type server-side using MIME type sniffing (not just extension). "
+                "Allowlist accepted file types. Store uploads outside the web root. "
+                "Scan all uploaded files for malware before serving."
+            ),
+            extra={"owasp": "API8:2023 Security Misconfiguration", "nist": "SI-3"},
+        )
+        con.log(f"[file_upload_info] Upload endpoint: {method} {ep_url}", "INFO")
+
+        # 2. Probe accepted file types by trying multipart POST with small test files
+        accepted_exts = []
+        rejected_exts = []
+        for ext in _probe_extensions:
+            if _shutdown_requested:
+                break
+            fake_content = b"siphon_upload_probe"
+            files = {
+                (upload_field or "file"): (
+                    f"siphon_probe{ext}",
+                    fake_content,
+                    "application/octet-stream",
+                )
+            }
+            try:
+                r = test_sess.request(
+                    method, ep_url, files=files, timeout=timeout, allow_redirects=False
+                )
+                if r is not None and r.status_code in (200, 201, 202):
+                    accepted_exts.append(ext)
+                else:
+                    rejected_exts.append(ext)
+            except Exception:
+                pass
+
+        if accepted_exts:
+            has_dangerous = any(_dangerous_ext_re.search(e) for e in accepted_exts)
+            sev = "HIGH" if has_dangerous else "INFO"
+            output.add_finding(
+                phase="file_upload_info",
+                title=(
+                    "Dangerous File Extension Accepted by Upload Endpoint"
+                    if has_dangerous
+                    else "File Upload — Accepted File Types Identified"
+                ),
+                severity=sev,
+                url=ep_url,
+                detail=(
+                    f"Upload endpoint {method} {path} accepted the following extensions: "
+                    f"{', '.join(accepted_exts)}. "
+                    + (
+                        f"Dangerous extensions {[e for e in accepted_exts if _dangerous_ext_re.search(e)]} "
+                        "may allow remote code execution if uploaded files are served."
+                        if has_dangerous
+                        else "Review whether all accepted types are required."
+                    )
+                ),
+                evidence=(
+                    f"Accepted: {accepted_exts}  Rejected: {rejected_exts}"
+                ),
+                remediation=(
+                    "Implement a strict allowlist of accepted file extensions and MIME types. "
+                    "Reject executable file types (.php, .jsp, .aspx, .svg with scripts) server-side. "
+                    "Store uploaded files with randomized names outside the web root."
+                ),
+                extra={"owasp": "API8:2023 Security Misconfiguration", "nist": "SI-3"},
+            )
+            if has_dangerous:
+                con.log(f"[file_upload_info] Dangerous ext accepted at {ep_url}: {accepted_exts}", "SUCCESS")
+
+    # 3. Probe common upload paths not in inventory
+    _common_upload_paths = [
+        "/api/upload", "/api/v1/upload", "/api/v2/upload",
+        "/upload", "/api/files", "/api/v1/files", "/api/attachments",
+        "/api/media", "/api/images", "/api/import",
+    ]
+    known_paths = {ep.get("path", "") for ep in inventory}
+    for cup in _common_upload_paths:
+        if _shutdown_requested:
+            break
+        if cup in known_paths:
+            continue
+        cup_url = root + cup
+        # Quick OPTIONS probe to check if endpoint exists
+        try:
+            r = test_sess.options(cup_url, timeout=timeout, allow_redirects=False)
+            if r is not None and r.status_code not in (404, 405, 501):
+                output.add_finding(
+                    phase="file_upload_info",
+                    title="Potential Undocumented Upload Endpoint Discovered",
+                    severity="INFO",
+                    url=cup_url,
+                    detail=(
+                        f"OPTIONS {cup} returned HTTP {r.status_code} — the endpoint may exist "
+                        "but is not documented in the API spec/inventory. Undocumented upload "
+                        "endpoints bypass normal security review."
+                    ),
+                    evidence=f"OPTIONS {cup_url} → HTTP {r.status_code}; Allow: {r.headers.get('Allow', 'N/A')}",
+                    remediation=(
+                        "Document all upload endpoints in the API spec. "
+                        "Disable or remove upload endpoints that are not required."
+                    ),
+                    extra={"owasp": "API9:2023 Improper Inventory Management", "nist": "CM-7"},
+                )
+        except Exception:
+            pass
+
+    con.status("file_upload_info", "done",
+               f"Found {len(upload_endpoints_found)} upload endpoint(s)")
+
+
+# ---------------------------------------------------------------------------
 # Phase 15: Sensitive File Exposure — API9: Improper Inventory Management
 # ---------------------------------------------------------------------------
 
@@ -6865,6 +7800,41 @@ def main() -> None:
         # ------------------------------------------------------------------
         if not _skip("unsafe_consumption"):
             _run_phase("unsafe_consumption", phase_unsafe_consumption,
+                       t_settings, sess, auth_sess, output, api_inventory)
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 17: Verb Tampering
+        # ------------------------------------------------------------------
+        if not _skip("verb_tampering"):
+            _run_phase("verb_tampering", phase_verb_tampering,
+                       t_settings, sess, auth_sess, output, api_inventory)
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 18: SOAP / WS-Security
+        # ------------------------------------------------------------------
+        if not _skip("soap"):
+            _run_phase("soap", phase_soap, t_settings, sess, output)
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ------------------------------------------------------------------
+        # Phase 19: File Upload Endpoint Detection (Informational)
+        # ------------------------------------------------------------------
+        if not _skip("file_upload_info"):
+            _run_phase("file_upload_info", phase_file_upload_info,
                        t_settings, sess, auth_sess, output, api_inventory)
 
         # ------------------------------------------------------------------
