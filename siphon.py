@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "2.0.1"
+VERSION = "2.1.1"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -717,6 +717,7 @@ class OutputManager:
         self._lock = threading.Lock()
         self._start_time = datetime.now(timezone.utc)
         self.findings_json = self.out_dir / "findings.json"
+        self._current_accounts: list = []
         self._setup_dirs()
         if not self.findings_json.exists():
             self.findings_json.write_text("[]", encoding="utf-8")
@@ -737,6 +738,10 @@ class OutputManager:
         return d / name
 
     # ---------------------------------------------------------------- adding
+    def set_auth_context(self, accounts: list) -> None:
+        """Set the active auth context for subsequent add_finding calls."""
+        self._current_accounts = list(accounts)
+
     def add_finding(
         self,
         phase: str,
@@ -805,6 +810,7 @@ class OutputManager:
             "owasp_url":       _owasp_url,
             "nist":            nist,
             "remediation":     remediation,
+            "accounts":        list(self._current_accounts),
         }
 
         # Native Siphon entry kept in self.findings for supplementary reports
@@ -851,6 +857,16 @@ class OutputManager:
                         ex_cves = set(c.strip() for c in (ex.get("cves") or "").split(",") if c.strip())
                         new_cves = set(c.strip() for c in cves.split(",") if c.strip())
                         ex["cves"] = ",".join(sorted(ex_cves | new_cves))
+                    # Merge accounts
+                    if self._current_accounts:
+                        _ex_accts = ex.get("accounts") or []
+                        _acct_keys = {(a.get("username", ""), a.get("role", "")) for a in _ex_accts}
+                        for _a in self._current_accounts:
+                            _k = (_a.get("username", ""), _a.get("role", ""))
+                            if _k not in _acct_keys:
+                                _ex_accts.append(_a)
+                                _acct_keys.add(_k)
+                        ex["accounts"] = _ex_accts
                     merged = True
                     break
 
@@ -3679,74 +3695,214 @@ def phase_recon(settings: dict, sess: requests.Session,
     _hdr_lines += [f"{k}: {v}" for k, v in resp.headers.items()]
     _hdr_file.write_text("\n".join(_hdr_lines), encoding="utf-8")
 
-    # Server header disclosure
+    # Header Data Leakage — server/technology disclosure headers
     server = resp.headers.get("Server", "")
     x_powered = resp.headers.get("X-Powered-By", "")
     x_generator = resp.headers.get("X-Generator", "")
+    _hdr_cmd = f"python3 -c \"import requests; r=requests.get('{base_url}'); print(dict(r.headers))\""
     if server:
         output.add_finding(
             phase="recon",
-            title="Server Header Discloses Technology",
+            title="Header Data Leakage: Server",
             severity="LOW",
             url=base_url,
-            detail=f"Server header reveals: {server}",
+            detail=f"Server header discloses web server software and potentially its version: '{server}'. Assists attackers in fingerprinting known vulnerabilities.",
             evidence=f"Server: {server}",
             remediation="Remove or genericize the Server header.",
             output_file=str(_hdr_file),
+            extra={"command": _hdr_cmd},
         )
     if x_powered:
         output.add_finding(
             phase="recon",
-            title="X-Powered-By Header Discloses Framework",
+            title="Header Data Leakage: X-Powered-By",
             severity="LOW",
             url=base_url,
-            detail=f"X-Powered-By header reveals: {x_powered}",
+            detail=f"X-Powered-By header discloses the technology stack: '{x_powered}'. Assists attackers in identifying framework-specific vulnerabilities.",
             evidence=f"X-Powered-By: {x_powered}",
             remediation="Remove X-Powered-By header from all responses.",
+            extra={"command": _hdr_cmd},
+        )
+    _aspnet = resp.headers.get("X-AspNet-Version", "") or resp.headers.get("X-AspNetMvc-Version", "")
+    if _aspnet:
+        output.add_finding(
+            phase="recon",
+            title="Header Data Leakage: X-AspNet-Version",
+            severity="LOW",
+            url=base_url,
+            detail=f"X-AspNet-Version header discloses the ASP.NET runtime version: '{_aspnet}'. Allows targeted enumeration of known runtime vulnerabilities.",
+            evidence=f"X-AspNet-Version: {_aspnet}",
+            remediation="Disable in web.config: <httpRuntime enableVersionHeader=\"false\"/>",
+            extra={"command": _hdr_cmd},
+        )
+    _via = resp.headers.get("Via", "")
+    if _via:
+        output.add_finding(
+            phase="recon",
+            title="Header Data Leakage: Via",
+            severity="LOW",
+            url=base_url,
+            detail=f"Via header discloses intermediate proxy or CDN infrastructure: '{_via}'. Reveals internal routing topology and proxy software versions.",
+            evidence=f"Via: {_via}",
+            remediation="Configure proxies and load balancers to strip or genericize the Via header.",
+            extra={"command": _hdr_cmd},
         )
 
-    # Security headers — individual findings per header for accurate catalogue matching
+    # Security headers — restrict to the canonical 6
     _is_https = base_url.startswith("https://")
     hdrs = resp.headers
     if _is_https and not hdrs.get("Strict-Transport-Security"):
         output.add_finding(
             phase="recon",
-            title="Missing HTTP Strict Transport Security (HSTS)",
-            severity="MEDIUM",
+            title="Missing Security Header: Strict-Transport-Security",
+            severity="HIGH",
             url=base_url,
             detail="API does not set the Strict-Transport-Security header on HTTPS responses.",
             evidence="Strict-Transport-Security: (absent)",
             remediation="Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' to all HTTPS responses.",
+            extra={"command": _hdr_cmd},
         )
     if not hdrs.get("Content-Security-Policy"):
         output.add_finding(
             phase="recon",
-            title="Missing Content-Security-Policy Header",
-            severity="LOW",
+            title="Missing Security Header: Content-Security-Policy",
+            severity="MEDIUM",
             url=base_url,
             detail="API does not set a Content-Security-Policy header.",
             evidence="Content-Security-Policy: (absent)",
             remediation="Define a Content-Security-Policy that restricts inline scripts and unsafe sources.",
+            extra={"command": _hdr_cmd},
+        )
+    if not hdrs.get("X-Frame-Options"):
+        output.add_finding(
+            phase="recon",
+            title="Missing Security Header: X-Frame-Options",
+            severity="MEDIUM",
+            url=base_url,
+            detail="API does not set X-Frame-Options.",
+            evidence="X-Frame-Options: (absent)",
+            remediation="Add 'X-Frame-Options: DENY' or use CSP frame-ancestors 'none'.",
+            extra={"command": _hdr_cmd},
         )
     if not hdrs.get("X-Content-Type-Options"):
         output.add_finding(
             phase="recon",
-            title="Missing X-Content-Type-Options Header",
+            title="Missing Security Header: X-Content-Type-Options",
             severity="LOW",
             url=base_url,
             detail="API does not set X-Content-Type-Options: nosniff.",
             evidence="X-Content-Type-Options: (absent)",
             remediation="Add 'X-Content-Type-Options: nosniff' to all responses.",
+            extra={"command": _hdr_cmd},
         )
-    if not hdrs.get("X-Frame-Options") and not hdrs.get("Content-Security-Policy"):
+    if not hdrs.get("Referrer-Policy"):
         output.add_finding(
             phase="recon",
-            title="Missing X-Frame-Options Header",
+            title="Missing Security Header: Referrer-Policy",
             severity="LOW",
             url=base_url,
-            detail="API does not set X-Frame-Options or a CSP frame-ancestors directive.",
-            evidence="X-Frame-Options: (absent); Content-Security-Policy: (absent)",
-            remediation="Add 'X-Frame-Options: DENY' or use CSP frame-ancestors 'none'.",
+            detail="API does not set a Referrer-Policy header. URL parameters may leak to third parties via the Referer header.",
+            evidence="Referrer-Policy: (absent)",
+            remediation="Add 'Referrer-Policy: strict-origin-when-cross-origin' to all responses.",
+            extra={"command": _hdr_cmd},
+        )
+    if not hdrs.get("Cache-Control"):
+        output.add_finding(
+            phase="recon",
+            title="Missing Security Header: Cache-Control",
+            severity="LOW",
+            url=base_url,
+            detail="API does not set a Cache-Control header. Sensitive responses may be cached by browser or proxy.",
+            evidence="Cache-Control: (absent)",
+            remediation="Add 'Cache-Control: no-store, no-cache' to sensitive endpoint responses.",
+            extra={"command": _hdr_cmd},
+        )
+
+    # ── Permissive (misconfigured) security header checks ────────────────────
+    _csp_val = hdrs.get("Content-Security-Policy", "")
+    if _csp_val:
+        _csp_l = _csp_val.lower()
+        if "unsafe-inline" in _csp_l or "unsafe-eval" in _csp_l or (
+            re.search(r"(?:default|script)-src[^;]*\*", _csp_l)
+        ):
+            output.add_finding(
+                phase="recon",
+                title="Permissive Security Header: Content-Security-Policy",
+                severity="LOW",
+                url=base_url,
+                detail=(
+                    "Content-Security-Policy is present but contains permissive directives "
+                    f"(unsafe-inline, unsafe-eval, or wildcard sources): {_csp_val[:200]}"
+                ),
+                evidence=f"Content-Security-Policy: {_csp_val[:300]}",
+                remediation="Remove 'unsafe-inline' and 'unsafe-eval'. Use nonces or hashes for inline scripts.",
+                extra={"command": _hdr_cmd},
+            )
+    _hsts_val = hdrs.get("Strict-Transport-Security", "")
+    if _hsts_val and _is_https:
+        _ma_m = re.search(r'max-age\s*=\s*(\d+)', _hsts_val, re.I)
+        _max_age = int(_ma_m.group(1)) if _ma_m else 0
+        if _max_age < 31536000:
+            output.add_finding(
+                phase="recon",
+                title="Permissive Security Header: Strict-Transport-Security",
+                severity="LOW",
+                url=base_url,
+                detail=(
+                    f"HSTS max-age ({_max_age}s) is below the recommended minimum of "
+                    "31536000s (1 year), reducing SSL-stripping protection."
+                ),
+                evidence=f"Strict-Transport-Security: {_hsts_val}",
+                remediation="Set Strict-Transport-Security: max-age=31536000; includeSubDomains; preload",
+                extra={"command": _hdr_cmd},
+            )
+    _xfo_val = hdrs.get("X-Frame-Options", "")
+    if _xfo_val and _xfo_val.upper().strip() not in ("DENY", "SAMEORIGIN"):
+        output.add_finding(
+            phase="recon",
+            title="Permissive Security Header: X-Frame-Options",
+            severity="LOW",
+            url=base_url,
+            detail=f"X-Frame-Options is set to a permissive value: '{_xfo_val}'. Only DENY or SAMEORIGIN provide clickjacking protection.",
+            evidence=f"X-Frame-Options: {_xfo_val}",
+            remediation="Set X-Frame-Options: DENY (or SAMEORIGIN if same-origin embedding is required).",
+            extra={"command": _hdr_cmd},
+        )
+    _xcto_val = hdrs.get("X-Content-Type-Options", "")
+    if _xcto_val and _xcto_val.strip().lower() != "nosniff":
+        output.add_finding(
+            phase="recon",
+            title="Permissive Security Header: X-Content-Type-Options",
+            severity="LOW",
+            url=base_url,
+            detail=f"X-Content-Type-Options is not set to 'nosniff': '{_xcto_val}'.",
+            evidence=f"X-Content-Type-Options: {_xcto_val}",
+            remediation="Set X-Content-Type-Options: nosniff",
+            extra={"command": _hdr_cmd},
+        )
+    _rp_val = hdrs.get("Referrer-Policy", "")
+    if _rp_val and _rp_val.strip().lower() in ("unsafe-url", "no-referrer-when-downgrade", ""):
+        output.add_finding(
+            phase="recon",
+            title="Permissive Security Header: Referrer-Policy",
+            severity="LOW",
+            url=base_url,
+            detail=f"Referrer-Policy is set to '{_rp_val}', which sends the full URL as referrer to third parties.",
+            evidence=f"Referrer-Policy: {_rp_val}",
+            remediation="Set Referrer-Policy: strict-origin-when-cross-origin or no-referrer.",
+            extra={"command": _hdr_cmd},
+        )
+    _cc_val = hdrs.get("Cache-Control", "")
+    if _cc_val and "public" in _cc_val.lower() and "no-store" not in _cc_val.lower():
+        output.add_finding(
+            phase="recon",
+            title="Permissive Security Header: Cache-Control",
+            severity="LOW",
+            url=base_url,
+            detail=f"Cache-Control allows public caching ('{_cc_val}') without 'no-store'. Sensitive responses may be cached by intermediary proxies.",
+            evidence=f"Cache-Control: {_cc_val}",
+            remediation="Add 'Cache-Control: no-store, no-cache' to sensitive endpoint responses.",
+            extra={"command": _hdr_cmd},
         )
 
     # CORS wildcard check
@@ -4128,6 +4284,50 @@ _XSS_PAYLOADS = [
     "'><img src=x onerror=alert(1)>",
     "<svg onload=alert(1)>",
 ]
+
+def _xss_confirmed(payload: str, resp) -> bool:
+    """Return True only if payload appears in an executable HTML context.
+
+    Eliminates false positives where the app reflects the payload safely:
+      - URL reflected in an href/src/action attribute (URL kept as a link)
+      - Payload HTML-encoded (browser won't execute it)
+      - Payload only present in the request URL echo
+    """
+    import html as _html_mod
+    from urllib.parse import unquote as _unquote, unquote_plus as _unquote_plus
+    text = resp.text
+    if payload not in text:
+        return False
+
+    # 1. If every occurrence is HTML-encoded, it's safe
+    enc = _html_mod.escape(payload, quote=True)
+    if enc != payload and enc in text:
+        stripped = text.replace(enc, "")
+        if payload not in stripped:
+            return False
+
+    # 2. Strip the request URL and its decoded variants (URL reflection)
+    body = text
+    for variant in (resp.url, _unquote(resp.url), _unquote_plus(resp.url)):
+        body = body.replace(variant, "")
+
+    # 3. Strip payload appearances inside URL attribute values
+    _esc_pl = re.escape(payload)
+    body = re.sub(
+        r'(?:href|src|action|data(?:-[a-z][a-z0-9-]*)?)(?:\s*)=(?:\s*)["\'][^"\']*'
+        + _esc_pl + r'[^"\']*["\']',
+        '', body, flags=re.I
+    )
+    _url_enc_pl = quote(payload, safe='')
+    if _url_enc_pl != payload:
+        body = re.sub(
+            r'(?:href|src|action)(?:\s*)=(?:\s*)["\'][^"\']*'
+            + re.escape(_url_enc_pl) + r'[^"\']*["\']',
+            '', body, flags=re.I
+        )
+
+    return payload in body
+
 _CMD_PAYLOADS = [
     (";id",  re.compile(r'uid=\d+\(')),
     ("|id",  re.compile(r'uid=\d+\(')),
@@ -4167,6 +4367,38 @@ def _test_injection(sess: requests.Session, url: str, method: str,
         return None
 
 
+def _save_http_evidence(output: "OutputManager", phase: str, label: str,
+                        r: "requests.Response") -> "tuple[str, str]":
+    """Write HTTP request/response pair to the phase evidence directory.
+
+    Returns (request_file_path, response_file_path).
+    """
+    import re as _re
+    safe      = _re.sub(r'[^\w]', '_', label)[:60]
+    req_path  = output.output_path(phase, f"{safe}_request")
+    resp_path = output.output_path(phase, f"{safe}_response")
+
+    prep = r.request
+    req_lines = [f"{prep.method} {prep.url}"]
+    for k, v in (prep.headers or {}).items():
+        req_lines.append(f"{k}: {v}")
+    req_lines.append("")
+    if prep.body:
+        body = prep.body if isinstance(prep.body, str) \
+               else prep.body.decode("utf-8", errors="replace")
+        req_lines.append(body)
+    req_path.write_text("\n".join(req_lines), encoding="utf-8")
+
+    resp_lines = [f"HTTP/1.1 {r.status_code} {r.reason or ''}"]
+    for k, v in r.headers.items():
+        resp_lines.append(f"{k}: {v}")
+    resp_lines.append("")
+    resp_lines.append(r.text[:524288])
+    resp_path.write_text("\n".join(resp_lines), encoding="utf-8")
+
+    return str(req_path), str(resp_path)
+
+
 def phase_injection(settings: dict, sess: requests.Session,
                     output: OutputManager, inventory: list,
                     auth_sess=None) -> None:
@@ -4201,6 +4433,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             for payload, desc in _SQLI_PAYLOADS[:3]:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and _SQL_ERR_RE.search(resp.text):
+                    _rq, _rp = _save_http_evidence(output, "injection", f"sqli_{param}", resp)
                     output.add_finding(
                         phase="injection",
                         title="SQL Injection in API Parameter",
@@ -4209,6 +4442,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                         detail=(f"SQL error detected in response to parameter '{param}' "
                                 f"with payload: {payload} ({desc})"),
                         evidence=f"Response snippet: {resp.text[:300]}",
+                        output_file=f"{_rq},{_rp}",
                         remediation="Use parameterized queries; never concatenate user input into SQL.",
                     )
                     break
@@ -4224,6 +4458,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                         body = {param: {"$ne": None}}
                         resp = sess.request(method, url, json=body, timeout=timeout)
                     if resp and _NOSQL_ERR_RE.search(resp.text):
+                        _rq, _rp = _save_http_evidence(output, "injection", f"nosql_{param}", resp)
                         output.add_finding(
                             phase="injection",
                             title="NoSQL Injection in API Parameter",
@@ -4232,6 +4467,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                             detail=(f"NoSQL error pattern detected for parameter '{param}' "
                                     f"with payload: {payload}"),
                             evidence=f"Response snippet: {resp.text[:300]}",
+                            output_file=f"{_rq},{_rp}",
                             remediation="Validate and sanitize inputs; use ODM query builders.",
                         )
                         break
@@ -4242,6 +4478,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             for payload, desc in _SSTI_PAYLOADS[:3]:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and re.search(r'\b49\b', resp.text):
+                    _rq, _rp = _save_http_evidence(output, "injection", f"ssti_{param}", resp)
                     output.add_finding(
                         phase="injection",
                         title="Server-Side Template Injection (SSTI)",
@@ -4250,6 +4487,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                         detail=(f"SSTI detected: payload '{payload}' ({desc}) evaluated to 49 "
                                 f"in response for parameter '{param}'."),
                         evidence=f"Response contains '49': {resp.text[:200]}",
+                        output_file=f"{_rq},{_rp}",
                         remediation="Never render user input as templates; use safe rendering contexts.",
                     )
                     break
@@ -4259,6 +4497,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and resp.status_code == 200:
                     if re.search(r'(ldap|directory|dn=|objectClass)', resp.text, re.I):
+                        _rq, _rp = _save_http_evidence(output, "injection", f"ldap_{param}", resp)
                         output.add_finding(
                             phase="injection",
                             title="LDAP Injection in API Parameter",
@@ -4267,6 +4506,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                             detail=(f"Possible LDAP injection for parameter '{param}' "
                                     f"with payload: {payload}"),
                             evidence=f"Response snippet: {resp.text[:200]}",
+                            output_file=f"{_rq},{_rp}",
                             remediation="Escape LDAP special characters in user input.",
                         )
                         break
@@ -4289,6 +4529,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                 timeout=timeout,
             )
             if resp and re.search(r'(root:x:|nobody:|daemon:)', resp.text):
+                _rq, _rp = _save_http_evidence(output, "injection", "xxe", resp)
                 output.add_finding(
                     phase="injection",
                     title="XML External Entity (XXE) Injection",
@@ -4296,6 +4537,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                     url=url,
                     detail="XXE payload caused /etc/passwd content to appear in response.",
                     evidence=f"Response snippet: {resp.text[:300]}",
+                    output_file=f"{_rq},{_rp}",
                     remediation="Disable external entity processing in XML parsers.",
                 )
         except Exception:
@@ -4315,7 +4557,8 @@ def phase_injection(settings: dict, sess: requests.Session,
         for param in test_params[:3]:
             for payload in _XSS_PAYLOADS[:3]:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
-                if resp and payload in resp.text:
+                if resp and _xss_confirmed(payload, resp):
+                    _rq, _rp = _save_http_evidence(output, "injection", f"xss_{param}", resp)
                     output.add_finding(
                         phase="injection",
                         title="Reflected Cross-Site Scripting (XSS) in API Response",
@@ -4324,6 +4567,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                         detail=(f"XSS payload reflected unescaped in API response for parameter '{param}'. "
                                 f"Payload: {payload}"),
                         evidence=f"Response contains unescaped payload: {resp.text[:200]}",
+                        output_file=f"{_rq},{_rp}",
                         remediation="Encode all user-supplied output. Set Content-Type to application/json. Implement CSP.",
                     )
                     break
@@ -4343,6 +4587,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             for cmd_pay, cmd_pat in _CMD_PAYLOADS[:2]:
                 resp = _test_injection(sess, url, method, param, "test" + cmd_pay, timeout)
                 if resp and cmd_pat.search(resp.text):
+                    _rq, _rp = _save_http_evidence(output, "injection", f"cmdi_{param}", resp)
                     output.add_finding(
                         phase="injection",
                         title="OS Command Injection in API Parameter",
@@ -4351,6 +4596,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                         detail=(f"OS command injection detected in parameter '{param}' "
                                 f"with payload: test{cmd_pay}"),
                         evidence=f"uid= pattern found in response: {resp.text[:300]}",
+                        output_file=f"{_rq},{_rp}",
                         remediation="Never pass user input to OS calls. Use allow-listed commands with no user input in arguments.",
                     )
                     break
@@ -4370,6 +4616,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             resp = _test_injection(sess, url, method, param, _CRLF_INJECTION_HEADER, timeout)
             if resp and ("Siphon-Injected" in resp.text or
                          "Siphon-Injected" in str(resp.headers)):
+                _rq, _rp = _save_http_evidence(output, "injection", f"crlf_{param}", resp)
                 output.add_finding(
                     phase="injection",
                     title="CRLF Injection in API Parameter",
@@ -4378,6 +4625,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                     detail=(f"CRLF sequence injected via parameter '{param}' was reflected "
                             f"in response headers or body."),
                     evidence=f"Parameter: {param}  Payload: {_CRLF_INJECTION_HEADER}",
+                    output_file=f"{_rq},{_rp}",
                     remediation="Strip \\r and \\n from any user input used in HTTP headers or responses.",
                 )
                 break
@@ -4399,6 +4647,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             for payload in payloads:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and _TRAVERSAL_RE.search(resp.text):
+                    _rq, _rp = _save_http_evidence(output, "injection", f"traversal_{param}", resp)
                     output.add_finding(
                         phase="injection",
                         title="Path Traversal / Local File Inclusion in API",
@@ -4407,6 +4656,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                         detail=(f"Path traversal in parameter '{param}' disclosed file contents. "
                                 f"Payload: {payload}"),
                         evidence=f"File content excerpt: {resp.text[:300]}",
+                        output_file=f"{_rq},{_rp}",
                         remediation="Validate file path inputs. Use allow-lists. Never expose filesystem paths via API parameters.",
                     )
                     break
@@ -4427,6 +4677,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             for csv_pay in _csv_formula_payloads[:1]:
                 resp = _test_injection(sess, url, method, field, csv_pay, timeout)
                 if resp and resp.status_code in (200, 201, 202):
+                    _rq, _rp = _save_http_evidence(output, "injection", f"csv_{field}", resp)
                     output.add_finding(
                         phase="injection",
                         title="CSV Injection in User Export",
@@ -4436,6 +4687,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                                 f"injection payload ({csv_pay!r}). If this field is included in CSV/Excel "
                                 f"exports, the formula may execute commands on recipients' workstations."),
                         evidence=f"Field: {field}  Payload: {csv_pay}  Response: {resp.status_code}",
+                        output_file=f"{_rq},{_rp}",
                         remediation=(
                             "Sanitise all text values before CSV export. "
                             "Prefix cells starting with =, +, -, @ with a single-quote character."
@@ -4455,6 +4707,7 @@ def phase_injection(settings: dict, sess: requests.Session,
         for param in test_params:
             resp = _test_injection(sess, url, method, param, _log_inject_payload, timeout)
             if resp and resp.status_code in (200, 201, 400, 422, 500):
+                _rq, _rp = _save_http_evidence(output, "injection", f"loginject_{param}", resp)
                 output.add_finding(
                     phase="injection",
                     title="Log Injection via User-Agent / Query Parameter",
@@ -4464,6 +4717,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                             f"payload. If the server logs this parameter without sanitisation, an attacker "
                             f"can inject fake log entries to mislead forensic analysis."),
                     evidence=f"Parameter: {param}  Payload: {repr(_log_inject_payload)}  Response: {resp.status_code}",
+                    output_file=f"{_rq},{_rp}",
                     remediation="Strip CRLF/newline characters from all inputs written to logs. Use structured logging.",
                 )
                 break
@@ -4486,6 +4740,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                 if (r_t and r_f
                         and r_t.status_code == 200
                         and abs(len(r_t.text) - len(r_f.text)) > 50):
+                    _rq, _rp = _save_http_evidence(output, "injection", f"sqli_bool_{param}", r_t)
                     output.add_finding(
                         phase="injection",
                         title="Blind SQL Injection (Boolean-Based) in API",
@@ -4496,6 +4751,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                                 f"FALSE response ({len(r_f.text)} bytes) differ significantly."),
                         evidence=(f"TRUE  payload: {_bool_true_pay} → {r_t.status_code} ({len(r_t.text)} bytes)\n"
                                   f"FALSE payload: {_bool_false_pay} → {r_f.status_code} ({len(r_f.text)} bytes)"),
+                        output_file=f"{_rq},{_rp}",
                         remediation="Use parameterised queries. Length difference confirms SQL branching on user input.",
                     )
                     break
@@ -4524,6 +4780,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                     resp = _test_injection(sess, url, method, param, tsql, delay + 5)
                     elapsed = _ti.monotonic() - t0
                     if resp and elapsed >= delay:
+                        _rq, _rp = _save_http_evidence(output, "injection", f"sqli_time_{param}", resp)
                         output.add_finding(
                             phase="injection",
                             title="Blind SQL Injection (Time-Based) in API",
@@ -4532,6 +4789,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                             detail=(f"Time-based blind SQLi in parameter '{param}': "
                                     f"payload '{tsql}' caused {elapsed:.1f}s delay."),
                             evidence=f"Payload: {tsql}  Elapsed: {elapsed:.2f}s  Threshold: {delay}s",
+                            output_file=f"{_rq},{_rp}",
                             remediation="Use parameterised queries. Never concatenate user input into SQL.",
                         )
                         break
@@ -4570,6 +4828,9 @@ def phase_injection(settings: dict, sess: requests.Session,
                 allow_redirects=False,
             )
             if _dr is not None and _dr.status_code in (200, 201, 400, 422, 500):
+                import re as _re2
+                _dlabel = _re2.sub(r'[^\w]', '_', _dsuf)[:40]
+                _rq, _rp = _save_http_evidence(output, "injection", f"deser{_dlabel}", _dr)
                 output.add_finding(
                     phase="injection",
                     title=_dtitle,
@@ -4577,6 +4838,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                     url=_durl,
                     detail=_ddesc,
                     evidence=f"POST {_dsuf} ({_dct}) → HTTP {_dr.status_code}; body[:200]: {_dr.text[:200]}",
+                    output_file=f"{_rq},{_rp}",
                     remediation=(
                         "Never deserialize untrusted data. Use safe alternatives: "
                         "yaml.safe_load() instead of yaml.load(); JSON instead of pickle."
@@ -7641,7 +7903,7 @@ def phase_access_matrix(
     timeout       = scan.get("timeout", 10)
     project_dir   = Path(scan.get("project", "."))
 
-    if not auth_matrix and not inventory:
+    if not inventory:
         return {}
 
     con.section("Phase 20: Multi-Credential Access Matrix")
@@ -7690,12 +7952,9 @@ def phase_access_matrix(
                     allow_redirects=False,
                     headers={"Accept": "application/json"},
                 )
-                access[role] = {
-                    "status":     r.status_code,
-                    "accessible": r.status_code in (200, 201, 202, 204),
-                }
+                access[role] = r.status_code
             except Exception:
-                access[role] = {"status": None, "accessible": False}
+                access[role] = None
 
         endpoint_access.append({
             "method": method,
@@ -7705,8 +7964,11 @@ def phase_access_matrix(
         })
 
     # ── Calculate privilege counts ────────────────────────────────────────────
+    def _ok(st):
+        return isinstance(st, int) and st in (200, 201, 202, 204)
+
     privilege_counts = {
-        role: sum(1 for ep in endpoint_access if ep["access"].get(role, {}).get("accessible"))
+        role: sum(1 for ep in endpoint_access if _ok(ep["access"].get(role)))
         for role in all_roles
     }
     most_privileged = (
@@ -7717,14 +7979,14 @@ def phase_access_matrix(
 
     # ── Generate findings ─────────────────────────────────────────────────────
     for ep in endpoint_access:
-        ep_access = ep["access"]
-        unauth    = ep_access.get("unauthenticated", {})
-        any_authed = any(ep_access.get(r, {}).get("accessible") for r in cred_roles)
+        ep_access  = ep["access"]
+        unauth_st  = ep_access.get("unauthenticated")
+        any_authed = any(_ok(ep_access.get(r)) for r in cred_roles)
 
         # Finding 1: unauthenticated access to an endpoint that IS accessible with credentials
         # Skip diagnostic/info methods — TRACE and OPTIONS are expected to be publicly accessible
         _skip_methods = {"TRACE", "OPTIONS"}
-        if unauth.get("accessible") and any_authed and ep["method"].upper() not in _skip_methods:
+        if _ok(unauth_st) and any_authed and ep["method"].upper() not in _skip_methods:
             output.add_finding(
                 phase="access_matrix",
                 title=f"Unauthenticated Access to {ep['method']} {ep['path']}",
@@ -7732,11 +7994,11 @@ def phase_access_matrix(
                 url=ep["url"],
                 detail=(
                     f"Endpoint {ep['method']} {ep['path']} returned HTTP "
-                    f"{unauth['status']} without authentication, but returns 2xx "
+                    f"{unauth_st} without authentication, but returns 2xx "
                     f"when authenticated. This indicates missing or insufficient "
                     f"access control."
                 ),
-                evidence=f"URL: {ep['url']} | Unauth status: {unauth['status']}",
+                evidence=f"URL: {ep['url']} | Unauth status: {unauth_st}",
                 remediation=(
                     "Enforce authentication checks on all non-public endpoints. "
                     "Verify authorization middleware is applied globally."
@@ -7750,13 +8012,11 @@ def phase_access_matrix(
 
         # Finding 2: BFLA — lower-privilege role accessing endpoint exclusive to most-privileged
         if most_privileged and len(cred_roles) > 1:
-            high_accessible = ep_access.get(most_privileged, {}).get("accessible")
-            if high_accessible:
+            if _ok(ep_access.get(most_privileged)):
                 for low_role in cred_roles:
                     if low_role == most_privileged:
                         continue
-                    low_accessible = ep_access.get(low_role, {}).get("accessible")
-                    if low_accessible:
+                    if _ok(ep_access.get(low_role)):
                         output.add_finding(
                             phase="access_matrix",
                             title=(
@@ -7773,8 +8033,8 @@ def phase_access_matrix(
                             ),
                             evidence=(
                                 f"URL: {ep['url']} | "
-                                f"{most_privileged}: HTTP {ep_access[most_privileged]['status']} | "
-                                f"{low_role}: HTTP {ep_access[low_role]['status']}"
+                                f"{most_privileged}: HTTP {ep_access[most_privileged]} | "
+                                f"{low_role}: HTTP {ep_access[low_role]}"
                             ),
                             remediation=(
                                 f"Implement role-based access control. Only allow "
@@ -7803,8 +8063,8 @@ def phase_access_matrix(
 
     unauth_count = sum(
         1 for ep in endpoint_access
-        if ep["access"].get("unauthenticated", {}).get("accessible")
-        and any(ep["access"].get(r, {}).get("accessible") for r in cred_roles)
+        if _ok(ep["access"].get("unauthenticated"))
+        and any(_ok(ep["access"].get(r)) for r in cred_roles)
     )
     con.info(f"  Unauthenticated access found on {unauth_count} endpoint(s)")
     return access_matrix
@@ -7948,7 +8208,9 @@ def main() -> None:
         api_inventory: list = []
         _inv_seen:     set  = set()
 
-        # TLS is server-side — run once before the credential loop
+        # TLS is server-side — run once before the credential loop (always unauthenticated)
+        output.set_auth_context([{"username": "UNAUTH", "role": "unauthenticated"}])
+
         if phases_cfg.get("tls", True) and not pm.is_phase_complete("tls"):
             con.section(f"Siphon — {raw_url} [tls]")
             pm.set_phase_status("tls", "running", VantageConsole._PHASE_LABELS.get("tls", "tls"))
@@ -7971,6 +8233,13 @@ def main() -> None:
             _ctx_label = _ctx["label"]
             _ctx_auth  = _ctx["auth_sess"]
             _ctx_s     = _ctx["settings"]
+
+            # Set auth context so all findings in this pass carry the account
+            if _ctx_label == "unauthenticated":
+                output.set_auth_context([{"username": "UNAUTH", "role": "unauthenticated"}])
+            else:
+                _ctx_user = (_ctx_s.get("scan", {}).get("auth", {}).get("username") or "").strip() or _ctx_label
+                output.set_auth_context([{"username": _ctx_user, "role": _ctx_label}])
 
             if _ctx_auth:
                 con.info(f"Auth [{_ctx_label}]: enabled")
@@ -8190,6 +8459,11 @@ def main() -> None:
                 sys.exit(0)
 
         # ── Post-context: privilege-escalation / cross-credential phases ────────
+        if auth_sess and t_scan.get("auth", {}).get("enabled"):
+            _post_user = t_scan.get("auth", {}).get("username", "").strip() or "authenticated"
+            output.set_auth_context([{"username": _post_user, "role": "authenticated"}])
+        else:
+            output.set_auth_context([{"username": "UNAUTH", "role": "unauthenticated"}])
         con.section(f"Siphon — {raw_url} [privilege-escalation]")
 
         def _skip(phase: str) -> bool:
