@@ -61,7 +61,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "2.1.1"
+VERSION = "2.1.2"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -3904,6 +3904,105 @@ def phase_recon(settings: dict, sess: requests.Session,
             remediation="Add 'Cache-Control: no-store, no-cache' to sensitive endpoint responses.",
             extra={"command": _hdr_cmd},
         )
+
+    # ── Secure Cookie Attribute checks ───────────────────────────────────────
+    _sc_list = []
+    _raw_sc = hdrs.get("Set-Cookie", "")
+    if _raw_sc:
+        _sc_list = [_raw_sc]
+    try:
+        _all_sc = resp.raw.headers.getlist("Set-Cookie")
+        if _all_sc:
+            _sc_list = _all_sc
+    except Exception:
+        pass
+
+    for _sc in _sc_list:
+        if not _sc:
+            continue
+        _sc_lower = _sc.lower()
+        _cname    = _sc.split("=")[0].strip() if "=" in _sc else _sc.split(";")[0].strip()
+        _sc_ev    = f"Set-Cookie: {_sc[:300]}"
+        _sc_owasp = "API8:2023 Security Misconfiguration"
+
+        if "httponly" not in _sc_lower:
+            output.add_finding(
+                phase="recon",
+                title="Missing Secure Cookie Attribute: HttpOnly",
+                severity="LOW",
+                url=base_url,
+                detail=(
+                    f"Cookie '{_cname}' does not have the HttpOnly attribute. "
+                    "Without HttpOnly, the cookie is accessible to JavaScript, "
+                    "exposing it to XSS-based theft."
+                ),
+                evidence=_sc_ev,
+                remediation="Add the HttpOnly attribute to all session and authentication cookies.",
+                extra={"command": _hdr_cmd, "owasp": _sc_owasp, "nist": "SC-23"},
+            )
+
+        if _is_https and "secure" not in _sc_lower:
+            output.add_finding(
+                phase="recon",
+                title="Missing Secure Cookie Attribute: Secure",
+                severity="LOW",
+                url=base_url,
+                detail=(
+                    f"Cookie '{_cname}' does not have the Secure attribute on an HTTPS endpoint. "
+                    "Without Secure, the cookie can be transmitted over unencrypted HTTP connections."
+                ),
+                evidence=_sc_ev,
+                remediation="Add the Secure attribute to all cookies on HTTPS endpoints.",
+                extra={"command": _hdr_cmd, "owasp": _sc_owasp, "nist": "SC-23"},
+            )
+
+        _ss_m = re.search(r'samesite\s*=\s*([^\s;,]+)', _sc_lower)
+        if not _ss_m:
+            output.add_finding(
+                phase="recon",
+                title="Missing Secure Cookie Attribute: SameSite",
+                severity="LOW",
+                url=base_url,
+                detail=(
+                    f"Cookie '{_cname}' does not have the SameSite attribute. "
+                    "Without SameSite, the cookie is sent with all cross-site requests, "
+                    "increasing CSRF risk."
+                ),
+                evidence=_sc_ev,
+                remediation="Add SameSite=Lax or SameSite=Strict to all cookies.",
+                extra={"command": _hdr_cmd, "owasp": _sc_owasp, "nist": "SC-23"},
+            )
+        else:
+            _ss_val = _ss_m.group(1).strip()
+            if _ss_val not in ("strict", "lax", "none"):
+                output.add_finding(
+                    phase="recon",
+                    title="Misconfigured Secure Cookie Attribute: SameSite",
+                    severity="LOW",
+                    url=base_url,
+                    detail=(
+                        f"Cookie '{_cname}' has SameSite set to an unrecognised value "
+                        f"'{_ss_val}'. Browsers will treat it as SameSite=None (no restriction)."
+                    ),
+                    evidence=_sc_ev,
+                    remediation="Set SameSite to Strict, Lax, or None (with Secure).",
+                    extra={"command": _hdr_cmd, "owasp": _sc_owasp, "nist": "SC-23"},
+                )
+            elif _ss_val == "none" and "secure" not in _sc_lower:
+                output.add_finding(
+                    phase="recon",
+                    title="Misconfigured Secure Cookie Attribute: SameSite",
+                    severity="LOW",
+                    url=base_url,
+                    detail=(
+                        f"Cookie '{_cname}' has SameSite=None without the Secure attribute. "
+                        "Browsers reject SameSite=None cookies that lack Secure, and the "
+                        "cookie will be blocked or transmitted insecurely."
+                    ),
+                    evidence=_sc_ev,
+                    remediation="Add the Secure attribute when using SameSite=None.",
+                    extra={"command": _hdr_cmd, "owasp": _sc_owasp, "nist": "SC-23"},
+                )
 
     # CORS wildcard check
     cors_tests = [
