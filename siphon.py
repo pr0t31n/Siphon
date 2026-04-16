@@ -61,7 +61,100 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
-VERSION = "2.1.2"
+# ── Adaptive concurrency ──────────────────────────────────────────────────────
+def _hw_detect():
+    """Return (logical_cpu_count, ram_gb) for the local machine."""
+    _cpu = os.cpu_count() or 2
+    try:
+        import psutil as _ps
+        _ram_gb = _ps.virtual_memory().total / (1024 ** 3)
+    except ImportError:
+        _ram_gb = 4.0
+    return _cpu, _ram_gb
+
+def _calc_initial_concurrency(cpu, ram_gb):
+    """
+    Derive a starting concurrency limit from hardware specs.
+    Uses 75% of logical CPUs, bounded by RAM (0.25 GB assumed per worker)
+    and clamped to [4, 64].
+    """
+    return min(max(4, int(cpu * 0.75)), max(4, int(ram_gb / 0.25)), 64)
+
+class _AdaptiveSemaphore:
+    """Counting semaphore whose limit can be raised or lowered at runtime."""
+    def __init__(self, initial):
+        self._limit = initial
+        self._count = 0
+        self._cond  = threading.Condition(threading.Lock())
+
+    def acquire(self, timeout=None):
+        with self._cond:
+            deadline = (time.monotonic() + timeout) if timeout else None
+            while self._count >= self._limit:
+                rem = (deadline - time.monotonic()) if deadline else None
+                if deadline and rem <= 0:
+                    return False
+                self._cond.wait(timeout=rem)
+            self._count += 1
+            return True
+
+    def release(self):
+        with self._cond:
+            if self._count > 0:
+                self._count -= 1
+            self._cond.notify_all()
+
+    def set_limit(self, new_limit):
+        with self._cond:
+            self._limit = max(2, new_limit)
+            self._cond.notify_all()
+
+    @property
+    def limit(self):
+        return self._limit
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *_):
+        self.release()
+
+def _start_concurrency_monitor(sem, interval=10):
+    """
+    Daemon thread: samples CPU/RAM every interval seconds and adjusts sem
+    to keep resource pressure below 80%. Requires psutil; no-ops if unavailable.
+    """
+    try:
+        import psutil as _psm
+    except ImportError:
+        return None
+    _base = sem.limit
+
+    def _loop():
+        while True:
+            try:
+                time.sleep(interval)
+                _cpu_pct = _psm.cpu_percent(interval=2)
+                _mem_pct = _psm.virtual_memory().percent
+                _cur     = sem.limit
+                if _cpu_pct > 80 or _mem_pct > 80:
+                    sem.set_limit(max(2, int(_cur * 0.75)))
+                elif _cpu_pct < 50 and _mem_pct < 60:
+                    sem.set_limit(min(_base, int(_cur * 1.25)))
+            except Exception:
+                pass
+
+    _t = threading.Thread(target=_loop, daemon=True, name="si-concurrency-monitor")
+    _t.start()
+    return _t
+
+_hw_cpu, _hw_ram    = _hw_detect()
+_SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
+_SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
+# ─────────────────────────────────────────────────────────────────────────────
+
+VERSION = "2.2.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -736,6 +829,12 @@ class OutputManager:
         d = self.out_dir / phase
         d.mkdir(parents=True, exist_ok=True)
         return d / name
+
+    def tool_path(self, toolname: str, filename: str) -> Path:
+        """Return a Path for an external tool output under <out_dir>/tools/<toolname>/."""
+        d = self.out_dir / "tools" / toolname
+        d.mkdir(parents=True, exist_ok=True)
+        return d / filename
 
     # ---------------------------------------------------------------- adding
     def set_auth_context(self, accounts: list) -> None:
@@ -1690,7 +1789,7 @@ DEFAULT_SETTINGS: dict = {
         "api_base_urls":  [],
         "openapi_url":    "",
         "api_spec_files": [],
-        "threads":        20,
+        "threads":        _SCAN_CONCURRENCY,
         "timeout":        10,
         "user_agent":     "Mozilla/5.0 (compatible; Siphon/1.0; Security Assessment)",
         "extra_headers":  {},
@@ -1810,7 +1909,7 @@ DEFAULT_SETTINGS: dict = {
         },
         "wordlist":            "",
         "max_tool_time":       120,
-        "tool_threads":        20,
+        "tool_threads":        _SCAN_CONCURRENCY,
         "tool_rate":           50,
     },
 }
@@ -2518,7 +2617,7 @@ def _probe_undocumented_endpoints(
 
     scan = settings["scan"]
     timeout = scan.get("timeout", 10)
-    threads = min(scan.get("threads", 10), 20)
+    threads = min(scan.get("threads", 10), _SCAN_SEM.limit)
 
     # Normalise known spec paths for comparison
     known_paths: set[str] = set()
@@ -2953,8 +3052,8 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
         _tmp_wl  = _make_temp_wordlist()
         wordlist = _tmp_wl
 
-    out_file = output.output_path("discovery", f"kiterunner_{target['host']}.txt")
-    threads  = min(scan.get("tool_threads", 20), 10)  # kr recommends ≤ 10
+    out_file = output.tool_path("kiterunner", f"kiterunner_{target['host']}.txt")
+    threads  = min(scan.get("tool_threads", _SCAN_SEM.limit), _SCAN_SEM.limit, 10)  # kr recommends ≤ 10
 
     cmd = [
         kr_bin, "scan", base_url,
@@ -3031,8 +3130,8 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
         _tmp_wl  = _make_temp_wordlist()
         wordlist = _tmp_wl
 
-    out_file = output.output_path("discovery", f"ffuf_{target['host']}.json")
-    threads  = scan.get("tool_threads", 20)
+    out_file = output.tool_path("ffuf", f"ffuf_{target['host']}.json")
+    threads  = min(scan.get("tool_threads", _SCAN_SEM.limit), _SCAN_SEM.limit)
     rate     = scan.get("tool_rate", 50)
     timeout  = scan.get("timeout", 10)
 
@@ -3122,8 +3221,8 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
         _tmp_wl  = _make_temp_wordlist()
         wordlist = _tmp_wl
 
-    out_file = output.output_path("discovery", f"feroxbuster_{target['host']}.txt")
-    threads  = scan.get("tool_threads", 20)
+    out_file = output.tool_path("feroxbuster", f"feroxbuster_{target['host']}.txt")
+    threads  = min(scan.get("tool_threads", _SCAN_SEM.limit), _SCAN_SEM.limit)
     rate     = scan.get("tool_rate", 50)
     timeout  = scan.get("timeout", 10)
 
@@ -3208,8 +3307,8 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
         return []
 
     con.info("dirsearch: path scanning …")
-    out_file = output.output_path("discovery", f"dirsearch_{target['host']}.json")
-    threads  = scan.get("tool_threads", 20)
+    out_file = output.tool_path("dirsearch", f"dirsearch_{target['host']}.json")
+    threads  = min(scan.get("tool_threads", _SCAN_SEM.limit), _SCAN_SEM.limit)
     rate     = scan.get("tool_rate", 50)
     timeout  = scan.get("timeout", 10)
 
@@ -3572,7 +3671,7 @@ def phase_discovery(settings: dict, sess: requests.Session,
     if _method_probe_paths:
         con.status("discovery", "running",
                    f"HTTP method probing {len(_method_probe_paths)} discovered paths")
-        threads = min(scan.get("threads", 10), 20)
+        threads = min(scan.get("threads", 10), _SCAN_SEM.limit)
         timeout_s = scan.get("timeout", 10)
 
         def _probe_methods(path: str) -> list:
@@ -3718,9 +3817,9 @@ def phase_recon(settings: dict, sess: requests.Session,
             title="Header Data Leakage: X-Powered-By",
             severity="LOW",
             url=base_url,
-            detail=f"X-Powered-By header discloses the technology stack: '{x_powered}'. Assists attackers in identifying framework-specific vulnerabilities.",
+            detail="The X-Powered-By response header discloses the application framework, language, or runtime version, reducing the attacker's effort needed to identify version-specific vulnerabilities.",
             evidence=f"X-Powered-By: {x_powered}",
-            remediation="Remove X-Powered-By header from all responses.",
+            remediation='Remove or suppress the X-Powered-By header at the application framework or reverse-proxy level (e.g., app.disable("x-powered-by") in Express; Header unset X-Powered-By in Apache).',
             extra={"command": _hdr_cmd},
         )
     _aspnet = resp.headers.get("X-AspNet-Version", "") or resp.headers.get("X-AspNetMvc-Version", "")
@@ -3730,9 +3829,9 @@ def phase_recon(settings: dict, sess: requests.Session,
             title="Header Data Leakage: X-AspNet-Version",
             severity="LOW",
             url=base_url,
-            detail=f"X-AspNet-Version header discloses the ASP.NET runtime version: '{_aspnet}'. Allows targeted enumeration of known runtime vulnerabilities.",
+            detail="The X-AspNet-Version response header reveals the exact ASP.NET framework version, aiding an attacker in identifying applicable CVEs or version-specific attack techniques.",
             evidence=f"X-AspNet-Version: {_aspnet}",
-            remediation="Disable in web.config: <httpRuntime enableVersionHeader=\"false\"/>",
+            remediation='Disable the header by setting enableVersionHeader="false" in the httpRuntime element of web.config.',
             extra={"command": _hdr_cmd},
         )
     _via = resp.headers.get("Via", "")
@@ -3755,7 +3854,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         output.add_finding(
             phase="recon",
             title="Missing Security Header: Strict-Transport-Security",
-            severity="HIGH",
+            severity="MEDIUM",
             url=base_url,
             detail="API does not set the Strict-Transport-Security header on HTTPS responses.",
             evidence="Strict-Transport-Security: (absent)",
@@ -4030,12 +4129,12 @@ def phase_recon(settings: dict, sess: requests.Session,
                 sev = "HIGH" if acac.lower() == "true" else "MEDIUM"
                 output.add_finding(
                     phase="recon",
-                    title="CORS — Reflected Origin with Credentials",
-                    severity=sev,
+                    title="CORS Misconfiguration Allowing Credential Leakage",
+                    severity="HIGH",
                     url=base_url,
-                    detail="API reflects the arbitrary Origin header in Access-Control-Allow-Origin, enabling cross-origin reads.",
+                    detail="The CORS policy reflects arbitrary origins or uses a wildcard origin combined with credentials-allowed, permitting malicious third-party sites to make credentialed cross-origin requests and read responses.",
                     evidence=f"Origin: https://evil.com → Access-Control-Allow-Origin: {acao}; Access-Control-Allow-Credentials: {acac}",
-                    remediation="Validate Origin against a server-side allowlist before reflecting; never reflect arbitrary origins.",
+                    remediation="Maintain an explicit allowlist of trusted origins; never combine Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true; and reject unexpected Origin headers.",
                 )
 
     # Wildcard / catch-all detection
@@ -4466,16 +4565,49 @@ def _test_injection(sess: requests.Session, url: str, method: str,
         return None
 
 
+def _endpoint_dir_name(method: str, url: str) -> str:
+    """Convert HTTP method + URL path to a filesystem-safe directory name.
+
+    e.g. GET /api/v1/users → GET__api_v1_users
+    """
+    try:
+        path = urlparse(url).path.strip("/") or "root"
+    except Exception:
+        path = "root"
+    safe_path = re.sub(r'[^\w\-]', '_', path)
+    return f"{(method or 'GET').upper()}__{safe_path}"[:80]
+
+
 def _save_http_evidence(output: "OutputManager", phase: str, label: str,
-                        r: "requests.Response") -> "tuple[str, str]":
+                        r: "requests.Response", *,
+                        endpoint_url: str = "", method: str = "") -> "tuple[str, str]":
     """Write HTTP request/response pair to the phase evidence directory.
+
+    When endpoint_url is provided, files are placed in a per-endpoint
+    subdirectory (METHOD__safe_path) and auto-indexed when the label already
+    exists (label_01_request.txt, label_02_request.txt, …).
 
     Returns (request_file_path, response_file_path).
     """
-    import re as _re
-    safe      = _re.sub(r'[^\w]', '_', label)[:60]
-    req_path  = output.output_path(phase, f"{safe}_request")
-    resp_path = output.output_path(phase, f"{safe}_response")
+    safe = re.sub(r'[^\w]', '_', label)[:60]
+
+    if endpoint_url:
+        _m = method or (r.request.method if r.request else "GET")
+        ep_dir = output.out_dir / phase / _endpoint_dir_name(_m, endpoint_url)
+        ep_dir.mkdir(parents=True, exist_ok=True)
+        req_path  = ep_dir / f"{safe}_request.txt"
+        resp_path = ep_dir / f"{safe}_response.txt"
+        if req_path.exists():
+            idx = 1
+            while True:
+                req_path  = ep_dir / f"{safe}_{idx:02d}_request.txt"
+                resp_path = ep_dir / f"{safe}_{idx:02d}_response.txt"
+                if not req_path.exists():
+                    break
+                idx += 1
+    else:
+        req_path  = output.output_path(phase, f"{safe}_request")
+        resp_path = output.output_path(phase, f"{safe}_response")
 
     prep = r.request
     req_lines = [f"{prep.method} {prep.url}"]
@@ -4532,17 +4664,16 @@ def phase_injection(settings: dict, sess: requests.Session,
             for payload, desc in _SQLI_PAYLOADS[:3]:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and _SQL_ERR_RE.search(resp.text):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"sqli_{param}", resp)
+                    _rq, _rp = _save_http_evidence(output, "injection", f"sqli_{param}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
-                        title="SQL Injection in API Parameter",
+                        title="SQL Injection (Error-Based)",
                         severity="CRITICAL",
                         url=url,
-                        detail=(f"SQL error detected in response to parameter '{param}' "
-                                f"with payload: {payload} ({desc})"),
+                        detail="User-controlled input is incorporated into SQL queries without parameterisation, allowing an attacker to read, modify, or delete database contents.",
                         evidence=f"Response snippet: {resp.text[:300]}",
                         output_file=f"{_rq},{_rp}",
-                        remediation="Use parameterized queries; never concatenate user input into SQL.",
+                        remediation="Replace all dynamic SQL string construction with parameterised queries or prepared statements and suppress database error output in production responses.",
                     )
                     break
 
@@ -4557,17 +4688,16 @@ def phase_injection(settings: dict, sess: requests.Session,
                         body = {param: {"$ne": None}}
                         resp = sess.request(method, url, json=body, timeout=timeout)
                     if resp and _NOSQL_ERR_RE.search(resp.text):
-                        _rq, _rp = _save_http_evidence(output, "injection", f"nosql_{param}", resp)
+                        _rq, _rp = _save_http_evidence(output, "injection", f"nosql_{param}", resp, endpoint_url=url, method=method)
                         output.add_finding(
                             phase="injection",
-                            title="NoSQL Injection in API Parameter",
-                            severity="HIGH",
+                            title="NoSQL Injection",
+                            severity="CRITICAL",
                             url=url,
-                            detail=(f"NoSQL error pattern detected for parameter '{param}' "
-                                    f"with payload: {payload}"),
+                            detail="User-supplied input is incorporated into NoSQL query documents without type or operator validation, allowing an attacker to manipulate query logic and bypass authentication or exfiltrate data.",
                             evidence=f"Response snippet: {resp.text[:300]}",
                             output_file=f"{_rq},{_rp}",
-                            remediation="Validate and sanitize inputs; use ODM query builders.",
+                            remediation="Use parameterised query APIs or ODM/ORM frameworks that reject user-supplied operator tokens; enforce strict type validation on all inputs used in query construction.",
                         )
                         break
                 except Exception:
@@ -4577,17 +4707,16 @@ def phase_injection(settings: dict, sess: requests.Session,
             for payload, desc in _SSTI_PAYLOADS[:3]:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and re.search(r'\b49\b', resp.text):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"ssti_{param}", resp)
+                    _rq, _rp = _save_http_evidence(output, "injection", f"ssti_{param}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
                         title="Server-Side Template Injection (SSTI)",
                         severity="CRITICAL",
                         url=url,
-                        detail=(f"SSTI detected: payload '{payload}' ({desc}) evaluated to 49 "
-                                f"in response for parameter '{param}'."),
+                        detail="User-controlled input is evaluated as template syntax by a server-side template engine (e.g., Jinja2, Twig, Freemarker), enabling arbitrary server-side code execution.",
                         evidence=f"Response contains '49': {resp.text[:200]}",
                         output_file=f"{_rq},{_rp}",
-                        remediation="Never render user input as templates; use safe rendering contexts.",
+                        remediation="Never pass user input directly to template rendering functions; treat user data as context variables only and use sandboxed or logic-less template engines where user-controlled content must appear in templates.",
                     )
                     break
 
@@ -4596,17 +4725,16 @@ def phase_injection(settings: dict, sess: requests.Session,
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and resp.status_code == 200:
                     if re.search(r'(ldap|directory|dn=|objectClass)', resp.text, re.I):
-                        _rq, _rp = _save_http_evidence(output, "injection", f"ldap_{param}", resp)
+                        _rq, _rp = _save_http_evidence(output, "injection", f"ldap_{param}", resp, endpoint_url=url, method=method)
                         output.add_finding(
                             phase="injection",
-                            title="LDAP Injection in API Parameter",
+                            title="LDAP Injection",
                             severity="HIGH",
                             url=url,
-                            detail=(f"Possible LDAP injection for parameter '{param}' "
-                                    f"with payload: {payload}"),
+                            detail="User-supplied input is concatenated into LDAP search filters without proper escaping, allowing an attacker to manipulate query logic, bypass authentication, or enumerate directory contents.",
                             evidence=f"Response snippet: {resp.text[:200]}",
                             output_file=f"{_rq},{_rp}",
-                            remediation="Escape LDAP special characters in user input.",
+                            remediation="Escape all user-supplied values using RFC 4515-compliant LDAP encoding before incorporating them into LDAP filter strings.",
                         )
                         break
 
@@ -4628,7 +4756,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                 timeout=timeout,
             )
             if resp and re.search(r'(root:x:|nobody:|daemon:)', resp.text):
-                _rq, _rp = _save_http_evidence(output, "injection", "xxe", resp)
+                _rq, _rp = _save_http_evidence(output, "injection", "xxe", resp, endpoint_url=url, method=ep["method"])
                 output.add_finding(
                     phase="injection",
                     title="XML External Entity (XXE) Injection",
@@ -4657,17 +4785,16 @@ def phase_injection(settings: dict, sess: requests.Session,
             for payload in _XSS_PAYLOADS[:3]:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and _xss_confirmed(payload, resp):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"xss_{param}", resp)
+                    _rq, _rp = _save_http_evidence(output, "injection", f"xss_{param}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
-                        title="Reflected Cross-Site Scripting (XSS) in API Response",
+                        title="Reflected Cross-Site Scripting (XSS)",
                         severity="HIGH",
                         url=url,
-                        detail=(f"XSS payload reflected unescaped in API response for parameter '{param}'. "
-                                f"Payload: {payload}"),
+                        detail="User-controlled input is reflected or stored and rendered in a browser context without proper encoding, enabling arbitrary script execution.",
                         evidence=f"Response contains unescaped payload: {resp.text[:200]}",
                         output_file=f"{_rq},{_rp}",
-                        remediation="Encode all user-supplied output. Set Content-Type to application/json. Implement CSP.",
+                        remediation="Encode all output contextually (HTML, JS, URL, CSS), sanitise stored input server-side, and enforce a strict Content-Security-Policy.",
                     )
                     break
 
@@ -4686,17 +4813,16 @@ def phase_injection(settings: dict, sess: requests.Session,
             for cmd_pay, cmd_pat in _CMD_PAYLOADS[:2]:
                 resp = _test_injection(sess, url, method, param, "test" + cmd_pay, timeout)
                 if resp and cmd_pat.search(resp.text):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"cmdi_{param}", resp)
+                    _rq, _rp = _save_http_evidence(output, "injection", f"cmdi_{param}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
-                        title="OS Command Injection in API Parameter",
+                        title="OS Command Injection",
                         severity="CRITICAL",
                         url=url,
-                        detail=(f"OS command injection detected in parameter '{param}' "
-                                f"with payload: test{cmd_pay}"),
+                        detail="User-controlled input is passed unsanitised to a system shell or OS command execution function, allowing an attacker to execute arbitrary commands on the host.",
                         evidence=f"uid= pattern found in response: {resp.text[:300]}",
                         output_file=f"{_rq},{_rp}",
-                        remediation="Never pass user input to OS calls. Use allow-listed commands with no user input in arguments.",
+                        remediation="Eliminate shell calls that incorporate user input; use language-native library functions instead; where shell invocation is unavoidable, apply strict allowlist validation on all input values.",
                     )
                     break
 
@@ -4715,17 +4841,16 @@ def phase_injection(settings: dict, sess: requests.Session,
             resp = _test_injection(sess, url, method, param, _CRLF_INJECTION_HEADER, timeout)
             if resp and ("Siphon-Injected" in resp.text or
                          "Siphon-Injected" in str(resp.headers)):
-                _rq, _rp = _save_http_evidence(output, "injection", f"crlf_{param}", resp)
+                _rq, _rp = _save_http_evidence(output, "injection", f"crlf_{param}", resp, endpoint_url=url, method=method)
                 output.add_finding(
                     phase="injection",
-                    title="CRLF Injection in API Parameter",
-                    severity="HIGH",
+                    title="CRLF Injection",
+                    severity="MEDIUM",
                     url=url,
-                    detail=(f"CRLF sequence injected via parameter '{param}' was reflected "
-                            f"in response headers or body."),
+                    detail="User-supplied carriage-return and line-feed characters are reflected into HTTP response headers, allowing an attacker to inject arbitrary headers, split responses, or set malicious cookies.",
                     evidence=f"Parameter: {param}  Payload: {_CRLF_INJECTION_HEADER}",
                     output_file=f"{_rq},{_rp}",
-                    remediation="Strip \\r and \\n from any user input used in HTTP headers or responses.",
+                    remediation="Filter or reject CR (\\r) and LF (\\n) characters from any user-supplied value before it is written into an HTTP response header; use framework-level header APIs that prevent raw header injection.",
                 )
                 break
 
@@ -4746,17 +4871,16 @@ def phase_injection(settings: dict, sess: requests.Session,
             for payload in payloads:
                 resp = _test_injection(sess, url, method, param, payload, timeout)
                 if resp and _TRAVERSAL_RE.search(resp.text):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"traversal_{param}", resp)
+                    _rq, _rp = _save_http_evidence(output, "injection", f"traversal_{param}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
-                        title="Path Traversal / Local File Inclusion in API",
+                        title="Path Traversal / Local File Inclusion",
                         severity="HIGH",
                         url=url,
-                        detail=(f"Path traversal in parameter '{param}' disclosed file contents. "
-                                f"Payload: {payload}"),
+                        detail="User-supplied input is used in filesystem path construction without adequate sanitisation, allowing an attacker to read or include arbitrary files outside the intended directory.",
                         evidence=f"File content excerpt: {resp.text[:300]}",
                         output_file=f"{_rq},{_rp}",
-                        remediation="Validate file path inputs. Use allow-lists. Never expose filesystem paths via API parameters.",
+                        remediation="Canonicalise all user-supplied paths, resolve them against a fixed base directory, and reject any path that escapes the base; prefer indirect reference maps over direct path handling.",
                     )
                     break
 
@@ -4776,7 +4900,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             for csv_pay in _csv_formula_payloads[:1]:
                 resp = _test_injection(sess, url, method, field, csv_pay, timeout)
                 if resp and resp.status_code in (200, 201, 202):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"csv_{field}", resp)
+                    _rq, _rp = _save_http_evidence(output, "injection", f"csv_{field}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
                         title="CSV Injection in User Export",
@@ -4806,7 +4930,7 @@ def phase_injection(settings: dict, sess: requests.Session,
         for param in test_params:
             resp = _test_injection(sess, url, method, param, _log_inject_payload, timeout)
             if resp and resp.status_code in (200, 201, 400, 422, 500):
-                _rq, _rp = _save_http_evidence(output, "injection", f"loginject_{param}", resp)
+                _rq, _rp = _save_http_evidence(output, "injection", f"loginject_{param}", resp, endpoint_url=url, method=method)
                 output.add_finding(
                     phase="injection",
                     title="Log Injection via User-Agent / Query Parameter",
@@ -4839,19 +4963,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                 if (r_t and r_f
                         and r_t.status_code == 200
                         and abs(len(r_t.text) - len(r_f.text)) > 50):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"sqli_bool_{param}", r_t)
+                    _rq, _rp = _save_http_evidence(output, "injection", f"sqli_bool_{param}", r_t, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
-                        title="Blind SQL Injection (Boolean-Based) in API",
+                        title="Blind SQL Injection (Boolean-Based)",
                         severity="CRITICAL",
                         url=url,
-                        detail=(f"Boolean-based blind SQLi in parameter '{param}': "
-                                f"TRUE response ({len(r_t.text)} bytes) vs "
-                                f"FALSE response ({len(r_f.text)} bytes) differ significantly."),
+                        detail="User-controlled input is incorporated into SQL queries without parameterisation, allowing an attacker to read, modify, or delete database contents.",
                         evidence=(f"TRUE  payload: {_bool_true_pay} → {r_t.status_code} ({len(r_t.text)} bytes)\n"
                                   f"FALSE payload: {_bool_false_pay} → {r_f.status_code} ({len(r_f.text)} bytes)"),
                         output_file=f"{_rq},{_rp}",
-                        remediation="Use parameterised queries. Length difference confirms SQL branching on user input.",
+                        remediation="Replace all dynamic SQL string construction with parameterised queries or prepared statements and suppress database error output in production responses.",
                     )
                     break
             except Exception:
@@ -4879,17 +5001,16 @@ def phase_injection(settings: dict, sess: requests.Session,
                     resp = _test_injection(sess, url, method, param, tsql, delay + 5)
                     elapsed = _ti.monotonic() - t0
                     if resp and elapsed >= delay:
-                        _rq, _rp = _save_http_evidence(output, "injection", f"sqli_time_{param}", resp)
+                        _rq, _rp = _save_http_evidence(output, "injection", f"sqli_time_{param}", resp, endpoint_url=url, method=method)
                         output.add_finding(
                             phase="injection",
-                            title="Blind SQL Injection (Time-Based) in API",
+                            title="Blind SQL Injection (Time-Based)",
                             severity="CRITICAL",
                             url=url,
-                            detail=(f"Time-based blind SQLi in parameter '{param}': "
-                                    f"payload '{tsql}' caused {elapsed:.1f}s delay."),
+                            detail="User-controlled input is incorporated into SQL queries without parameterisation, allowing an attacker to read, modify, or delete database contents.",
                             evidence=f"Payload: {tsql}  Elapsed: {elapsed:.2f}s  Threshold: {delay}s",
                             output_file=f"{_rq},{_rp}",
-                            remediation="Use parameterised queries. Never concatenate user input into SQL.",
+                            remediation="Replace all dynamic SQL string construction with parameterised queries or prepared statements and suppress database error output in production responses.",
                         )
                         break
                 except Exception:
@@ -4929,7 +5050,7 @@ def phase_injection(settings: dict, sess: requests.Session,
             if _dr is not None and _dr.status_code in (200, 201, 400, 422, 500):
                 import re as _re2
                 _dlabel = _re2.sub(r'[^\w]', '_', _dsuf)[:40]
-                _rq, _rp = _save_http_evidence(output, "injection", f"deser{_dlabel}", _dr)
+                _rq, _rp = _save_http_evidence(output, "injection", f"deser{_dlabel}", _dr, endpoint_url=_durl, method="POST")
                 output.add_finding(
                     phase="injection",
                     title=_dtitle,
@@ -5039,13 +5160,12 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                 ):
                     output.add_finding(
                         phase="auth_bypass",
-                        title="Default Credentials Accepted on API Login Endpoint",
+                        title="Weak or Default Credentials Accepted",
                         severity="CRITICAL",
                         url=login_url,
-                        detail=(f"API login endpoint accepted default credentials: "
-                                f"username='{uname}', password='{pwd}'."),
+                        detail="The target accepted well-known default or factory-set credentials, granting unauthorised access.",
                         evidence=f"POST {login_path} with default creds → HTTP {resp.status_code}: {resp.text[:200]}",
-                        remediation="Change default credentials. Enforce account lockout after failed attempts.",
+                        remediation="Replace all default credentials with strong, unique secrets and enforce a password policy prior to any deployment.",
                     )
                     break
             except Exception:
@@ -5140,13 +5260,12 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
             if resp and resp.status_code in (200, 201):
                 output.add_finding(
                     phase="auth_bypass",
-                    title="JWT None Algorithm Accepted",
+                    title="JWT None Algorithm Authentication Bypass",
                     severity="CRITICAL",
                     url=url,
-                    detail=(f"Server accepted JWT with alg:none (no signature) "
-                            f"on {ep['method']} {ep['path']}."),
+                    detail="The application accepts JSON Web Tokens specifying the alg:none algorithm, allowing an attacker to forge arbitrary tokens without possessing a signing key and bypass authentication entirely.",
                     evidence=f"none-alg token accepted, HTTP {resp.status_code}",
-                    remediation="Reject JWTs with alg:none; enforce strict algorithm validation.",
+                    remediation="Enforce a strict server-side algorithm allowlist; reject any token where the alg header is none, empty, or not in the permitted set; never rely on the token header to select the verification algorithm.",
                 )
                 break
 
@@ -5364,12 +5483,11 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
         output.add_finding(
             phase="rate_limiting",
             title="Missing Rate Limiting",
-            severity="MEDIUM",
+            severity="HIGH",
             url=test_url,
-            detail=(f"No rate limiting detected after {threshold} rapid requests. "
-                    f"API may be vulnerable to brute force and DoS attacks."),
+            detail="Authentication and sensitive API endpoints do not enforce request rate limits, account lockout, or CAPTCHA, allowing unlimited brute-force or credential-stuffing attempts.",
             evidence=f"{threshold} requests sent without receiving HTTP 429",
-            remediation="Implement rate limiting per IP and per user on sensitive endpoints.",
+            remediation="Implement per-IP and per-account rate limiting with progressive delays or lockout on all authentication endpoints; add CAPTCHA for interactive login flows; alert on anomalous request volumes.",
             output_file=str(_rl_file),
         )
     else:
@@ -5587,16 +5705,12 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
                 if leaked:
                     output.add_finding(
                         phase="mass_assignment",
-                        title="Mass Assignment Vulnerability",
+                        title="Mass Assignment / Privilege Escalation via Parameter Binding",
                         severity="HIGH",
                         url=url,
-                        detail=(f"Privileged fields accepted and reflected in response: "
-                                f"{', '.join(leaked)}"),
+                        detail="The application or API auto-binds request input properties to internal model objects without restricting which fields may be set, allowing an attacker to inject privileged fields (e.g., role, isAdmin) and escalate privileges.",
                         evidence=f"Response keys: {list(leaked)}",
-                        remediation=(
-                            "Use allowlists to define accepted fields; "
-                            "never bind request body directly to data models."
-                        ),
+                        remediation="Define and enforce an explicit allowlist of bindable properties using DTOs or input validation schemas; reject or ignore any request field not explicitly permitted for the given operation.",
                     )
                 elif (baseline and
                       attack_resp.text != baseline.text and
@@ -6452,16 +6566,12 @@ def phase_bola(settings: dict, auth_sess, output: OutputManager,
                                     if resp_id and str(resp_id) != str(own_id):
                                         output.add_finding(
                                             phase="bola",
-                                            title="BOLA — Broken Object Level Authorization",
+                                            title="Broken Object Level Authorization (IDOR / BOLA)",
                                             severity="CRITICAL",
                                             url=test_url,
-                                            detail=(f"Accessed another user's object (ID {test_id}) "
-                                                    f"using own auth credentials."),
+                                            detail="The application or API exposes user-controlled object identifiers and does not verify whether the authenticated user has authorisation to access the referenced object, enabling horizontal privilege escalation.",
                                             evidence=f"Own ID: {own_id}, accessed ID: {test_id}",
-                                            remediation=(
-                                                "Verify object ownership on every request; "
-                                                "never rely solely on user-supplied IDs."
-                                            ),
+                                            remediation="Enforce server-side authorisation checks for every object access request, verifying ownership or explicit permission before returning or modifying data; do not rely on obscure IDs as an access control mechanism.",
                                         )
                                 except Exception:
                                     pass
@@ -7717,7 +7827,7 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
 
     # ── sslscan ──────────────────────────────────────────────────────────────
     if sslscan:
-        _ss_file = output.output_path("tls", f"sslscan_{host}_{port}.txt")
+        _ss_file = output.tool_path("sslscan", f"sslscan_{host}_{port}.txt")
         try:
             result = subprocess.run(
                 [sslscan, "--no-colour", host_port],
@@ -7757,7 +7867,7 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
 
     # ── testssl.sh ────────────────────────────────────────────────────────────
     if testssl:
-        _ts_file = output.output_path("tls", f"testssl_{host}_{port}.txt")
+        _ts_file = output.tool_path("testssl", f"testssl_{host}_{port}.txt")
         try:
             result = subprocess.run(
                 [testssl, "--fast", "--quiet", host_port],
@@ -8175,6 +8285,7 @@ def phase_access_matrix(
 
 def main() -> None:
     _install_signal_handlers()
+    _start_concurrency_monitor(_SCAN_SEM)
 
     args = _parse_args()
 
