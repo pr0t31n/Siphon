@@ -2442,5 +2442,367 @@
       "https://portswigger.net/web-security/graphql",
       "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
     ]
+  },
+  {
+    "id": "SI-102",
+    "title": "WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)",
+    "severity": "HIGH",
+    "category": "Server-Side Request Forgery",
+    "owasp_api": "API7:2023 Server Side Request Forgery",
+    "owasp_web": "A10:2021 Server-Side Request Forgery",
+    "nist": [
+      "SI-10",
+      "SC-7"
+    ],
+    "cves": [],
+    "cvss_score": 8.6,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N",
+    "description": "Siphon detected that the SOAP API accepts WS-Addressing headers (wsa:ReplyTo or wsa:FaultTo) containing attacker-controlled URLs and the server makes outbound requests to those addresses when processing the response or fault dispatch. WS-Addressing is a SOAP standard that specifies where reply messages and fault messages should be delivered; when the server honours arbitrary external URLs in these headers it is trivially exploitable as a Server-Side Request Forgery vector. An attacker can direct the server to fetch arbitrary internal or external resources, probe internal network services not exposed to the internet, access cloud metadata endpoints (e.g., 169.254.169.254/latest/meta-data/), or exfiltrate responses to an attacker-controlled listener. Because the SSRF originates from the server's network context it can bypass perimeter firewalls and reach services that are otherwise unreachable from the public internet.",
+    "remediation": "Validate the wsa:ReplyTo and wsa:FaultTo endpoint addresses against a strict allowlist of permitted destinations before dispatching any outbound message. Block all private IP ranges (RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), loopback (127.0.0.0/8), and link-local (169.254.0.0/16) addresses at the HTTP client layer. Prefer an asynchronous reply model where responses are delivered over the same connection rather than via caller-supplied endpoints. If WS-Addressing reply-to support is not a business requirement, disable the feature entirely in the SOAP stack configuration.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/ssrf",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa7-server-side-request-forgery/",
+      "https://www.w3.org/TR/ws-addr-core/"
+    ]
+  },
+  {
+    "id": "SI-103",
+    "title": "WS-Security Bypass \u2014 Expired Timestamp / Empty PasswordDigest Accepted",
+    "severity": "CRITICAL",
+    "category": "Authentication Bypass",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-2",
+      "IA-8",
+      "SC-8"
+    ],
+    "cves": [],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed that the SOAP API's WS-Security implementation accepts messages that fail one or more fundamental authentication checks: messages with an expired wsse:Timestamp (indicating the server does not enforce replay-window validation), or messages with an empty or null wsse:PasswordDigest value (indicating the server does not validate the digest against the password and nonce). WS-Security timestamps are designed to limit the window in which a captured SOAP message can be replayed; a server that ignores expiry allows indefinite replay of any intercepted authenticated message. An empty PasswordDigest acceptance means authentication can be bypassed by sending any username with an empty credential field, granting unauthenticated access to all API operations.",
+    "remediation": "Enforce strict WS-Security timestamp validation with a replay window of no more than 5 minutes and reject all messages whose wsu:Expires has elapsed. Validate the PasswordDigest using the correct formula: Base64(SHA-1(Nonce + Created + Password)); reject any message where the computed digest does not match the submitted value. Reject messages with null, empty, or malformed PasswordDigest values before any business logic is invoked. Maintain a server-side nonce cache to detect and reject replayed nonces within the allowed replay window.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://www.oasis-open.org/committees/download.php/16790/wss-v1.1-spec-os-UsernameTokenProfile.pdf",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "https://cwe.mitre.org/data/definitions/287.html"
+    ]
+  },
+  {
+    "id": "SI-104",
+    "title": "WSDL Enumeration \u2014 Service Definition Exposed",
+    "severity": "MEDIUM",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-7",
+      "SI-12"
+    ],
+    "cves": [],
+    "cvss_score": 5.3,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "Siphon retrieved the WSDL (Web Services Description Language) document for the SOAP service without authentication. A WSDL file is a machine-readable contract that fully describes every operation exposed by the service, including operation names, input/output message schemas, data types, binding protocols, and the service endpoint URLs. Exposure of the WSDL dramatically reduces the effort required for an attacker to enumerate all available operations, craft valid SOAP requests, and systematically test each operation for injection, authentication bypass, or business logic vulnerabilities. In many cases the WSDL also reveals internal naming conventions, data structure field names, and undocumented operations.",
+    "remediation": "Restrict access to the WSDL document by requiring authentication before serving the ?wsdl or ?WSDL query parameter response. If the WSDL must be publicly accessible for integration purposes, ensure it does not reference internal-only operations or schema types. Consider maintaining a separate external-facing WSDL that exposes only public operations. At minimum, monitor access to the WSDL endpoint and alert on high-frequency enumeration.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://cwe.mitre.org/data/definitions/538.html"
+    ]
+  },
+  {
+    "id": "SI-105",
+    "title": "Unsafe API Consumption \u2014 Webhook URL Accepted (SSRF Risk)",
+    "severity": "HIGH",
+    "category": "Server-Side Request Forgery",
+    "owasp_api": "API7:2023 Server Side Request Forgery",
+    "owasp_web": "A10:2021 Server-Side Request Forgery",
+    "nist": [
+      "SI-10",
+      "SC-7"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "Siphon confirmed that the API accepts a caller-supplied URL in a webhook registration or callback parameter and the server makes outbound HTTP requests to that URL without validating it against a safe destination allowlist. This constitutes a Server-Side Request Forgery (SSRF) vulnerability where an attacker can cause the API server to fetch arbitrary internal resources, probe internal network topology, query cloud instance metadata endpoints (e.g., AWS 169.254.169.254, GCP metadata.google.internal), or exfiltrate sensitive environment data to an external listener. SSRF via webhook URLs is particularly impactful because the server's outbound request carries the server's own network identity and may reach services that are inaccessible from the public internet.",
+    "remediation": "Validate all webhook and callback URLs against a strict allowlist of permitted schemes (HTTPS only), domain suffixes, and IP ranges before any outbound connection is made. Block requests to private IP ranges (RFC 1918), loopback addresses, link-local ranges, and cloud metadata IP addresses at the HTTP client layer. Perform DNS resolution server-side and verify the resolved IP is not in a blocked range (DNS rebinding defence). If external webhook delivery is a feature requirement, perform an initial probe of the URL before registering it and enforce a retry-limit with exponential backoff.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/ssrf",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa7-server-side-request-forgery/",
+      "https://owasp.org/API-Security/editions/2023/en/0xa10-unsafe-consumption-of-apis/"
+    ]
+  },
+  {
+    "id": "SI-106",
+    "title": "Unsafe API Consumption \u2014 Open Redirect to External URL",
+    "severity": "MEDIUM",
+    "category": "Open Redirect",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A01:2021 Broken Access Control",
+    "nist": [
+      "SI-10",
+      "SC-7"
+    ],
+    "cves": [],
+    "cvss_score": 6.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+    "description": "Siphon confirmed an open redirect vulnerability where a URL-type parameter accepted by the API is used to construct a redirect response (HTTP 301, 302, or 307) to an arbitrary external destination without validation. An attacker can craft a link to the legitimate API domain with a manipulated redirect parameter pointing to a malicious site, causing a victim who clicks the link to be redirected to an attacker-controlled page. Open redirects are frequently exploited in phishing campaigns because the initial URL appears to belong to a trusted domain, bypassing browser and email security warnings. They can also be chained with SSRF vulnerabilities and OAuth redirect_uri bypass attacks.",
+    "remediation": "Validate all redirect target URLs against an allowlist of permitted destination origins before issuing a redirect response. If redirect functionality is required, use indirect references (e.g., opaque tokens mapped to trusted URLs server-side) rather than accepting raw URLs from user input. Never reflect an unvalidated URL from a request parameter directly into a Location response header. Audit all API endpoints that issue redirect responses and confirm each performs origin validation.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html",
+      "https://portswigger.net/web-security/dom-based/open-redirection",
+      "https://owasp.org/API-Security/editions/2023/en/0xa10-unsafe-consumption-of-apis/",
+      "https://cwe.mitre.org/data/definitions/601.html"
+    ]
+  },
+  {
+    "id": "SI-107",
+    "title": "Unsafe API Consumption \u2014 Serialization Markers in Response",
+    "severity": "HIGH",
+    "category": "Insecure Deserialization",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A08:2021 Software and Data Integrity Failures",
+    "nist": [
+      "SI-10",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 7.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N",
+    "description": "Siphon detected serialization markers in the API response body that indicate the application is transmitting serialized objects across the API boundary. Language-native serialization formats identified may include Java serialized objects (magic bytes 0xAC 0xED), Python pickle data, PHP serialization syntax (O:, a:, s:), Ruby Marshal data, .NET BinaryFormatter output, or YAML/XML with type annotations. If a downstream service or client deserializes this data without validation, an attacker who can influence the serialized content may be able to trigger gadget chain execution, leading to remote code execution, denial-of-service, or authentication bypass. Even read-only exposure of serialized objects leaks internal class names, field names, and object graph structure.",
+    "remediation": "Replace language-native serialization with a data-format-neutral representation (JSON, Protobuf, MessagePack) for all data transmitted across API boundaries. If serialization is required, implement a strict type allowlist in the deserializer so only expected types can be instantiated. Sign all serialized payloads with a server-side HMAC and verify the signature before deserialization to detect tampering. Audit all API response bodies for serialization format markers and eliminate unnecessary exposure of internal object representations.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/deserialization",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa10-unsafe-consumption-of-apis/",
+      "https://cwe.mitre.org/data/definitions/502.html"
+    ]
+  },
+  {
+    "id": "SI-108",
+    "title": "Weak JWT Secret",
+    "severity": "CRITICAL",
+    "category": "Authentication",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-2",
+      "SC-8",
+      "SC-28"
+    ],
+    "cves": [
+      "CVE-2018-1000531"
+    ],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon identified that the HMAC secret used to sign JWTs is weak \u2014 matching a known default value, a short string, a dictionary word, or a low-entropy pattern detectable through analysis of the token structure. A weak HMAC signing secret is susceptible to offline brute-force and dictionary attacks: once a valid JWT is obtained, an attacker can recover the secret using tools such as hashcat or jwt-cracker without any further server interaction. With the recovered secret, the attacker can forge arbitrary JWTs with any claims including elevated roles, alternative subject identifiers, or extended expiry, achieving complete authentication bypass and horizontal or vertical privilege escalation.",
+    "remediation": "Immediately rotate the JWT signing secret. Generate the new secret using a cryptographically secure random number generator (os.urandom, /dev/urandom, or an HSM) with a minimum of 256 bits of entropy. Do not use human-readable strings, environment variable defaults, or framework placeholder values as signing secrets. Store the secret in a secrets management system (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager) rather than in configuration files or environment variables committed to source control. Consider migrating to asymmetric signing (RS256, ES256) to eliminate the shared-secret risk model entirely.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-weak-signing-key",
+      "https://nvd.nist.gov/vuln/detail/CVE-2018-1000531",
+      "https://github.com/lmammino/jwt-cracker",
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-109",
+    "title": "Sensitive File Exposed",
+    "severity": "HIGH",
+    "category": "Information Disclosure",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-7",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "Siphon discovered that the API server exposes a sensitive file at a publicly accessible path without authentication. Sensitive files commonly exposed through API or web server misconfigurations include environment files (.env, .env.production), backup archives (.bak, .zip, .tar.gz), configuration files (config.yml, database.yml, settings.py, web.config), source code repositories (.git/config, .svn/entries), private keys and certificates (.pem, .key, id_rsa), dependency lock files (package-lock.json, Gemfile.lock), and development credentials. Exposure of these files can directly reveal database credentials, API keys, internal hostnames, cryptographic material, and application source code, enabling further targeted attacks against the system.",
+    "remediation": "Remove all sensitive files from any directory served by the web or API server. Configure the server to return 403 or 404 for known sensitive file extensions and paths (.env, .git, .bak, .key, .pem). Implement a server-level allowlist of permitted static file types rather than a denylist. Audit the API server's document root and all static directories for sensitive file exposure using automated tools. Ensure deployment pipelines do not copy development configuration files, credentials, or version control metadata to production server directories.",
+    "metasploit": [
+      "auxiliary/scanner/http/files_dir"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://cwe.mitre.org/data/definitions/538.html"
+    ]
+  },
+  {
+    "id": "SI-110",
+    "title": "XML External Entity (XXE) Injection in API",
+    "severity": "CRITICAL",
+    "category": "XXE Injection",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "SI-10",
+      "CM-7"
+    ],
+    "cves": [
+      "CVE-2019-11358"
+    ],
+    "cvss_score": 9.8,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+    "description": "Siphon confirmed an XML External Entity (XXE) injection vulnerability where the API accepts XML input and the underlying XML parser processes external entity declarations (DOCTYPE / ENTITY). An attacker can inject an XXE payload that causes the parser to read arbitrary local files from the server filesystem (e.g., /etc/passwd, /etc/shadow, application configuration and credential files) and include their contents in the response. Out-of-band XXE can exfiltrate file contents to an attacker-controlled DNS or HTTP endpoint even when the response does not directly reflect the file. In some configurations XXE enables SSRF against internal services, denial-of-service via billion-laughs entity expansion, and remote code execution via certain XML parser features.",
+    "remediation": "Disable external entity processing and DTD processing entirely in the XML parser configuration. In Java, set XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES and XMLInputFactory.SUPPORT_DTD to false. In Python, use defusedxml instead of the standard library xml module. In PHP, call libxml_disable_entity_loader(true) before parsing. If XML with DTD is a business requirement, use a parser that supports a safe whitelist of entity definitions and blocks all external references. Migrate XML-based APIs to JSON where possible to eliminate the XXE attack surface.",
+    "metasploit": [
+      "auxiliary/scanner/http/xxe_injection"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/xxe",
+      "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html",
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/07-Testing_for_XML_Injection",
+      "https://cwe.mitre.org/data/definitions/611.html"
+    ]
+  },
+  {
+    "id": "SI-111",
+    "title": "TRACE Method Enabled (Cross-Site Tracing / XST)",
+    "severity": "LOW",
+    "category": "Security Misconfiguration",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7"
+    ],
+    "cves": [],
+    "cvss_score": 3.1,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
+    "description": "Siphon confirmed that the HTTP TRACE method is enabled on the API server or a specific endpoint. The TRACE method is a diagnostic tool that echoes the received request back to the client, including all request headers. Cross-Site Tracing (XST) is a technique where an attacker combines TRACE with a browser-based XSS or cross-origin request to cause the victim's browser to send a TRACE request, with the echoed response \u2014 including HttpOnly cookies and Authorization headers \u2014 readable by the attacker's JavaScript. While modern browsers and XHR implementations largely block TRACE, the method's presence indicates insufficient HTTP method restriction and may expose headers through non-browser clients or misconfigured proxies.",
+    "remediation": "Disable the HTTP TRACE method in the web server configuration. In Apache, add TraceEnable off to the server configuration. In Nginx, block TRACE with a location block returning 405. In IIS, use the requestFiltering module to block the TRACE verb. At the API gateway or WAF level, configure an HTTP method allowlist restricted to the methods the API explicitly uses (typically GET, POST, PUT, PATCH, DELETE, OPTIONS). Verify the fix with a direct TRACE request confirming a 405 Method Not Allowed response.",
+    "metasploit": [
+      "auxiliary/scanner/http/options"
+    ],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
+      "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://cwe.mitre.org/data/definitions/16.html"
+    ]
+  },
+  {
+    "id": "SI-112",
+    "title": "HTTP Method Override Accepted",
+    "severity": "MEDIUM",
+    "category": "Security Misconfiguration",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "CM-6",
+      "CM-7",
+      "AC-3"
+    ],
+    "cves": [],
+    "cvss_score": 5.4,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:L",
+    "description": "Siphon confirmed that the API honours HTTP method override headers (X-HTTP-Method-Override, X-Method-Override, X-HTTP-Method, _method) or body parameters that instruct the server to treat an incoming request as a different HTTP method. This behaviour was observed for methods beyond the DELETE-via-POST case, including PUT, PATCH, or other privileged methods. If the API applies access controls at the routing layer based on the HTTP transport method rather than the effective (overridden) method, an attacker can bypass method-based authorization by tunnelling privileged operations through a permitted method. Method override can also be used to invoke methods that are otherwise rejected at the network or firewall layer.",
+    "remediation": "Disable HTTP method override support globally unless there is a specific and documented requirement for it, such as supporting legacy clients that cannot send PUT or DELETE. If method override must be retained, enforce that authorization controls are applied based on the effective overridden method, not the transport method. Restrict the set of methods that can be overridden to a minimal allowlist. Log all method override usage and alert on anomalous patterns. At the API gateway, block or audit requests that use method override headers on sensitive endpoints.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-113",
+    "title": "Unauthenticated Access to Endpoint",
+    "severity": "HIGH",
+    "category": "Authentication",
+    "owasp_api": "API2:2023 Broken Authentication",
+    "owasp_web": "A07:2021 Identification and Authentication Failures",
+    "nist": [
+      "IA-2",
+      "AC-3",
+      "AC-17"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "description": "Siphon confirmed that an API endpoint which is expected to require authentication returns a successful non-error response to an unauthenticated request (one containing no Authorization header, no session cookie, and no API key). The endpoint may return data belonging to a specific user, return aggregate data, or perform operations that should require an authenticated context. Unlike a complete authentication enforcement absence (SI-083), this finding may affect a subset of endpoints or specific HTTP methods where the authentication middleware is missing or bypassed. Unauthenticated access to any endpoint that handles user data or performs state-changing operations represents a direct breach of the application's security model.",
+    "remediation": "Apply authentication middleware as a mandatory, default requirement on all API routes. Adopt a secure-by-default posture where every new route requires explicit opt-out from authentication rather than opt-in. Audit all API routes for endpoints that return 2xx responses to requests without valid credentials. Perform automated regression testing that asserts all non-public endpoints return 401 or 403 when called without authentication. Remove any route-specific authentication bypass rules that are not essential for publicly documented anonymous functionality.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "https://portswigger.net/web-security/authentication",
+      "https://cwe.mitre.org/data/definitions/306.html"
+    ]
+  },
+  {
+    "id": "SI-114",
+    "title": "Missing Rate Limit on Sensitive Endpoint",
+    "severity": "HIGH",
+    "category": "Rate Limiting",
+    "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+    "owasp_web": null,
+    "nist": [
+      "SC-5",
+      "IA-5",
+      "SI-10"
+    ],
+    "cves": [],
+    "cvss_score": 7.5,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:L",
+    "description": "Siphon confirmed that an API endpoint handling a sensitive operation \u2014 such as authentication, password reset, OTP validation, account recovery, or payment processing \u2014 does not enforce any rate limiting on incoming requests. While general rate limiting may be absent across all endpoints, the absence of rate limiting specifically on sensitive endpoints is higher-severity because these endpoints are primary targets for brute-force credential attacks, account enumeration, OTP bypass, and API abuse. An attacker can issue unlimited automated requests against these endpoints without encountering any throttling, lockout, or challenge mechanism.",
+    "remediation": "Implement strict, dedicated rate limiting on all sensitive API endpoints, independent of any global rate limiting policy. Authentication endpoints should enforce per-IP limits (e.g., 5 attempts per minute) combined with per-account limits (e.g., 10 attempts per 15 minutes) with exponential backoff and account lockout or CAPTCHA challenge after threshold breach. OTP and password reset endpoints should enforce single-use token policies and short validity windows in addition to request rate limits. Return 429 Too Many Requests with a Retry-After header when limits are exceeded. Monitor sensitive endpoint access patterns for burst anomalies.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html"
+    ]
+  },
+  {
+    "id": "SI-115",
+    "title": "CORS Wildcard (*) Detected",
+    "severity": "INFO",
+    "category": "CORS",
+    "owasp_api": "API8:2023 Security Misconfiguration",
+    "owasp_web": "A05:2021 Security Misconfiguration",
+    "nist": [
+      "AC-4",
+      "CM-6"
+    ],
+    "cves": [],
+    "cvss_score": 3.7,
+    "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+    "description": "Siphon detected that the API responds with Access-Control-Allow-Origin: * on one or more endpoints. A wildcard CORS policy permits any origin to read responses from cross-origin requests made without credentials. While browsers enforce that credentialed requests (those sending cookies or Authorization headers) cannot be used with a wildcard origin, non-credentialed responses are still readable by any cross-origin JavaScript. This is informational for truly public API endpoints, but becomes a vulnerability if the endpoint returns semi-sensitive data (API schema details, user-agnostic configuration, analytics), is intended to be restricted by origin, or is accessible using bearer tokens passed in headers (which are treated as credentials and blocked, but may be overlooked in custom implementations).",
+    "remediation": "Review whether the wildcard CORS policy is intentional and appropriate for each affected endpoint. For public endpoints returning only non-sensitive, non-authenticated data, a wildcard is acceptable. For endpoints returning any data that should be origin-restricted, replace the wildcard with an explicit origin allowlist. Ensure that no endpoint combining Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true exists (this combination is invalid per spec and indicates misconfiguration). Document the CORS policy for each API endpoint as part of the API security specification.",
+    "metasploit": [],
+    "exploitdb": [],
+    "references": [
+      "https://portswigger.net/web-security/cors",
+      "https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS",
+      "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html#cross-origin-resource-sharing"
+    ]
   }
 ]
