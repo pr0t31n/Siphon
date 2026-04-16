@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -488,6 +488,7 @@ def _write_project_meta(project_dir: Path, tool: str, client_short: str,
                 "year":         year,
                 "created_at":   datetime.now().isoformat(),
                 "version":      version,
+                "hostname":     socket.gethostname(),
             }, indent=2),
             encoding="utf-8",
         )
@@ -995,6 +996,7 @@ class OutputManager:
             "tool":      "siphon",
             "version":   VERSION,
             "generated": datetime.now(timezone.utc).isoformat(),
+            "hostname":  socket.gethostname(),
             "duration":  round(elapsed, 1),
             "total":     len(self.findings),
             "risk_counts": counts,
