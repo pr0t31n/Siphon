@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -1611,8 +1611,8 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
         if login_url:
             _login_post(login_url)
 
-    # ── Session Cookie (CSRF prefetch) ────────────────────────────────────────
-    elif method == "session_cookie":
+    # ── Session Cookie / Form Login (CSRF prefetch + form POST) ──────────────
+    elif method in ("session_cookie", "form_login"):
         login_url = auth_cfg.get("login_url", "")
         if login_url:
             orig_ct = auth_cfg.get("login_content_type", "")
@@ -1824,7 +1824,7 @@ DEFAULT_SETTINGS: dict = {
         },
         "auth": {
             "enabled":                 False,
-            "method":                  "bearer",   # bearer|jwt_bearer|basic|digest|ntlm|ntlm_v2|kerberos|kerberos_delegation|oauth2_client_creds|oauth2_password|oauth1a|oidc_token|saml_assertion|mtls|totp_mfa|apikey|apikey_cookie|cookie_login|session_cookie|token_login|hmac_signature|aws_sigv4|header_creds
+            "method":                  "bearer",   # bearer|jwt_bearer|basic|digest|ntlm|ntlm_v2|kerberos|kerberos_delegation|oauth2_client_creds|oauth2_password|oauth1a|oidc_token|saml_assertion|mtls|totp_mfa|apikey|apikey_cookie|cookie_login|session_cookie|form_login|token_login|hmac_signature|aws_sigv4|header_creds
             # Bearer / JWT
             "auth_token":              "",
             "token_type":              "Bearer",
