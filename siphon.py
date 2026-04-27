@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.1"
+VERSION = "2.3.2"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -8394,6 +8394,30 @@ def main() -> None:
         sess       = _make_session(t_settings)
         auth_sess  = _build_auth_session(t_settings, "auth")   # primary user session (privilege phases)
         auth2_sess = _build_auth_session(t_settings, "auth2")  # secondary user (cross_user)
+
+        def _report_auth_status(sess_obj: "requests.Session | None",
+                                auth_cfg: dict, label: str) -> None:
+            """Log whether authentication was attempted and whether it succeeded."""
+            if not auth_cfg.get("enabled"):
+                con.log(f"[auth:{label}] Authentication not attempted", "INFO")
+                return
+            if sess_obj is None:
+                con.log(f"[auth:{label}] Authentication failed — session could not be built", "ERROR")
+                return
+            _has_cookie = bool(sess_obj.cookies)
+            _has_header = any(
+                k.lower() in ("authorization", "x-auth-token", "x-api-key",
+                               "x-csrf-token", "cookie")
+                for k in sess_obj.headers
+            )
+            _has_auth   = sess_obj.auth is not None
+            if _has_cookie or _has_header or _has_auth:
+                con.log(f"[auth:{label}] Authentication successful", "SUCCESS")
+            else:
+                con.log(f"[auth:{label}] Authentication failed — no credentials were applied to the session", "ERROR")
+
+        _report_auth_status(auth_sess,  t_scan.get("auth",  {}), "primary")
+        _report_auth_status(auth2_sess, t_scan.get("auth2", {}), "secondary")
 
         # ------------------------------------------------------------------
         # Build per-credential contexts from auth_matrix + unauthenticated.
