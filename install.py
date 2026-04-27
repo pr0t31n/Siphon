@@ -232,6 +232,7 @@ PIP_PACKAGES = [
     "requests>=2.28.0",   # HTTP client — required
     "colorama>=0.4.6",    # ANSI colour output — required
     "pyyaml>=6.0.0",      # YAML parser for OpenAPI/Swagger spec ingestion — required
+    "git+https://github.com/seleniumhq/selenium.git#subdirectory=py",
 ]
 
 
@@ -241,6 +242,104 @@ def install_pip() -> None:
         [sys.executable, "-m", "pip", "install", "--break-system-packages"] + PIP_PACKAGES,
         check=False,
     )
+
+
+def install_selenium() -> None:
+    """
+    Install the Selenium Python binding using the best available method.
+
+    Priority order:
+      1. GitHub source — pip install git+https://github.com/seleniumhq/selenium.git#subdirectory=py
+      2. pip (PyPI)    — pip install selenium>=4.0.0
+      3. System pkg    — apt-get / dnf / zypper (last resort)
+
+    webdriver-manager is not available in any system repo; it is always
+    installed via pip after the Selenium binding is in place.
+    """
+    banner("Phase: Selenium (browser-assisted login)")
+
+    # Check if already importable
+    try:
+        import selenium as _sel
+        info(f"selenium already installed ({_sel.__version__}) — checking webdriver-manager")
+        _sel_installed = True
+    except ImportError:
+        _sel_installed = False
+
+    if not _sel_installed:
+        _installed = False
+
+        # 1. GitHub source
+        info("Trying selenium from GitHub source ...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--break-system-packages",
+             "git+https://github.com/seleniumhq/selenium.git#subdirectory=py"],
+            check=False,
+        )
+        if result.returncode == 0:
+            _installed = True
+            info("selenium installed from GitHub source")
+
+        # 2. pip (PyPI)
+        if not _installed:
+            warn("GitHub source install failed — trying pip (PyPI) ...")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--break-system-packages",
+                 "selenium>=4.0.0"],
+                check=False,
+            )
+            if result.returncode == 0:
+                _installed = True
+                info("selenium installed via pip (PyPI)")
+
+        # 3. System package manager (last resort)
+        if not _installed:
+            if OS == "apt" and shutil.which("apt-get"):
+                warn("pip install failed — trying apt-get (last resort) ...")
+                global _apt_updated
+                if not _apt_updated:
+                    run(["apt-get", "update", "-y"], check=False)
+                    _apt_updated = True
+                result = subprocess.run(
+                    ["apt-get", "install", "-y", "python3-selenium"],
+                    check=False,
+                )
+                if result.returncode == 0:
+                    _installed = True
+                    info("python3-selenium installed via apt-get")
+            elif OS == "dnf" and shutil.which("dnf"):
+                warn("pip install failed — trying dnf (last resort) ...")
+                result = subprocess.run(
+                    ["dnf", "install", "-y", "python3-selenium"],
+                    check=False,
+                )
+                if result.returncode == 0:
+                    _installed = True
+                    info("python3-selenium installed via dnf")
+            elif OS == "zypper" and shutil.which("zypper"):
+                warn("pip install failed — trying zypper (last resort) ...")
+                result = subprocess.run(
+                    ["zypper", "install", "-y", "python3-selenium"],
+                    check=False,
+                )
+                if result.returncode == 0:
+                    _installed = True
+                    info("python3-selenium installed via zypper")
+
+        if not _installed:
+            warn("All selenium install methods failed — browser-assisted login will be unavailable")
+
+    # webdriver-manager is pip-only (not in any system repo)
+    try:
+        import webdriver_manager  # noqa: F401
+        info("webdriver-manager already installed — skipping")
+    except ImportError:
+        info("Installing webdriver-manager via pip ...")
+        run(
+            [sys.executable, "-m", "pip", "install",
+             "--break-system-packages", "webdriver-manager>=4.0.0"],
+            check=False,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +505,7 @@ def install_symlinks() -> None:
 # Verification
 # ---------------------------------------------------------------------------
 
-VERIFY_PYTHON = ["requests", "colorama", "yaml"]
+VERIFY_PYTHON = ["requests", "colorama", "yaml", "selenium"]
 
 VERIFY_CLI = [
     ("sslscan",     "TLS scanner"),
@@ -531,6 +630,8 @@ def main() -> None:
     else:
         skips.add("pip")
         warn("Skipping pip packages.")
+
+    install_selenium()
 
     if not args.skip_go:
         install_go()
