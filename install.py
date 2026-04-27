@@ -245,7 +245,9 @@ OFFLINE_BUNDLE_URLS = {
 
 def _install_from_bundle(pkg_name: str, url: str) -> bool:
     """Download a pre-built offline bundle from GitHub and run install_offline.sh.
-    Handles both single .tar.gz files and split .part.* files."""
+    Handles both single .tar.gz files and split .part.* files.
+    Final fallback: clones https://github.com/pr0t31n/OfflineInstallers to /opt/
+    if githubusercontent.com is inaccessible."""
     info(f"Downloading offline bundle for {pkg_name} ...")
     _tmp = f"/tmp/_offline_bundle_{pkg_name}"
     if os.path.isdir(_tmp):
@@ -278,6 +280,36 @@ def _install_from_bundle(pkg_name: str, url: str) -> bool:
                     with open(_p, "rb") as _f:
                         _out.write(_f.read())
             _downloaded = True
+
+    if not _downloaded:
+        # Final fallback: clone the OfflineInstallers repo to /opt/ and install from there
+        _git = shutil.which("git")
+        if _git:
+            info("githubusercontent.com inaccessible — cloning OfflineInstallers to /opt/ ...")
+            _repo_dir = "/opt/OfflineInstallers"
+            _repo_url = "https://github.com/pr0t31n/OfflineInstallers"
+            if os.path.isdir(os.path.join(_repo_dir, ".git")):
+                subprocess.run([_git, "-C", _repo_dir, "pull", "--ff-only"], check=False)
+            else:
+                subprocess.run([_git, "clone", "--depth=1", _repo_url, _repo_dir], check=False)
+            if os.path.isdir(_repo_dir):
+                _local_tar = os.path.join(_repo_dir, f"{pkg_name}_offline_kali.tar.gz")
+                if os.path.isfile(_local_tar):
+                    shutil.copy2(_local_tar, _tarball)
+                    _downloaded = True
+                else:
+                    _repo_parts = sorted([
+                        os.path.join(_repo_dir, f)
+                        for f in os.listdir(_repo_dir)
+                        if f.startswith(f"{pkg_name}_offline_kali.part.")
+                    ])
+                    if _repo_parts:
+                        info(f"  Reassembling {len(_repo_parts)} part(s) from cloned repo ...")
+                        with open(_tarball, "wb") as _out:
+                            for _p in _repo_parts:
+                                with open(_p, "rb") as _f:
+                                    _out.write(_f.read())
+                        _downloaded = True
 
     if not _downloaded:
         warn(f"Could not download offline bundle for {pkg_name}")
