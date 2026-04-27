@@ -234,6 +234,7 @@ PIP_PACKAGES = [
     "pyyaml>=6.0.0",         # YAML parser for OpenAPI/Swagger spec ingestion — required
     "beautifulsoup4>=4.12.0", # HTML parser for response analysis — required
     "sqlmap",                 # SQL injection testing — required
+    "termcolor>=2.0.0",       # terminal colour output — required
 ]
 
 OFFLINE_BUNDLE_URLS = {
@@ -244,6 +245,37 @@ OFFLINE_BUNDLE_URLS = {
 
 _OFFLINE_REPO_DIR = "/opt/OfflineInstallers"
 _OFFLINE_REPO_URL = "https://github.com/pr0t31n/OfflineInstallers"
+
+GIT_PIP_URLS = {
+    "termcolor": "https://github.com/termcolor/termcolor",
+}
+
+
+def _install_from_git_pip(pkg_name: str, repo_url: str) -> bool:
+    """Clone a Python package from GitHub and install it with pip."""
+    _git = shutil.which("git")
+    if not _git:
+        warn(f"git not found — cannot install {pkg_name} from source")
+        return False
+    info(f"Installing {pkg_name} from git source ...")
+    _clone_dir = f"/tmp/_gitpip_{pkg_name}"
+    if os.path.isdir(_clone_dir):
+        shutil.rmtree(_clone_dir, ignore_errors=True)
+    r_clone = subprocess.run([_git, "clone", "--depth=1", repo_url, _clone_dir], check=False)
+    if r_clone.returncode != 0:
+        warn(f"git clone failed for {pkg_name}")
+        shutil.rmtree(_clone_dir, ignore_errors=True)
+        return False
+    r_pip = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--break-system-packages", _clone_dir],
+        check=False,
+    )
+    shutil.rmtree(_clone_dir, ignore_errors=True)
+    if r_pip.returncode == 0:
+        info(f"{pkg_name} installed from git source")
+        return True
+    warn(f"git source install failed for {pkg_name}")
+    return False
 
 
 def _install_from_local_repo(pkg_name: str, tarball: str) -> bool:
@@ -367,6 +399,9 @@ def install_pip() -> None:
             if _name in OFFLINE_BUNDLE_URLS:
                 warn(f"pip install failed for {_name} — trying offline bundle ...")
                 _install_from_bundle(_name, OFFLINE_BUNDLE_URLS[_name])
+            elif _name in GIT_PIP_URLS:
+                warn(f"pip install failed for {_name} — trying git source ...")
+                _install_from_git_pip(_name, GIT_PIP_URLS[_name])
             else:
                 warn(f"pip install failed for {_name}")
 
@@ -485,11 +520,14 @@ def install_selenium() -> None:
         info("webdriver-manager already installed — skipping")
     except ImportError:
         info("Installing webdriver-manager via pip ...")
-        run(
+        _wdm_r = subprocess.run(
             [sys.executable, "-m", "pip", "install",
              "--break-system-packages", "webdriver-manager>=4.0.0"],
             check=False,
         )
+        if _wdm_r.returncode != 0:
+            warn("pip install failed for webdriver-manager — trying selenium offline bundle ...")
+            _install_from_bundle("selenium", OFFLINE_BUNDLE_URLS["selenium"])
 
 
 # ---------------------------------------------------------------------------
