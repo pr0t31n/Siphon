@@ -242,13 +242,38 @@ OFFLINE_BUNDLE_URLS = {
     "sqlmap":         "https://raw.githubusercontent.com/pr0t31n/OfflineInstallers/main/sqlmap_offline_kali.tar.gz",
 }
 
+_OFFLINE_REPO_DIR = "/opt/OfflineInstallers"
+_OFFLINE_REPO_URL = "https://github.com/pr0t31n/OfflineInstallers"
+
+
+def _install_from_local_repo(pkg_name: str, tarball: str) -> bool:
+    """Copy/reassemble a bundle from the already-cloned OfflineInstallers repo.
+    Returns True if *tarball* was written successfully."""
+    _local_tar = os.path.join(_OFFLINE_REPO_DIR, f"{pkg_name}_offline_kali.tar.gz")
+    if os.path.isfile(_local_tar):
+        shutil.copy2(_local_tar, tarball)
+        return True
+    _repo_parts = sorted([
+        os.path.join(_OFFLINE_REPO_DIR, f)
+        for f in os.listdir(_OFFLINE_REPO_DIR)
+        if f.startswith(f"{pkg_name}_offline_kali.part.")
+    ])
+    if _repo_parts:
+        info(f"  Reassembling {len(_repo_parts)} part(s) from cloned repo ...")
+        with open(tarball, "wb") as _out:
+            for _p in _repo_parts:
+                with open(_p, "rb") as _f:
+                    _out.write(_f.read())
+        return True
+    warn(f"{pkg_name} not found in cloned OfflineInstallers repo")
+    return False
+
 
 def _install_from_bundle(pkg_name: str, url: str) -> bool:
     """Download a pre-built offline bundle from GitHub and run install_offline.sh.
     Handles both single .tar.gz files and split .part.* files.
-    Final fallback: clones https://github.com/pr0t31n/OfflineInstallers to /opt/
-    if githubusercontent.com is inaccessible."""
-    info(f"Downloading offline bundle for {pkg_name} ...")
+    If the OfflineInstallers repo is already cloned at /opt/OfflineInstallers, installs
+    directly from there without attempting any network downloads."""
     _tmp = f"/tmp/_offline_bundle_{pkg_name}"
     if os.path.isdir(_tmp):
         shutil.rmtree(_tmp, ignore_errors=True)
@@ -256,60 +281,48 @@ def _install_from_bundle(pkg_name: str, url: str) -> bool:
     _tarball = os.path.join(_tmp, f"{pkg_name}_offline_kali.tar.gz")
     _downloaded = False
 
-    try:
-        urllib.request.urlretrieve(url, _tarball)
-        _downloaded = True
-    except Exception:
-        # Single file unavailable — try split parts (.part.aa, .part.ab, ...)
-        _base = url.rsplit("/", 1)[0]
-        _parts = []
-        for _a in "abcdefghijklmnopqrstuvwxyz":
-            for _b in "abcdefghijklmnopqrstuvwxyz":
-                _sfx = _a + _b
-                _pu = f"{_base}/{pkg_name}_offline_kali.part.{_sfx}"
-                _pp = os.path.join(_tmp, f"part.{_sfx}")
-                try:
-                    urllib.request.urlretrieve(_pu, _pp)
-                    _parts.append(_pp)
-                except Exception:
-                    break
-        if _parts:
-            info(f"  Reassembling {len(_parts)} part(s) ...")
-            with open(_tarball, "wb") as _out:
-                for _p in sorted(_parts):
-                    with open(_p, "rb") as _f:
-                        _out.write(_f.read())
+    # Fast path: OfflineInstallers repo already cloned — skip all network attempts
+    if os.path.isdir(os.path.join(_OFFLINE_REPO_DIR, ".git")):
+        info(f"OfflineInstallers repo already cloned — installing {pkg_name} directly ...")
+        _downloaded = _install_from_local_repo(pkg_name, _tarball)
+    else:
+        info(f"Downloading offline bundle for {pkg_name} ...")
+        try:
+            urllib.request.urlretrieve(url, _tarball)
             _downloaded = True
+        except Exception:
+            # Single file unavailable — try split parts (.part.aa, .part.ab, ...)
+            _base = url.rsplit("/", 1)[0]
+            _parts = []
+            for _a in "abcdefghijklmnopqrstuvwxyz":
+                for _b in "abcdefghijklmnopqrstuvwxyz":
+                    _sfx = _a + _b
+                    _pu = f"{_base}/{pkg_name}_offline_kali.part.{_sfx}"
+                    _pp = os.path.join(_tmp, f"part.{_sfx}")
+                    try:
+                        urllib.request.urlretrieve(_pu, _pp)
+                        _parts.append(_pp)
+                    except Exception:
+                        break
+            if _parts:
+                info(f"  Reassembling {len(_parts)} part(s) ...")
+                with open(_tarball, "wb") as _out:
+                    for _p in sorted(_parts):
+                        with open(_p, "rb") as _f:
+                            _out.write(_f.read())
+                _downloaded = True
 
-    if not _downloaded:
-        # Final fallback: clone the OfflineInstallers repo to /opt/ and install from there
-        _git = shutil.which("git")
-        if _git:
-            info("githubusercontent.com inaccessible — cloning OfflineInstallers to /opt/ ...")
-            _repo_dir = "/opt/OfflineInstallers"
-            _repo_url = "https://github.com/pr0t31n/OfflineInstallers"
-            if os.path.isdir(os.path.join(_repo_dir, ".git")):
-                subprocess.run([_git, "-C", _repo_dir, "pull", "--ff-only"], check=False)
-            else:
-                subprocess.run([_git, "clone", "--depth=1", _repo_url, _repo_dir], check=False)
-            if os.path.isdir(_repo_dir):
-                _local_tar = os.path.join(_repo_dir, f"{pkg_name}_offline_kali.tar.gz")
-                if os.path.isfile(_local_tar):
-                    shutil.copy2(_local_tar, _tarball)
-                    _downloaded = True
+        if not _downloaded:
+            # Final fallback: clone the OfflineInstallers repo to /opt/ and install from there
+            _git = shutil.which("git")
+            if _git:
+                info("githubusercontent.com inaccessible — cloning OfflineInstallers to /opt/ ...")
+                if os.path.isdir(os.path.join(_OFFLINE_REPO_DIR, ".git")):
+                    subprocess.run([_git, "-C", _OFFLINE_REPO_DIR, "pull", "--ff-only"], check=False)
                 else:
-                    _repo_parts = sorted([
-                        os.path.join(_repo_dir, f)
-                        for f in os.listdir(_repo_dir)
-                        if f.startswith(f"{pkg_name}_offline_kali.part.")
-                    ])
-                    if _repo_parts:
-                        info(f"  Reassembling {len(_repo_parts)} part(s) from cloned repo ...")
-                        with open(_tarball, "wb") as _out:
-                            for _p in _repo_parts:
-                                with open(_p, "rb") as _f:
-                                    _out.write(_f.read())
-                        _downloaded = True
+                    subprocess.run([_git, "clone", "--depth=1", _OFFLINE_REPO_URL, _OFFLINE_REPO_DIR], check=False)
+                if os.path.isdir(_OFFLINE_REPO_DIR):
+                    _downloaded = _install_from_local_repo(pkg_name, _tarball)
 
     if not _downloaded:
         warn(f"Could not download offline bundle for {pkg_name}")
