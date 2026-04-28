@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.10"
+VERSION = "2.3.11"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -8387,15 +8387,38 @@ def main() -> None:
     _n_roles: int = 0
     _collected_roles: list = []
 
-    _n_roles = _prompt_multi_role_setup(scan.get("auth", {}))
-    if _n_roles >= 1:
-        _auth = scan.get("auth", {})
-        _r1_lbl = _auth.pop("_role_label", None) or _auth.get("username") or "role_1"
-        _collected_roles.append({
-            "role":     _r1_lbl,
-            "username": _auth.get("username", ""),
-            "password": _auth.get("password", ""),
-        })
+    _am = scan.get("auth_matrix") or []
+    if _MANAGED and _am:
+        # Roles were pre-defined in the Crucible project — load them directly,
+        # no prompt needed.
+        _n_roles = len(_am)
+        _collected_roles = [
+            {
+                "role":     r.get("role") or f"role_{i + 1}",
+                "username": r.get("username", ""),
+                "password": r.get("password", ""),
+            }
+            for i, r in enumerate(_am)
+        ]
+        # Ensure scan["auth"] reflects role 1 so _build_auth_session works
+        if _collected_roles:
+            _auth0 = scan.setdefault("auth", {})
+            _auth0["enabled"]  = True
+            _auth0["username"] = _collected_roles[0]["username"]
+            _auth0["password"] = _collected_roles[0]["password"]
+        con.info(
+            f"[multi-role] {_n_roles} role(s) loaded from project settings — skipping prompt"
+        )
+    else:
+        _n_roles = _prompt_multi_role_setup(scan.get("auth", {}))
+        if _n_roles >= 1:
+            _auth = scan.get("auth", {})
+            _r1_lbl = _auth.pop("_role_label", None) or _auth.get("username") or "role_1"
+            _collected_roles.append({
+                "role":     _r1_lbl,
+                "username": _auth.get("username", ""),
+                "password": _auth.get("password", ""),
+            })
 
     # Auto-compute structured project path from engagement fields if not set
     if not scan.get("project"):
