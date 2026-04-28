@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.12"
+VERSION = "2.3.13"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -8165,7 +8165,16 @@ def phase_access_matrix(
                 )
                 access[role] = r.status_code
             except Exception:
-                access[role] = None
+                # Fallback to HEAD; if that also fails record 0 so every role
+                # has a real integer code — null would prevent completion checks.
+                try:
+                    r = r_sess.request(
+                        "HEAD", url, timeout=max(timeout // 2, 3),
+                        allow_redirects=False,
+                    )
+                    access[role] = r.status_code
+                except Exception:
+                    access[role] = 0
 
         endpoint_access.append({
             "method": method,
