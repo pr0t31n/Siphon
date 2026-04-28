@@ -326,7 +326,10 @@ def _install_from_bundle(pkg_name: str, url: str) -> bool:
             # Single file unavailable — try split parts (.part.aa, .part.ab, ...)
             _base = url.rsplit("/", 1)[0]
             _parts = []
+            _found_gap = False
             for _a in "abcdefghijklmnopqrstuvwxyz":
+                if _found_gap:
+                    break
                 for _b in "abcdefghijklmnopqrstuvwxyz":
                     _sfx = _a + _b
                     _pu = f"{_base}/{pkg_name}_offline_kali.part.{_sfx}"
@@ -335,6 +338,7 @@ def _install_from_bundle(pkg_name: str, url: str) -> bool:
                         urllib.request.urlretrieve(_pu, _pp)
                         _parts.append(_pp)
                     except Exception:
+                        _found_gap = True
                         break
             if _parts:
                 info(f"  Reassembling {len(_parts)} part(s) ...")
