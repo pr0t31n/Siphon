@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.14"
+VERSION = "2.3.15"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -957,15 +957,14 @@ class OutputManager:
                         ex_cves = set(c.strip() for c in (ex.get("cves") or "").split(",") if c.strip())
                         new_cves = set(c.strip() for c in cves.split(",") if c.strip())
                         ex["cves"] = ",".join(sorted(ex_cves | new_cves))
-                    # Merge accounts
+                    # Merge accounts — dedup by role so the same role is never added twice
                     if self._current_accounts:
                         _ex_accts = ex.get("accounts") or []
-                        _acct_keys = {(a.get("username", ""), a.get("role", "")) for a in _ex_accts}
+                        _ex_roles = {a.get("role", "") for a in _ex_accts}
                         for _a in self._current_accounts:
-                            _k = (_a.get("username", ""), _a.get("role", ""))
-                            if _k not in _acct_keys:
+                            if _a.get("role", "") not in _ex_roles:
                                 _ex_accts.append(_a)
-                                _acct_keys.add(_k)
+                                _ex_roles.add(_a.get("role", ""))
                         ex["accounts"] = _ex_accts
                     merged = True
                     break
