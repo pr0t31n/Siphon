@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.15"
+VERSION = "2.3.16"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -1738,6 +1738,39 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
     # ── WebAuthn probe ────────────────────────────────────────────────────────
     elif method == "webauthn_probe":
         sess.headers["X-WebAuthn-Token"] = "1"
+
+    # ── Auto / Unknown — try username+password methods in priority order ──────
+    elif method == "auto":
+        # Attempts each method that accepts a username and password, stops at the
+        # first one that produces a session carrying authentication signals.
+        # Priority order (API-centric):
+        #   1. token_login — POST credentials → JSON token response (most common for APIs)
+        #   2. basic       — HTTP Basic Auth (RFC 7617)
+        #   3. cookie_login — POST credentials → session cookies
+        #   4. digest      — HTTP Digest Auth (RFC 7616)
+        #   5. ntlm        — NTLM / Windows Integrated Auth (Active Directory)
+        _auto_methods = ["token_login", "basic", "cookie_login", "digest", "ntlm"]
+        _auto_hdr_names = frozenset({
+            "authorization", "x-auth-token", "x-api-key", "x-csrf-token",
+            "x-access-token", "x-session-token", "token",
+        })
+
+        def _auto_has_auth(s: "requests.Session") -> bool:
+            return (bool(s.cookies)
+                    or any(k.lower() in _auto_hdr_names for k in s.headers)
+                    or s.auth is not None)
+
+        for _auto_m in _auto_methods:
+            _auto_settings = copy.deepcopy(settings)
+            _auto_settings["scan"][auth_key] = copy.deepcopy(auth_cfg)
+            _auto_settings["scan"][auth_key]["method"] = _auto_m
+            try:
+                _auto_sess = _build_auth_session(_auto_settings, auth_key)
+                if _auto_sess is not None and _auto_has_auth(_auto_sess):
+                    return _auto_sess
+            except Exception:
+                pass
+        return None
 
     return sess
 
