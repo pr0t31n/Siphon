@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.9"
+VERSION = "2.3.10"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -8298,23 +8298,16 @@ def _prompt_multi_role_setup(auth_cfg: dict) -> int:
     Modifies auth_cfg in-place when new credentials are provided.
     Returns the number of authenticated roles (0 = unauthenticated only).
     """
-    import getpass as _gp
-    while True:
-        try:
-            raw = input(
-                "\n[*] How many authenticated user roles will be tested "
-                "(not including unauthenticated)? [0]: "
-            ).strip()
-            if not raw:
-                return 0
-            n = int(raw)
-            if n >= 0:
-                break
-            print("    Enter 0 or a positive integer.")
-        except ValueError:
-            print("    Enter 0 or a positive integer.")
-        except EOFError:
-            return 0
+    raw = con.prompt(
+        "How many authenticated user roles will be tested (not including unauthenticated)?",
+        "0",
+    ).strip()
+    if not raw:
+        return 0
+    try:
+        n = max(0, int(raw))
+    except ValueError:
+        n = 0
 
     if n == 0:
         return 0
@@ -8325,16 +8318,17 @@ def _prompt_multi_role_setup(auth_cfg: dict) -> int:
 
     if _has_creds and n > 1:
         _u = auth_cfg.get("username") or "(token)"
-        print(f"\n[*] Credentials are configured for '{_u}'.")
-        _ans = input("    Are these for the most permissive user? [Y/n]: ").strip().lower()
+        _ans = con.prompt(
+            f"Credentials are configured for '{_u}'. Are these for the most permissive user? [Y/n]",
+            "Y",
+        ).strip().lower()
         if _ans in ("n", "no"):
             _has_creds = False
 
     if not _has_creds:
-        print("\n[*] Enter credentials for the most permissive user (role 1):")
-        _uname = input("    Username: ").strip()
-        _pwd   = _gp.getpass("    Password: ")
-        _lbl   = input("    Role label (e.g. admin) [role_1]: ").strip() or "role_1"
+        _uname = con.prompt("Username (most permissive user — role 1)").strip()
+        _pwd   = con.prompt_secret("Password (most permissive user — role 1)")
+        _lbl   = con.prompt("Role label (e.g. admin)", "role_1").strip() or "role_1"
         auth_cfg["enabled"]     = True
         auth_cfg["username"]    = _uname
         auth_cfg["password"]    = _pwd
@@ -8350,15 +8344,11 @@ def _prompt_next_role_creds(role_num: int, total: int) -> dict:
     Prompt for credentials for role_num of total authenticated roles.
     Returns {"role": label, "username": u, "password": p}.
     """
-    import getpass as _gp
-    print(f"\n[*] Role {role_num}/{total} — enter credentials for the next role:")
-    while True:
-        _uname = input(f"    Username (role {role_num}): ").strip()
-        if _uname:
-            break
-        print("    Username cannot be empty.")
-    _pwd = _gp.getpass(f"    Password (role {role_num}): ")
-    _lbl = input(f"    Role label [role_{role_num}]: ").strip() or f"role_{role_num}"
+    _uname = con.prompt(
+        f"Username (role {role_num}/{total})"
+    ).strip() or f"role_{role_num}"
+    _pwd = con.prompt_secret(f"Password (role {role_num}/{total})")
+    _lbl = con.prompt(f"Role label", f"role_{role_num}").strip() or f"role_{role_num}"
     return {"role": _lbl, "username": _uname, "password": _pwd}
 
 
@@ -8397,16 +8387,15 @@ def main() -> None:
     _n_roles: int = 0
     _collected_roles: list = []
 
-    if not _MANAGED:
-        _n_roles = _prompt_multi_role_setup(scan.get("auth", {}))
-        if _n_roles >= 1:
-            _auth = scan.get("auth", {})
-            _r1_lbl = _auth.pop("_role_label", None) or _auth.get("username") or "role_1"
-            _collected_roles.append({
-                "role":     _r1_lbl,
-                "username": _auth.get("username", ""),
-                "password": _auth.get("password", ""),
-            })
+    _n_roles = _prompt_multi_role_setup(scan.get("auth", {}))
+    if _n_roles >= 1:
+        _auth = scan.get("auth", {})
+        _r1_lbl = _auth.pop("_role_label", None) or _auth.get("username") or "role_1"
+        _collected_roles.append({
+            "role":     _r1_lbl,
+            "username": _auth.get("username", ""),
+            "password": _auth.get("password", ""),
+        })
 
     # Auto-compute structured project path from engagement fields if not set
     if not scan.get("project"):
@@ -8856,7 +8845,6 @@ def main() -> None:
             if (
                 _ctx.get("multi_role")
                 and _ctx_label != "unauthenticated"
-                and not _MANAGED
             ):
                 _next_idx = _ctx.get("role_idx", 0) + 1
                 if _next_idx < _n_roles and _next_idx >= len(_collected_roles):
