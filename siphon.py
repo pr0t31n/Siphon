@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.13"
+VERSION = "2.3.14"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -8610,8 +8610,8 @@ def main() -> None:
         api_inventory: list = []
         _inv_seen:     set  = set()
 
-        # TLS is server-side — run once before the credential loop (always unauthenticated)
-        output.set_auth_context([{"username": "UNAUTH", "role": "unauthenticated"}])
+        # TLS is server-side — run once before the credential loop (no role tag on pre-loop findings)
+        output.set_auth_context([])
 
         if phases_cfg.get("tls", True) and not pm.is_phase_complete("tls"):
             con.section(f"Siphon — {raw_url} [tls]")
