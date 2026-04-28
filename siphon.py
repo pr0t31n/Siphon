@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.11"
+VERSION = "2.3.12"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -8328,13 +8328,13 @@ def _prompt_multi_role_setup(auth_cfg: dict) -> int:
     if not _has_creds:
         _uname = con.prompt("Username (most permissive user — role 1)").strip()
         _pwd   = con.prompt_secret("Password (most permissive user — role 1)")
-        _lbl   = con.prompt("Role label (e.g. admin)", "role_1").strip() or "role_1"
         auth_cfg["enabled"]     = True
         auth_cfg["username"]    = _uname
         auth_cfg["password"]    = _pwd
-        auth_cfg["_role_label"] = _lbl
-    elif not auth_cfg.get("_role_label"):
-        auth_cfg["_role_label"] = auth_cfg.get("username") or "role_1"
+
+    # Always ask for role name — required for consistent role context display
+    _lbl = con.prompt("Role name for role 1 (e.g. Admin, Editor, Staff)", "elevated").strip() or "elevated"
+    auth_cfg["_role_label"] = _lbl
 
     return n
 
@@ -8348,7 +8348,10 @@ def _prompt_next_role_creds(role_num: int, total: int) -> dict:
         f"Username (role {role_num}/{total})"
     ).strip() or f"role_{role_num}"
     _pwd = con.prompt_secret(f"Password (role {role_num}/{total})")
-    _lbl = con.prompt(f"Role label", f"role_{role_num}").strip() or f"role_{role_num}"
+    _lbl = con.prompt(
+        f"Role name for role {role_num} (e.g. User, Manager, Viewer)",
+        f"user{role_num}",
+    ).strip() or f"user{role_num}"
     return {"role": _lbl, "username": _uname, "password": _pwd}
 
 
