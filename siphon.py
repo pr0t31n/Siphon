@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.16"
+VERSION = "2.3.17"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -475,6 +475,59 @@ def _build_project_dir(client_short: str, start_date: str, tool_name: str) -> Pa
     path = _clients_base() / slug / year / tool_name / f"{slug}_{dt_str}"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _write_auth_status(project_dir: "Path | str", role: str, username: str,
+                       status: str, session: "requests.Session | None",
+                       landing_url: str = "", landing_body: str = "",
+                       landing_code: int = 0) -> None:
+    """Upsert one role entry into <project_dir>/authentication_status.json."""
+    _AUTH_HDR_NAMES_WR = frozenset({
+        "authorization", "x-auth-token", "x-api-key", "x-access-token",
+        "x-session-token", "x-csrf-token", "token",
+    })
+    cookies: list = []
+    auth_headers: list = []
+    if session is not None:
+        for ck in session.cookies:
+            cookies.append({
+                "name":     ck.name,
+                "value":    ck.value,
+                "domain":   ck.domain or "",
+                "path":     ck.path   or "",
+                "secure":   bool(ck.secure),
+                "httpOnly": bool(getattr(ck, "_rest", {}).get("HttpOnly", False)
+                                 or getattr(ck, "has_nonstandard_attr", lambda _: False)("HttpOnly")),
+                "expires":  ck.expires,
+            })
+        for hname, hval in session.headers.items():
+            if hname.lower() in _AUTH_HDR_NAMES_WR:
+                auth_headers.append({"name": hname, "value": hval})
+
+    entry = {
+        "role":         role,
+        "username":     username,
+        "status":       status,
+        "cookies":      cookies,
+        "auth_headers": auth_headers,
+        "landing_url":  landing_url,
+        "landing_code": landing_code,
+        "landing_body": landing_body[:8192],
+    }
+
+    try:
+        p = Path(project_dir) / "authentication_status.json"
+        existing: list = []
+        if p.exists():
+            try:
+                existing = json.loads(p.read_text())
+            except Exception:
+                existing = []
+        updated = [e for e in existing if e.get("role") != role]
+        updated.append(entry)
+        p.write_text(json.dumps(updated, indent=2, default=str))
+    except Exception:
+        pass
 
 
 def _write_project_meta(project_dir: Path, tool: str, client_short: str,
@@ -8679,6 +8732,37 @@ def main() -> None:
                 con.info(f"Auth [{_ctx_label}]: enabled")
             else:
                 con.info(f"Auth [{_ctx_label}]: none")
+
+            # ── Write authentication_status.json entry for this role ──────────
+            try:
+                _si_as_username = (
+                    "" if _ctx_label == "unauthenticated"
+                    else (_ctx_s.get("scan", {}).get("auth", {}).get("username") or "").strip() or _ctx_label
+                )
+                _si_as_status = (
+                    "unauthenticated" if _ctx_label == "unauthenticated"
+                    else ("success" if _ctx_auth is not None else "failed")
+                )
+                _si_landing_url = ""
+                _si_landing_code = 0
+                _si_landing_body = ""
+                if _ctx_auth is not None:
+                    try:
+                        _si_r = _ctx_auth.get(
+                            raw_url, timeout=_ctx_s.get("scan", {}).get("timeout", 10),
+                            allow_redirects=True,
+                        )
+                        _si_landing_url  = _si_r.url
+                        _si_landing_code = _si_r.status_code
+                        _si_landing_body = _si_r.text[:8192]
+                    except Exception:
+                        pass
+                _write_auth_status(
+                    output.out_dir, _ctx_label, _si_as_username, _si_as_status,
+                    _ctx_auth, _si_landing_url, _si_landing_body, _si_landing_code,
+                )
+            except Exception:
+                pass
 
             con.section(f"Siphon — {raw_url} [{_ctx_label}]")
 
