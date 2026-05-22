@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.3.17"
+VERSION = "2.8.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -548,6 +548,51 @@ def _write_project_meta(project_dir: Path, tool: str, client_short: str,
     except Exception:
         pass
 
+
+def _u_augment_findings(findings_json_path, *, tool: str,
+                        scope=None, phase: str = "") -> int:
+    """Read findings.json, fill missing universal fields (id/tool/scope/phase/
+    catalogue_id), atomic-write back. Idempotent."""
+    try:
+        import sys as _s
+        if "/opt/pr0t31n/shared" not in _s.path:
+            _s.path.insert(0, "/opt/pr0t31n/shared")
+        import pr0t31n_schema as _us
+    except ImportError:
+        return 0
+    try:
+        return _us.augment_findings_file(findings_json_path,
+                                          tool=tool, scope=scope, phase=phase)
+    except Exception:
+        return 0
+
+
+def _u_dual_write_meta(project_dir: Path, *, tool: str, version: str,
+                       client_short: str = "", client_name: str = "",
+                       engagement_name: str = "", target: str = "") -> bool:
+    """Dual-write universal meta.json (schema 1.0) alongside project_meta.json.
+    Graceful no-op when /opt/pr0t31n/shared/pr0t31n_schema.py is not installed."""
+    try:
+        import sys as _s
+        if "/opt/pr0t31n/shared" not in _s.path:
+            _s.path.insert(0, "/opt/pr0t31n/shared")
+        import pr0t31n_schema as _us
+    except ImportError:
+        return False
+    try:
+        meta = _us.make_meta(
+            tool=tool, version=version,
+            client_short=client_short or "unknown",
+            client_name=client_name or client_short or "unknown",
+            engagement_name=engagement_name or f"{tool} run",
+            target=target or "",
+        )
+        _us.atomic_write_json(Path(project_dir) / "meta.json", meta)
+        return True
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Dependency bootstrap
 # ---------------------------------------------------------------------------
@@ -865,9 +910,25 @@ class OutputManager:
         self._start_time = datetime.now(timezone.utc)
         self.findings_json = self.out_dir / "findings.json"
         self._current_accounts: list = []
+        # ── v1.1 phase-context — set once per phase, applied to every
+        # add_finding() call from that phase that doesn't pass its own
+        # method/from_spec/is_rogue. Avoids editing 115+ individual call sites.
+        self._phase_context: dict = {}
         self._setup_dirs()
         if not self.findings_json.exists():
             self.findings_json.write_text("[]", encoding="utf-8")
+
+    def set_phase_context(self, *, method: str = "",
+                          from_spec: "bool | None" = None,
+                          is_rogue: "bool | None" = None) -> None:
+        """Set per-phase v1.1 API context. Each phase function calls this
+        once at its start; add_finding() pulls these as fallback defaults
+        when the individual call doesn't pass them. Pass None to clear."""
+        self._phase_context = {
+            "method":    method or "",
+            "from_spec": from_spec,
+            "is_rogue":  is_rogue,
+        }
 
     def _setup_dirs(self) -> None:
         for d in self.TOOL_DIRS:
@@ -907,6 +968,13 @@ class OutputManager:
         extra: dict | None = None,
         output_file: str = "",
         source: str | None = None,
+        # ── v1.1 API enrichment kwargs (preferred over extra dict) ─────
+        # Phases that know these natively should pass them directly. If a
+        # caller omits them they fall through to the extra-dict path then
+        # to safe defaults; no caller has to change for backward compat.
+        method: str = "",
+        from_spec: "bool | None" = None,
+        is_rogue: "bool | None" = None,
     ) -> dict:
         ts = datetime.now(timezone.utc).isoformat()
         sev_upper = severity.upper()
@@ -940,6 +1008,46 @@ class OutputManager:
                           if c.strip()]
         cves = ",".join(sorted(set(_all_cve_parts)))
 
+        # ── v1.1 API-specific enrichment ──────────────────────────────
+        # Siphon NATIVELY knows the API endpoint path, HTTP method, and
+        # whether the endpoint was in the OpenAPI spec — populate the v1.1
+        # api_* + owasp_api fields directly. owasp_url already covers
+        # OWASP API Top 10; owasp_api is the short identifier (e.g. API3:2023).
+        try:
+            _api_path = _parsed.path or ""
+        except Exception:
+            _api_path = ""
+        # Resolution order for each field:
+        #   1. Explicit kwarg passed to add_finding()
+        #   2. Value in the extra dict
+        #   3. Phase-context default (set via set_phase_context())
+        #   4. Safe default
+        _ctx = getattr(self, "_phase_context", {}) or {}
+        _api_method    = (method
+                          or _extra.get("method")
+                          or _extra.get("http_method")
+                          or _ctx.get("method")
+                          or "").upper()
+        if from_spec is not None:
+            _api_from_spec = bool(from_spec)
+        elif "from_spec" in _extra:
+            _api_from_spec = bool(_extra["from_spec"])
+        elif _ctx.get("from_spec") is not None:
+            _api_from_spec = bool(_ctx["from_spec"])
+        else:
+            _api_from_spec = False
+        if is_rogue is not None:
+            _is_rogue = bool(is_rogue)
+        elif "is_rogue" in _extra or "rogue" in _extra:
+            _is_rogue = bool(_extra.get("is_rogue", _extra.get("rogue", False)))
+        elif _ctx.get("is_rogue") is not None:
+            _is_rogue = bool(_ctx["is_rogue"])
+        else:
+            _is_rogue = False
+        # owasp_name from _owasp_api_resolve is already the OWASP API short id
+        # when applicable (e.g. "API3:2023 – Injection"); store the short form.
+        _owasp_api_short = _owasp_name if _owasp_name.startswith("API") else ""
+
         # Fracture-compatible entry written to findings.json for Crucible
         fr_entry = {
             "title":           title,
@@ -964,6 +1072,12 @@ class OutputManager:
             "nist":            nist,
             "remediation":     remediation,
             "accounts":        list(self._current_accounts),
+            # ── v1.1 API enrichment (Siphon natively knows these) ─────
+            "api_endpoint_path": _api_path,
+            "api_method":        _api_method,
+            "api_from_spec":     _api_from_spec,
+            "is_rogue_endpoint": _is_rogue,
+            "owasp_api":         _owasp_api_short,
         }
 
         # Native Siphon entry kept in self.findings for supplementary reports
@@ -1140,6 +1254,8 @@ class OutputManager:
             )
             self.save_api_map(updated_map)
         self.write_summary()
+        # Augment findings.json with universal-required fields (idempotent).
+        _u_augment_findings(self.findings_json, tool="siphon", scope=None)
 
     def print_summary(self) -> None:
         counts = self.count_by_severity()
@@ -2755,6 +2871,8 @@ def _probe_undocumented_endpoints(
                     "Ensure all active API endpoints are documented in the API specification. "
                     "Remove or disable unintended undocumented endpoints."
                 ),
+                # v1.1: this endpoint was discovered but is not in the spec — rogue.
+                method="GET", from_spec=False, is_rogue=True,
             )
 
     if found_undoc:
@@ -3182,6 +3300,8 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
                     output_file=str(out_file),
                     extra={"owasp": "API9"},
                     source="kiterunner",
+                    # v1.1: Kiterunner discovery — method known; rogue (not in spec)
+                    method=method, from_spec=False, is_rogue=True,
                 )
         con.info(f"Kiterunner: {len(results)} route(s) found")
     except subprocess.TimeoutExpired:
@@ -3273,6 +3393,8 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
                         output_file=str(out_file),
                         extra={"owasp": "API9"},
                         source="ffuf",
+                        # v1.1: FFUF discovery — GET probe; rogue (not in spec)
+                        method="GET", from_spec=False, is_rogue=True,
                     )
         con.info(f"FFUF: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
@@ -3364,6 +3486,8 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
                     output_file=str(out_file),
                     extra={"owasp": "API9"},
                     source="feroxbuster",
+                    # v1.1: Feroxbuster discovery — GET probe; rogue
+                    method="GET", from_spec=False, is_rogue=True,
                 )
         con.info(f"Feroxbuster: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
@@ -3447,6 +3571,8 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
                         output_file=str(out_file),
                         extra={"owasp": "API9"},
                         source="dirsearch",
+                        # v1.1: dirsearch discovery — GET probe; rogue
+                        method="GET", from_spec=False, is_rogue=True,
                     )
             except Exception:
                 pass
@@ -3544,6 +3670,10 @@ def phase_discovery(settings: dict, sess: requests.Session,
     configured.  After building the inventory, active probing detects endpoints
     not listed in the spec (MEDIUM finding per undocumented path).
     """
+    # v1.1: discovery probes endpoints NOT in the spec — every finding from
+    # this phase is by definition rogue. Individual callers (Kiterunner, FFUF,
+    # Feroxbuster, dirsearch) override 'method' for the specific HTTP verb.
+    output.set_phase_context(method="GET", from_spec=False, is_rogue=True)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -3859,6 +3989,7 @@ def phase_discovery(settings: dict, sess: requests.Session,
 def phase_recon(settings: dict, sess: requests.Session,
                 output: OutputManager) -> None:
     """Phase 1: API fingerprinting and security header analysis."""
+    output.set_phase_context(method="GET", from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -4443,6 +4574,10 @@ _FUZZ_VALUES = ["1", "true", "admin", "null", "undefined", "0", "-1", "99999"]
 def phase_fuzzing(settings: dict, sess: requests.Session,
                   output: OutputManager, inventory: list) -> None:
     """Phase 2: HTTP method and parameter fuzzing."""
+    # Fuzzing probes new methods/params on KNOWN endpoints — endpoints are
+    # from_spec, but fuzzed methods/params are NOT in spec so any positive
+    # finding represents an unintended access path.
+    output.set_phase_context(from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -4721,6 +4856,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                     output: OutputManager, inventory: list,
                     auth_sess=None) -> None:
     """Phase 3: Injection testing — SQLi, NoSQLi, SSTI, XXE, LDAP."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -5206,6 +5342,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                       auth_sess, output: OutputManager,
                       inventory: list) -> None:
     """Phase 4: JWT algorithm confusion and auth bypass attacks."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -5519,6 +5656,7 @@ _RATE_BYPASS_HEADERS = [
 def phase_rate_limiting(settings: dict, sess: requests.Session,
                         output: OutputManager, inventory: list) -> None:
     """Phase 5: Rate limit detection and bypass."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -5736,6 +5874,7 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
                           auth_sess, output: OutputManager,
                           inventory: list) -> None:
     """Phase 6: Mass assignment / over-posting attack testing."""
+    output.set_phase_context(method="POST", from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -5923,6 +6062,7 @@ _SSRF_PAYLOADS = [
 def phase_ssrf(settings: dict, sess: requests.Session,
                auth_sess, output: OutputManager, inventory: list) -> None:
     """Phase 7: SSRF via API URL parameters."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -6019,6 +6159,7 @@ _SENSITIVE_FIELD_RE = re.compile(
 def phase_data_exposure(settings: dict, sess: requests.Session,
                         auth_sess, output: OutputManager, inventory: list) -> None:
     """Phase 8: Excessive data exposure in API responses."""
+    output.set_phase_context(method="GET", from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -6145,6 +6286,7 @@ _DEPTH_ATTACK_QUERY = {
 def phase_graphql(settings: dict, sess: requests.Session,
                   auth_sess, output: OutputManager) -> None:
     """Phase 9: GraphQL introspection and query depth attacks."""
+    output.set_phase_context(method="POST", from_spec=True, is_rogue=False)
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
@@ -6372,6 +6514,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
                          auth_sess, output: OutputManager,
                          inventory: list) -> None:
     """Phase 9b: Business flow abuse — OWASP API6:2023."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     scan     = settings["scan"]
     base_url = scan["api_base_url"]
     timeout  = scan.get("timeout", 10)
@@ -6606,6 +6749,7 @@ def _extract_path_ids(path: str) -> list:
 def phase_bola(settings: dict, auth_sess, output: OutputManager,
                inventory: list) -> None:
     """Phase 10: BOLA/IDOR — cross-user object access."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     if auth_sess is None:
         con.status("bola", "skip", "Auth session required")
         return
@@ -6734,6 +6878,7 @@ _ADMIN_PATHS = [
 def phase_bfla(settings: dict, auth_sess, output: OutputManager,
                inventory: list) -> None:
     """Phase 11: BFLA — function-level authorization bypass."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     if auth_sess is None:
         con.status("bfla", "skip", "Auth session required")
         return
@@ -6811,6 +6956,7 @@ def phase_bfla(settings: dict, auth_sess, output: OutputManager,
 def phase_cross_user(settings: dict, auth_sess, auth2_sess,
                      output: OutputManager, inventory: list) -> None:
     """Phase 12: Cross-user data leakage testing."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     if auth_sess is None or auth2_sess is None:
         con.status("cross_user", "skip", "Both auth and auth2 sessions required")
         return
@@ -6909,6 +7055,7 @@ def phase_cross_user(settings: dict, auth_sess, auth2_sess,
 def phase_session(settings: dict, auth_sess, output: OutputManager,
                   inventory: list) -> None:
     """Phase 13: API session and token management analysis."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     if auth_sess is None:
         con.status("session", "skip", "Auth session required")
         return
@@ -7027,6 +7174,7 @@ _JWT_WORDLIST = [
 def phase_jwt(settings: dict, auth_sess, output: OutputManager,
               inventory: list) -> None:
     """Phase 14: JWT advanced attacks."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     if auth_sess is None:
         con.status("jwt", "skip", "Auth session required")
         return
@@ -7171,6 +7319,7 @@ def phase_verb_tampering(settings: dict, sess: requests.Session,
                          auth_sess, output: OutputManager,
                          inventory: list) -> None:
     """Phase 17: HTTP verb tampering via method override headers."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
     scan     = settings["scan"]
     base_url = scan["api_base_url"]
     timeout  = scan.get("timeout", 10)
@@ -7301,6 +7450,7 @@ def phase_verb_tampering(settings: dict, sess: requests.Session,
 def phase_soap(settings: dict, sess: requests.Session,
                output: OutputManager) -> None:
     """Phase 18: SOAP and WS-Security testing."""
+    output.set_phase_context(method="POST", from_spec=True, is_rogue=False)
     scan     = settings["scan"]
     base_url = scan["api_base_url"]
     timeout  = scan.get("timeout", 10)
@@ -7587,6 +7737,7 @@ def phase_file_upload_info(settings: dict, sess: requests.Session,
                            auth_sess, output: OutputManager,
                            inventory: list) -> None:
     """Phase 19: Detect file upload endpoints in API inventory (informational)."""
+    output.set_phase_context(method="POST", from_spec=True, is_rogue=False)
     scan     = settings["scan"]
     base_url = scan["api_base_url"]
     timeout  = scan.get("timeout", 10)
@@ -7819,6 +7970,8 @@ _API_SENSITIVE_FILES = [
 def phase_sensitive_files(settings: dict, sess: requests.Session,
                           output: OutputManager) -> None:
     """Phase 15: Probe for sensitive files exposed at the API base URL."""
+    # Sensitive-file probing tests paths NOT in spec — same semantics as discovery.
+    output.set_phase_context(method="GET", from_spec=False, is_rogue=True)
     scan = settings["scan"]
     base_url = scan["api_base_url"].rstrip("/")
     timeout = scan.get("timeout", 10)
@@ -8582,6 +8735,15 @@ def main() -> None:
             client_short=eng.get("client_short", ""),
             year=(eng.get("start_date", "") or "")[:4] or datetime.now().strftime("%Y"),
             version=VERSION,
+        )
+        # Dual-write universal meta.json (schema 1.0) for Prometheus UniversalParser.
+        _u_dual_write_meta(
+            base_project,
+            tool="siphon", version=VERSION,
+            client_short=eng.get("client_short", ""),
+            client_name=eng.get("client_name", ""),
+            engagement_name=eng.get("engagement_name", ""),
+            target=(target.get("base_url") or target.get("host", "")) if isinstance(target, dict) else "",
         )
 
         pm = ProgressManager(project_dir / "checkpoint.json")
