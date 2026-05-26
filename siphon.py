@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -6795,15 +6795,52 @@ def phase_bola(settings: dict, auth_sess, output: OutputManager,
                                     resp_id = (test_data.get("id") or test_data.get("user_id") or
                                                test_data.get("userId"))
                                     if resp_id and str(resp_id) != str(own_id):
+                                        # v1.1 inline validation — re-test the same
+                                        # endpoint with the OTHER user's session to
+                                        # confirm cross-user data access still flows.
+                                        _conf, _vdetail = ("", "")
+                                        try:
+                                            import sys as _s
+                                            if "/opt/pr0t31n/shared" not in _s.path:
+                                                _s.path.insert(0, "/opt/pr0t31n/shared")
+                                            import pr0t31n_validators as _pv
+                                            # Build an alt-session fetcher using a fresh
+                                            # session (no shared cookies). If the operator
+                                            # has provided auth2 in settings it would be
+                                            # passed via auth2_sess; for this validator we
+                                            # use a clean session to ensure we're not
+                                            # accidentally using the original auth context.
+                                            def _alt_get(url, timeout=8):
+                                                import requests as _rq
+                                                _ses = _rq.Session()
+                                                _r = _ses.get(url, timeout=timeout, verify=False)
+                                                return _r.status_code, dict(_r.headers), _r.content
+                                            _marker = str(test_id) if test_id else str(resp_id)
+                                            _conf, _vdetail = _pv.validate_bola(
+                                                test_url, _alt_get,
+                                                expected_marker=_marker, timeout=8)
+                                        except ImportError:
+                                            pass
+                                        except Exception as _e:
+                                            _conf, _vdetail = ("Tentative", f"validator error: {_e}")
+                                        _detail = ("The application or API exposes user-controlled "
+                                                   "object identifiers and does not verify whether "
+                                                   "the authenticated user has authorisation to "
+                                                   "access the referenced object, enabling "
+                                                   "horizontal privilege escalation.")
+                                        if _vdetail:
+                                            _detail += f"\n\n[Inline validation] {_vdetail}"
                                         output.add_finding(
                                             phase="bola",
                                             title="Broken Object Level Authorization (IDOR / BOLA)",
                                             severity="CRITICAL",
                                             url=test_url,
-                                            detail="The application or API exposes user-controlled object identifiers and does not verify whether the authenticated user has authorisation to access the referenced object, enabling horizontal privilege escalation.",
+                                            detail=_detail,
                                             evidence=f"Own ID: {own_id}, accessed ID: {test_id}",
                                             remediation="Enforce server-side authorisation checks for every object access request, verifying ownership or explicit permission before returning or modifying data; do not rely on obscure IDs as an access control mechanism.",
                                         )
+                                        if _conf:
+                                            con.info(f"BOLA validator: {_conf} — {_vdetail}")
                                 except Exception:
                                     pass
                 except Exception:
