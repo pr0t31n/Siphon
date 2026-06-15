@@ -154,7 +154,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.9.0"
+VERSION = "2.12.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -3237,25 +3237,69 @@ def _make_temp_wordlist() -> str:
 # External tool runners
 # ---------------------------------------------------------------------------
 
+# ── 2026-06-11 review round 5: discovery-runner consolidation helpers ─────────
+# These shared helpers compress the 4 near-identical discovery runners
+# (kiterunner / ffuf / feroxbuster / dirsearch) — every runner used to
+# repeat: binary search, wordlist resolution, output-path creation,
+# add_finding call.  The runners now delegate the common pieces here,
+# leaving them with only the tool-specific cmd build + result parse.
+# Token-stream behaviour is preserved because OutputManager.add_finding
+# emits __CRUCIBLE_FINDING__ tokens internally; we pass the same kwargs
+# the original code passed.
+
+def _find_discovery_tool(name: str, fallback_paths: list) -> "str | None":
+    """Locate a discovery binary by PATH, then by fallback list."""
+    bin_path = shutil.which(name)
+    if bin_path:
+        return bin_path
+    for p in fallback_paths:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def _resolve_discovery_wordlist() -> "tuple[str, str | None]":
+    """Resolve a wordlist file path.  Returns (wordlist_path, temp_path_or_None)
+    where temp_path must be unlinked after use."""
+    wl = _find_wordlist()
+    if wl:
+        return wl, None
+    tmp = _make_temp_wordlist()
+    return tmp, tmp
+
+
+def _emit_discovery_finding(output: OutputManager, source: str,
+                             url: str, status: int, path: str,
+                             detail: str, evidence: str, out_file: str,
+                             method: str = "GET") -> None:
+    """Single point of finding emission for the 4 discovery runners.
+    Mirrors the previous inline call exactly so the Crucible-session
+    consumer receives the same __CRUCIBLE_FINDING__ envelope."""
+    output.add_finding(
+        phase="discovery",
+        title=f"API Endpoint Discovered ({source})",
+        severity="INFO",
+        url=url,
+        detail=detail,
+        evidence=evidence,
+        output_file=str(out_file),
+        extra={"owasp": "API9"},
+        source=source.lower(),
+        method=method, from_spec=False, is_rogue=True,
+    )
+
+
 def _run_kiterunner(base_url: str, target: dict, scan: dict,
                     output: OutputManager) -> list:
     """Run Kiterunner API route discovery. Returns list of (method, path, status) tuples."""
-    kr_bin = shutil.which("kr")
-    if not kr_bin:
-        for p in ["/usr/local/bin/kr", "/opt/kiterunner/dist/kr"]:
-            if os.path.isfile(p):
-                kr_bin = p
-                break
+    # 2026-06-11 review round 5: use consolidated helpers
+    kr_bin = _find_discovery_tool("kr", ["/usr/local/bin/kr", "/opt/kiterunner/dist/kr"])
     if not kr_bin:
         con.info("Kiterunner (kr) not found — skipping. Install: https://github.com/assetnote/kiterunner")
         return []
 
     con.info("Kiterunner: scanning API routes …")
-    wordlist = _find_wordlist()
-    _tmp_wl  = None
-    if not wordlist:
-        _tmp_wl  = _make_temp_wordlist()
-        wordlist = _tmp_wl
+    wordlist, _tmp_wl = _resolve_discovery_wordlist()
 
     out_file = output.tool_path("kiterunner", f"kiterunner_{target['host']}.txt")
     threads  = min(scan.get("tool_threads", _SCAN_SEM.limit), _SCAN_SEM.limit, 10)  # kr recommends ≤ 10
@@ -3289,19 +3333,13 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
             path = urlparse(url).path or "/"
             if status not in (404, 400, 405, 501):
                 results.append((method, path, status))
-                output.add_finding(
-                    phase="discovery",
-                    title="API Endpoint Discovered (Kiterunner)",
-                    severity="INFO",
-                    url=url,
-                    detail=(f"Kiterunner discovered {method} {path} — "
-                            f"HTTP {status}"),
+                _emit_discovery_finding(
+                    output, source="Kiterunner",
+                    url=url, status=status, path=path,
+                    detail=f"Kiterunner discovered {method} {path} — HTTP {status}",
                     evidence=f"{method} {path} → {status}",
-                    output_file=str(out_file),
-                    extra={"owasp": "API9"},
-                    source="kiterunner",
-                    # v1.1: Kiterunner discovery — method known; rogue (not in spec)
-                    method=method, from_spec=False, is_rogue=True,
+                    out_file=out_file,
+                    method=method,
                 )
         con.info(f"Kiterunner: {len(results)} route(s) found")
     except subprocess.TimeoutExpired:
@@ -3320,22 +3358,14 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
 def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
                         output: OutputManager) -> list:
     """Run FFUF endpoint discovery. Returns list of (method, path, status) tuples."""
-    ffuf_bin = shutil.which("ffuf")
-    if not ffuf_bin:
-        for p in ["/usr/local/bin/ffuf", "/go/bin/ffuf"]:
-            if os.path.isfile(p):
-                ffuf_bin = p
-                break
+    # 2026-06-11 review round 5: use consolidated helpers
+    ffuf_bin = _find_discovery_tool("ffuf", ["/usr/local/bin/ffuf", "/go/bin/ffuf"])
     if not ffuf_bin:
         con.info("ffuf not found — skipping. Install: brew install ffuf")
         return []
 
     con.info("FFUF: endpoint discovery …")
-    wordlist = _find_wordlist()
-    _tmp_wl  = None
-    if not wordlist:
-        _tmp_wl  = _make_temp_wordlist()
-        wordlist = _tmp_wl
+    wordlist, _tmp_wl = _resolve_discovery_wordlist()
 
     out_file = output.tool_path("ffuf", f"ffuf_{target['host']}.json")
     threads  = min(scan.get("tool_threads", _SCAN_SEM.limit), _SCAN_SEM.limit)
@@ -3380,21 +3410,15 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
                 path   = urlparse(url).path or "/"
                 if status not in (404, 400):
                     results.append(("GET", path, status))
-                    output.add_finding(
-                        phase="discovery",
-                        title="API Endpoint Discovered (FFUF)",
-                        severity="INFO",
-                        url=url,
+                    _emit_discovery_finding(
+                        output, source="FFUF",
+                        url=url, status=status, path=path,
                         detail=(f"FFUF discovered {path} — "
                                 f"HTTP {status} ({r.get('length', 0)} bytes)"),
                         evidence=(f"GET {path} → {status} "
                                   f"({r.get('words', 0)} words, "
                                   f"{r.get('lines', 0)} lines)"),
-                        output_file=str(out_file),
-                        extra={"owasp": "API9"},
-                        source="ffuf",
-                        # v1.1: FFUF discovery — GET probe; rogue (not in spec)
-                        method="GET", from_spec=False, is_rogue=True,
+                        out_file=out_file,
                     )
         con.info(f"FFUF: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
@@ -3413,22 +3437,15 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
 def _run_feroxbuster(base_url: str, target: dict, scan: dict,
                      output: OutputManager) -> list:
     """Run Feroxbuster recursive discovery. Returns list of (method, path, status) tuples."""
-    fb_bin = shutil.which("feroxbuster")
-    if not fb_bin:
-        for p in ["/usr/local/bin/feroxbuster", "/usr/bin/feroxbuster"]:
-            if os.path.isfile(p):
-                fb_bin = p
-                break
+    # 2026-06-11 review round 5: use consolidated helpers
+    fb_bin = _find_discovery_tool("feroxbuster",
+                                    ["/usr/local/bin/feroxbuster", "/usr/bin/feroxbuster"])
     if not fb_bin:
         con.info("feroxbuster not found — skipping. Install: brew install feroxbuster")
         return []
 
     con.info("Feroxbuster: recursive discovery …")
-    wordlist = _find_wordlist()
-    _tmp_wl  = None
-    if not wordlist:
-        _tmp_wl  = _make_temp_wordlist()
-        wordlist = _tmp_wl
+    wordlist, _tmp_wl = _resolve_discovery_wordlist()
 
     out_file = output.tool_path("feroxbuster", f"feroxbuster_{target['host']}.txt")
     threads  = min(scan.get("tool_threads", _SCAN_SEM.limit), _SCAN_SEM.limit)
@@ -3476,18 +3493,12 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
                 url    = m.group(2)
                 path   = urlparse(url).path or "/"
                 results.append(("GET", path, status))
-                output.add_finding(
-                    phase="discovery",
-                    title="API Endpoint Discovered (Feroxbuster)",
-                    severity="INFO",
-                    url=url,
+                _emit_discovery_finding(
+                    output, source="Feroxbuster",
+                    url=url, status=status, path=path,
                     detail=f"Feroxbuster discovered {path} — HTTP {status}",
                     evidence=f"GET {path} → {status}",
-                    output_file=str(out_file),
-                    extra={"owasp": "API9"},
-                    source="feroxbuster",
-                    # v1.1: Feroxbuster discovery — GET probe; rogue
-                    method="GET", from_spec=False, is_rogue=True,
+                    out_file=out_file,
                 )
         con.info(f"Feroxbuster: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
@@ -3506,13 +3517,9 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
 def _run_dirsearch(base_url: str, target: dict, scan: dict,
                    output: OutputManager) -> list:
     """Run dirsearch path discovery. Returns list of (method, path, status) tuples."""
-    # Try installed binary first, then common git-clone paths
-    ds_bin = shutil.which("dirsearch")
-    if not ds_bin:
-        for p in ["/opt/dirsearch/dirsearch.py", "/usr/local/bin/dirsearch"]:
-            if os.path.isfile(p):
-                ds_bin = p
-                break
+    # 2026-06-11 review round 5: use consolidated helpers
+    ds_bin = _find_discovery_tool("dirsearch",
+                                    ["/opt/dirsearch/dirsearch.py", "/usr/local/bin/dirsearch"])
     if not ds_bin:
         con.info("dirsearch not found — skipping. Install: git clone https://github.com/maurosoria/dirsearch /opt/dirsearch")
         return []
@@ -3560,19 +3567,13 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
                         continue
                     path = urlparse(url).path or "/"
                     results.append(("GET", path, status))
-                    output.add_finding(
-                        phase="discovery",
-                        title="API Endpoint Discovered (dirsearch)",
-                        severity="INFO",
-                        url=url,
+                    _emit_discovery_finding(
+                        output, source="dirsearch",
+                        url=url, status=status, path=path,
                         detail=f"dirsearch discovered {path} — HTTP {status}",
                         evidence=(f"GET {path} → {status} "
                                   f"({r.get('content-length', r.get('length', 0))} bytes)"),
-                        output_file=str(out_file),
-                        extra={"owasp": "API9"},
-                        source="dirsearch",
-                        # v1.1: dirsearch discovery — GET probe; rogue
-                        method="GET", from_spec=False, is_rogue=True,
+                        out_file=out_file,
                     )
             except Exception:
                 pass
@@ -5398,6 +5399,23 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
             break
 
     # 1. Test endpoints without auth (missing auth enforcement)
+    # 2026-06-11 review: content classification gate. Hardcoded CRITICAL was
+    # firing on public /api/health, /api/version, product-catalogue pages, etc.
+    # Risk is now derived from response content classification:
+    #   CRITICAL  PII markers present (SSN, credit card, email, user records)
+    #   HIGH      User-record markers (user/account/profile keys)
+    #   MEDIUM    Endpoint name suggests sensitive intent (admin, internal, dashboard)
+    #   LOW       Generic data response (catalogue, product, search) without PII
+    #   INFO      Endpoint patterns associated with intentional anon access
+    #             (health, version, status, public, openapi, swagger, docs)
+    _PII_MARKERS = ("ssn", "social_security", "tax_id", "credit_card", "cardnumber",
+                     "passport", "iban", "@" + "gmail.com", "@" + "yahoo.com")
+    _USER_MARKERS = ("user_id", "userid", "email", "username", "phone_number",
+                      "first_name", "last_name", "date_of_birth")
+    _SENSITIVE_PATH = ("admin", "internal", "dashboard", "private", "secret",
+                       "config", "settings", "users", "accounts", "billing")
+    _ANON_OK_PATH = ("health", "healthz", "version", "status", "ping", "public",
+                      "openapi", "swagger", "docs", "robots", "favicon")
     anon_sess = _make_session(settings)
     for ep in auth_endpoints[:5]:
         url = root + ep["path"]
@@ -5417,15 +5435,37 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                     f"Response body:\n{resp.text[:4000]}",
                     encoding="utf-8",
                 )
+                _body_lower = resp.text[:8000].lower()
+                _path_lower = ep["path"].lower()
+                # Classify
+                if any(m in _body_lower for m in _PII_MARKERS):
+                    _sev   = "CRITICAL"
+                    _label = "PII MARKERS DETECTED in response body"
+                elif sum(1 for m in _USER_MARKERS if m in _body_lower) >= 2:
+                    _sev   = "HIGH"
+                    _label = ">=2 user-record markers detected in response body"
+                elif any(p in _path_lower for p in _ANON_OK_PATH):
+                    _sev   = "INFO"
+                    _label = "Endpoint matches anon-OK pattern (health/version/openapi)"
+                elif any(p in _path_lower for p in _SENSITIVE_PATH):
+                    _sev   = "MEDIUM"
+                    _label = "Endpoint name suggests sensitive intent"
+                else:
+                    _sev   = "LOW"
+                    _label = "Generic 200 OK without PII/user markers"
                 output.add_finding(
                     phase="auth_bypass",
-                    title="Missing Authentication Enforcement",
-                    severity="CRITICAL",
+                    title=f"Missing Authentication Enforcement ({_label})",
+                    severity=_sev,
                     url=url,
                     detail=(f"Endpoint {ep['method']} {ep['path']} returned 200 "
-                            f"without authentication."),
+                            f"without authentication. {_label}. "
+                            f"Risk derived from response-content classification "
+                            f"(2026-06-11 review)."),
                     evidence=f"HTTP {resp.status_code}: {resp.text[:200]}",
-                    remediation="Enforce authentication on all protected endpoints.",
+                    remediation="Enforce authentication on protected endpoints. "
+                                "If this endpoint is intentionally public (health/version/"
+                                "openapi), confirm it is on the documented public-API allow-list.",
                     output_file=str(_auth_file),
                 )
 
@@ -6747,8 +6787,17 @@ def _extract_path_ids(path: str) -> list:
 
 
 def phase_bola(settings: dict, auth_sess, output: OutputManager,
-               inventory: list) -> None:
-    """Phase 10: BOLA/IDOR — cross-user object access."""
+               inventory: list, auth2_sess=None) -> None:
+    """Phase 10: BOLA/IDOR — cross-user object access.
+
+    2026-06-11 review fix: prior behaviour fired CRITICAL on enumerability
+    using the SAME session (proves enumeration, not authorization bypass).
+    Now requires a SECOND authenticated user (`auth2_sess`) — when one is
+    available, BOLA findings require that user-B's session also returns
+    user-A's record, which proves cross-tenant access. Without auth2_sess,
+    findings are downgraded to LOW with title prefix "Enumerable IDs —"
+    rather than the CRITICAL "BOLA" label.
+    """
     output.set_phase_context(from_spec=True, is_rogue=False)
     if auth_sess is None:
         con.status("bola", "skip", "Auth session required")
@@ -6760,7 +6809,15 @@ def phase_bola(settings: dict, auth_sess, output: OutputManager,
     target = _parse_target(base_url)
     root = f"{target['scheme']}://{target['netloc']}"
 
-    con.status("bola", "running", "Testing BOLA/IDOR vulnerabilities")
+    # 2026-06-11 review: announce mode at start so operator knows whether
+    # two-account confirmation will run.
+    if auth2_sess is None:
+        con.status("bola", "running",
+                    "Testing enumeration only (no secondary user — "
+                    "BOLA findings will be downgraded)")
+    else:
+        con.status("bola", "running",
+                    "Testing BOLA/IDOR with two-account cross-tenant confirmation")
 
     # Find endpoints with ID parameters
     id_endpoints = []
@@ -6830,10 +6887,38 @@ def phase_bola(settings: dict, auth_sess, output: OutputManager,
                                                    "horizontal privilege escalation.")
                                         if _vdetail:
                                             _detail += f"\n\n[Inline validation] {_vdetail}"
+                                        # 2026-06-11 review: two-account
+                                        # gating. CRITICAL only when auth2_sess
+                                        # is available AND user-B successfully
+                                        # reads user-A's object. Otherwise
+                                        # downgrade to LOW / "Enumerable IDs".
+                                        _two_account_confirmed = False
+                                        if auth2_sess is not None:
+                                            try:
+                                                _r2 = _safe_get(auth2_sess, test_url, timeout=timeout)
+                                                if _r2 and _r2.status_code == 200:
+                                                    _two_account_confirmed = True
+                                            except Exception: pass
+                                        if _two_account_confirmed:
+                                            _sev   = "CRITICAL"
+                                            _title = "Broken Object Level Authorization (IDOR / BOLA) — Cross-Tenant Confirmed"
+                                            _detail += ("\n\n[2026-06-11 two-account confirmation] "
+                                                          "Secondary authenticated user (auth2) also retrieved this object — "
+                                                          "cross-tenant access bypass confirmed.")
+                                        else:
+                                            _sev   = "LOW"
+                                            _title = ("Enumerable Object IDs (BOLA candidate — unconfirmed)"
+                                                       if auth2_sess is None
+                                                       else "Object Access Inconsistency (BOLA candidate — auth2 denied)")
+                                            _detail += ("\n\n[2026-06-11 review] No secondary auth session "
+                                                          "available, OR secondary user could not access. "
+                                                          "This finding proves enumerability not cross-tenant "
+                                                          "access. Add an `auth2` credential to scope settings "
+                                                          "and re-run for confirmation.")
                                         output.add_finding(
                                             phase="bola",
-                                            title="Broken Object Level Authorization (IDOR / BOLA)",
-                                            severity="CRITICAL",
+                                            title=_title,
+                                            severity=_sev,
                                             url=test_url,
                                             detail=_detail,
                                             evidence=f"Own ID: {own_id}, accessed ID: {test_id}",
@@ -9245,9 +9330,12 @@ def main() -> None:
                 con.err(f"Phase {phase} error: {exc}")
                 pm.set_phase_status(phase, "error", detail=str(exc))
 
-        # Phase 10: BOLA
+        # Phase 10: BOLA (2026-06-11 review: pass auth2_sess for two-account
+        # cross-tenant confirmation; the variable is initialised earlier in
+        # the main run loop. When None, phase_bola downgrades the risk.)
         if not _skip("bola"):
-            _run_phase("bola", phase_bola, t_settings, auth_sess, output, api_inventory)
+            _run_phase("bola", phase_bola, t_settings, auth_sess, output, api_inventory,
+                        locals().get("auth2_sess"))
 
         if _shutdown_requested:
             output.save_all(api_inventory)
