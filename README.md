@@ -176,7 +176,216 @@ All results are written to the `project` directory:
 | `siphon_output.json` | Full findings catalogue in JSON format |
 | `siphon_output.csv`  | Findings in CSV format for spreadsheet import |
 | `siphon_output.txt`  | Human-readable text report |
-| `api_inventory.json` | Discovered endpoint inventory |
+| `api_inventory.json` | Discovered endpoint inventory (value-aware as of v2.13.0 — see below) |
+| `meta.json` | Tool identity + version (§13b) |
+| `scan.log` / `scan.log.json` | Timestamped audit log (v2.26.0+): own version + phase EVENT transitions + all messages (§13b/§14j/§14k). External tool versions are recorded in each invocation's `.log` sibling. |
+| `errors.log` / `errors.log.json` | ERROR-level + TOOL_ERROR entries |
+
+### Value-aware endpoint inventory (v2.13.0)
+
+As of v2.13.0 the spec/data-file parsers no longer discard the values, types and
+examples those files carry. Each endpoint in `api_inventory.json` is enriched with:
+
+- **Parameter schema** — per query/path parameter `type`, `format`, `enum`,
+  `example` and `default` extracted from OpenAPI/Swagger (including `$ref`
+  resolution), or the actual values supplied in a Postman/Insomnia/HAR file.
+- **`body_schema`** — a normalised, nested schema for the request body, derived
+  from the OpenAPI request body or inferred from a populated example body.
+- **`observed_responses`** — real/example responses harvested from HAR captures
+  and saved Postman example responses (a known-good oracle for later phases).
+- **Name-based type inference** — when nothing is declared, the field name is
+  used to infer a likely type/format (e.g. `*_id` → integer, `email` → email,
+  `*_at` → date-time, `is_*` → boolean, `callback`/`url` → uri).
+
+These additions are backward compatible — existing keys (`params`,
+`body_fields`, etc.) are preserved, so downstream consumers are unaffected.
+
+### Valid-body injection testing (v2.14.0)
+
+Injection testing (SQLi / NoSQLi / SSTI / LDAP) now builds an **otherwise-valid
+request body** from the endpoint's schema and injects the payload into only the
+field under test. Previously a non-GET injection request contained just the
+single tested field, so APIs that enforce required fields rejected the request
+with HTTP 400 before the payload reached the injection sink — a false negative
+on every multi-field `POST`/`PUT`/`PATCH` endpoint. Query/path parameters are
+injected via the URL while a valid body is still supplied.
+
+> **Note:** because injection requests against write methods are now valid, they
+> may create or modify records on the target. Run only with authorisation. The
+> payload set used excludes destructive stacked queries (e.g. `DROP TABLE`).
+> Configurable safe-mode gating is planned for a later release.
+
+### Differential blind-injection detection (v2.15.0)
+
+Injection testing now includes a differential analysis engine that detects
+**blind** SQL injection without relying on database error strings:
+
+- **Boolean-based blind** — a known-good baseline is captured from a valid
+  request; a `TRUE` injected condition that tracks the baseline while a `FALSE`
+  condition diverges confirms the injection alters query logic.
+- **Time-based blind** — time-delay payloads (`SLEEP` / `pg_sleep` / `WAITFOR`)
+  that induce a repeatable, measured response delay (confirmed over two probes,
+  with a jitter threshold) confirm backend SQL execution.
+
+Findings now carry a **confidence** rating (`Certain` / `Firm` / `Tentative`):
+error-based SQLi is reported as `Tentative` (single-probe signal) while
+differential blind findings are `Firm`. Time-based testing is skipped when the
+configured timeout is too small to observe the induced delay.
+
+### Typed fuzz corpora & parameter wordlists (v2.16.0)
+
+Parameter fuzzing no longer uses a flat 8-value list. Values are now chosen per
+parameter **type** — using the type/format detected in the value-aware inventory
+or inferred from the field name — from valid / boundary / malformed corpora
+(e.g. an `integer` parameter is fuzzed with `0`, `-1`, `2147483648`, overflow and
+type-mismatch values; an `email` parameter with header-injection and malformed
+variants). Undocumented-parameter discovery (and the FFUF parameter pass) draw
+from a curated, API-oriented wordlist.
+
+Both are editable data files shipped under `<siphon>/data/` — no code change is
+needed to extend them per engagement:
+
+| File | Purpose |
+|------|---------|
+| `data/api_param_names.txt` | Parameter-name wordlist (one per line; unioned with the in-code defaults) |
+| `data/fuzz_values.json` | Optional per-type fuzz-value override / extension |
+
+### Schema-driven abuse testing (v2.17.0)
+
+Using the value-aware inventory, Siphon now tests for missing server-side input
+validation on documented parameters. A valid baseline request must be accepted
+first (false-positive gate); each test then sends an otherwise-valid request with
+one field set to an invalid value and reports acceptance:
+
+- **Enumerated value restriction not enforced** — an out-of-enum value is accepted.
+- **Numeric boundary not enforced** — an out-of-range value is accepted.
+- **Parameter type confusion** — a scalar field accepts a JSON array (a vector for
+  NoSQL operator injection / type-juggling auth bypass).
+
+These are reported at LOW/MEDIUM severity with `Tentative` confidence
+(acceptance is a validation-hygiene signal, not a confirmed exploit).
+
+**Postman collection variables** (`{{variable}}`) are now resolved from the
+collection's `variable` map, so harvested paths and example values are usable
+directly.
+
+### Additional schema-abuse checks (v2.18.0)
+
+- **HTTP Parameter Pollution** — duplicate query parameters that change the
+  response vs the single-value baseline (filter/WAF-bypass surface).
+- **Content-Type confusion** — a JSON endpoint that also accepts a
+  form-urlencoded body (parser-differential / CSRF surface).
+- **Unbounded resource consumption** — pagination parameters (`limit`,
+  `page_size`, …) that accept an extreme value and return a materially larger
+  result set, i.e. no server-side cap (OWASP API4).
+- **Excessive data exposure (BOPLA)** — response fields that are **not** part of
+  the documented response schema and look sensitive (PII/credentials/tokens).
+  When no response schema exists, a saved **example response** (HAR / Postman)
+  is used as the known-good oracle.
+
+### Mandatory environment & safety model (v2.20.0)
+
+Siphon requires an explicit **`environment`** declaration — there is no default.
+Set it via `--environment {production,non-production}` (CLI) or `scan.environment`
+(settings); Crucible presents a required dropdown. Siphon **refuses to run**
+without it.
+
+- **non-production** → full testing.
+- **production** → partial testing: **no write-method state changes** (injection,
+  schema-abuse, XXE, command/CRLF/path-traversal, deserialization, and method
+  fuzzing are skipped on `POST`/`PUT`/`PATCH`/`DELETE`; read-method equivalents
+  still run), and the **business-flow and mass-assignment phases are disabled**.
+  BOLA/cross-user and rate-limit tests still run.
+
+Other safety/quality changes in v2.20.0:
+
+- Destructive stacked-query payloads (`DROP TABLE` etc.) are **removed**; they are
+  never sent.
+- Time-based blind SQLi is consolidated into a **single** gated differential pass
+  (no more redundant `SLEEP` passes hammering the DB).
+- Injection detections are hardened against false positives: SSTI uses a
+  randomised arithmetic sentinel with a reflection control probe; error-based
+  SQLi, XXE, and command injection each require a **confirming control probe**
+  before reporting (and carry `Firm`/`Tentative` confidence accordingly).
+
+Evidence files referenced by findings are recorded **relative to the run
+directory** (CLAUDE.md §13c), so Crucible / Prometheus / Helm bundles resolve them.
+
+### Logging, back-off & auth-bypass accuracy (v2.21.0)
+
+- **Tool execution logging (§14):** every external binary invocation
+  (kiterunner, ffuf, feroxbuster, dirsearch, sslscan, testssl) now emits a
+  sibling `.log` next to its primary output via the shared
+  `pr0t31n_tool_runner`, capturing the command line, timing, exit code, and
+  stdout/stderr.
+- **HTTP 429 back-off (C14):** when a target returns `429 Too Many Requests`,
+  the shared request helpers sleep for the `Retry-After` interval (capped at
+  30 s) before continuing, so Siphon stops hammering an overloaded endpoint.
+  The 429 is still surfaced so rate-limit *detection* continues to work.
+- **Missing-authentication accuracy (B6):** the "Missing Authentication
+  Enforcement" check now performs an authenticated second probe. A finding is
+  raised only when the unauthenticated response exposes sensitive/user data or
+  is confirmed to be the same resource an authenticated request returns —
+  eliminating false positives on benign public endpoints. Findings carry
+  `Firm`/`Tentative` confidence accordingly.
+
+### Expanded coverage (v2.22.0)
+
+- **Schema-driven mass assignment (C8):** the over-posting test now builds a
+  schema-valid baseline body (Phase A inventory) so the request passes
+  validation and the injected privileged fields actually reach the model, and
+  injects only properties **not** declared by the schema (true undeclared
+  over-posting). Runs in non-production only.
+- **Broader SSRF payloads (C9):** added AWS IAM-credentials metadata path, GCP /
+  Azure / Alibaba metadata endpoints, gopher:// and dict:// internal-service
+  probes, and decimal-IP / userinfo-confusion bypasses. `phase_ssrf` now also
+  honors the production safety gate (write-method SSRF is skipped in production).
+- **JWT attacks (C11):** already covered by the JWT phase — HMAC secret
+  brute-force, jku/x5u JWKS spoofing, kid SQL-injection and path-traversal, and
+  RS256→HS256 algorithm confusion. No change required.
+
+### Non-HTTP protocol coverage (v2.23.0, Phase 21 — `protocols`)
+
+A new `protocols` phase performs **detection + passive checks** (no message
+fuzzing / method invocation) for:
+
+- **WebSocket** — derives `ws`/`wss` candidates from the inventory + common
+  paths, attempts the handshake, and flags unencrypted `ws://` transport and
+  handshakes that accept an arbitrary `Origin` without credentials (CSWSH risk).
+  Requires `websocket-client` (degrades gracefully if absent).
+- **Server-Sent Events (SSE)** — detects `text/event-stream` endpoints and flags
+  unauthenticated streams and cleartext-HTTP streams. Uses `requests` (no extra
+  dependency).
+- **gRPC** — uses `grpcurl` server reflection to enumerate services and flags
+  exposed reflection and plaintext (non-TLS) transport. Requires `grpcurl`
+  (degrades gracefully if absent); the invocation emits a §14 `.log` sibling.
+
+All protocol checks are read-only, so the phase runs in both production and
+non-production. New dependencies are installed by `install.py`
+(`websocket-client` via pip, `grpcurl` via go/brew).
+
+### Request chaining (v2.24.0, Phase 0c — `chaining`)
+
+A new `chaining` phase runs immediately after discovery, before the testing
+phases. It executes the inventory's requests in **declared order**, capturing
+reusable values from each response — `id`/`*_id`/`uuid`/`slug`, tokens
+(`token`/`access_token`/`jwt`/`api_key`), and `Location` headers — into a chain
+context. It then:
+
+- applies a captured bearer token to the session (when none is set),
+- **seeds** the captured values back into the endpoint inventory (as
+  `observed_values` / schema `example`s), so later phases build requests that
+  satisfy create→read→update preconditions and reach real application logic
+  (e.g. `GET /users/{id}` uses a `{id}` returned by a prior `POST /users`).
+
+The phase produces no findings (it establishes state). In **production** only
+read methods are executed (no state changes); **non-production** runs the full
+chain (capped at 40 requests).
+
+> Still deferred (later release): §14 per-tool `.log` siblings for the external
+> binaries (ffuf / kiterunner / feroxbuster / dirsearch / sslscan / testssl), and
+> stateful request chaining (executing collection requests in dependency order to
+> satisfy create→read→update preconditions).
 
 ### Finding Format
 

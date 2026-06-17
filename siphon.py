@@ -61,6 +61,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, urljoin, urlencode, quote
 
+# §13b/§14j/§14k: run-dir audit logger (scan.log + scan.log.json + errors.log).
+try:
+    if "/opt/pr0t31n/shared" not in sys.path:
+        sys.path.insert(0, "/opt/pr0t31n/shared")
+    import pr0t31n_event_log as _el
+except Exception:
+    _el = None
+
 # ── Adaptive concurrency ──────────────────────────────────────────────────────
 def _hw_detect():
     """Return (logical_cpu_count, ram_gb) for the local machine."""
@@ -154,7 +162,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.12.0"
+VERSION = "2.26.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -686,6 +694,21 @@ class VantageConsole:
     def __init__(self, managed: bool = _MANAGED):
         self.managed = managed
         self._lock = threading.Lock()
+        self._runlog = None   # §13b/§14j: run-dir EventLogger, attached in main()
+
+    def attach_run_dir(self, run_dir) -> None:
+        """§13b/§14j/§14k: bring up the on-disk audit log for this run and record
+        the tool's own version as a startup EVENT. log()/err()/status() forward
+        here so every message + phase transition is persisted with a timestamp
+        (the __CRUCIBLE_* token stream is ephemeral / live-UI only)."""
+        if _el is None:
+            return
+        try:
+            self._runlog = _el.EventLogger(Path(run_dir) / "scan.log",
+                                            errors_path=Path(run_dir) / "errors.log")
+            self._runlog.event(f"siphon v{VERSION} started")
+        except Exception:
+            self._runlog = None
 
     # ------------------------------------------------------------------ raw
     def _emit(self, token: str, text: str) -> None:
@@ -696,6 +719,15 @@ class VantageConsole:
     # ------------------------------------------------------------------ public
     def log(self, msg: str, level: str = "INFO") -> None:
         color = self._SEV_COLOR.get(level, "")
+        # §13b: persist every message to the run-dir audit log with a timestamp.
+        if self._runlog is not None:
+            try:
+                lv = (level or "INFO").upper()
+                if lv == "ERROR":               self._runlog.error(msg)
+                elif lv in ("WARN", "WARNING"): self._runlog.warn(msg)
+                else:                           self._runlog.info(msg)
+            except Exception:
+                pass
         if self.managed:
             entry = {
                 "ts":      datetime.now().isoformat(),
@@ -707,6 +739,9 @@ class VantageConsole:
             print(f"{color}[{level}]{Style.RESET_ALL} {msg}")
 
     def err(self, msg: str) -> None:
+        if self._runlog is not None:
+            try: self._runlog.error(msg)
+            except Exception: pass
         if self.managed:
             entry = {
                 "ts":       datetime.now().isoformat(),
@@ -724,6 +759,7 @@ class VantageConsole:
 
     _PHASE_LABELS: dict = {
         "discovery":      "Discovery",
+        "chaining":       "Request Chaining",
         "recon":          "Reconnaissance",
         "fuzzing":        "Fuzzing",
         "injection":      "Injection",
@@ -742,9 +778,18 @@ class VantageConsole:
         "sensitive_files":    "Sensitive Files",
         "tls":                "TLS",
         "unsafe_consumption": "Unsafe Consumption",
+        "protocols":          "Protocols (WS/SSE/gRPC)",
     }
 
     def status(self, phase: str, state: str, detail: str = "") -> None:
+        self._phase = phase   # §14h: current phase for per-request HTTP evidence
+        # §14j: persist the phase transition to the run-dir audit log with a
+        # timestamp (the status token below is ephemeral / live-UI only).
+        if self._runlog is not None:
+            try:
+                self._runlog.event(f"phase {phase}: {state}" + (f" — {detail}" if detail else ""))
+            except Exception:
+                pass
         if self.managed:
             entry = {
                 "phase":    phase,
@@ -975,6 +1020,7 @@ class OutputManager:
         method: str = "",
         from_spec: "bool | None" = None,
         is_rogue: "bool | None" = None,
+        confidence: str = "",
     ) -> dict:
         ts = datetime.now(timezone.utc).isoformat()
         sev_upper = severity.upper()
@@ -1078,6 +1124,7 @@ class OutputManager:
             "api_from_spec":     _api_from_spec,
             "is_rogue_endpoint": _is_rogue,
             "owasp_api":         _owasp_api_short,
+            "confidence":        confidence,
         }
 
         # Native Siphon entry kept in self.findings for supplementary reports
@@ -1357,6 +1404,14 @@ def _install_signal_handlers() -> None:
 # HTTP session helpers
 # ---------------------------------------------------------------------------
 
+_HTTP_EVIDENCE_DIR = None   # §14h: set in main() to the run dir once known
+
+
+def _set_http_evidence_dir(d) -> None:
+    global _HTTP_EVIDENCE_DIR
+    _HTTP_EVIDENCE_DIR = str(d) if d else None
+
+
 def _make_session(settings: dict) -> requests.Session:
     scan = settings.get("scan", {})
     sess = requests.Session()
@@ -1378,6 +1433,18 @@ def _make_session(settings: dict) -> requests.Session:
     extra_hdrs = scan.get("extra_headers", {})
     if extra_hdrs:
         sess.headers.update(extra_hdrs)
+    # §14h: attach per-request evidence (request/response/.log triplet) to every
+    # in-process HTTP call made through this session, once the run dir is known.
+    if _HTTP_EVIDENCE_DIR is not None:
+        try:
+            import sys as _sys
+            if "/opt/pr0t31n/shared" not in _sys.path:
+                _sys.path.insert(0, "/opt/pr0t31n/shared")
+            import pr0t31n_http_evidence as _he
+            _he.attach_http_evidence(sess, _HTTP_EVIDENCE_DIR,
+                                     phase_getter=lambda: getattr(con, "_phase", "http"))
+        except Exception:
+            pass
     return sess
 
 
@@ -2000,6 +2067,7 @@ DEFAULT_SETTINGS: dict = {
         "verify_ssl":     False,
         "phases": {
             "discovery":        True,
+            "chaining":         True,
             "recon":            True,
             "fuzzing":          True,
             "injection":        True,
@@ -2022,6 +2090,7 @@ DEFAULT_SETTINGS: dict = {
             "soap":             True,
             "file_upload_info": True,
             "access_matrix":   False,  # Phase 20: multi-credential access matrix (requires auth_matrix)
+            "protocols":        True,   # Phase 21: WebSocket / SSE / gRPC detection + passive checks
         },
         "auth": {
             "enabled":                 False,
@@ -2123,6 +2192,7 @@ DEFAULT_SETTINGS: dict = {
 
 PHASE_LIST = [
     ("discovery",       "Phase 0:  OpenAPI/Swagger discovery + Kiterunner/FFUF/Feroxbuster/dirsearch"),
+    ("chaining",        "Phase 0c: Request chaining — ordered execution + value capture (ids/tokens) for stateful coverage"),
     ("recon",           "Phase 1:  API fingerprinting, server headers, CORS, framework detection"),
     ("fuzzing",         "Phase 2:  HTTP method fuzzing, FFUF parameter fuzzing"),
     ("injection",       "Phase 3:  SQLi, NoSQLi, SSTI, XXE, LDAP, XSS, CMDi, CRLF, Path Traversal"),
@@ -2145,6 +2215,7 @@ PHASE_LIST = [
     ("soap",                "Phase 18: SOAP/WS-Security — WSDL enum, WS-Security bypass, SOAP injection"),
     ("file_upload_info",    "Phase 19: File upload endpoint detection — accepted types (informational)"),
     ("access_matrix",       "Phase 20: Multi-credential access matrix — per-role endpoint access, BFLA, unauthenticated access"),
+    ("protocols",           "Phase 21: Non-HTTP protocols — WebSocket / SSE / gRPC detection + passive checks"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -2202,6 +2273,12 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--resume",       metavar="DIR",   help="Resume from existing output directory")
     ap.add_argument("--no-injection", action="store_true", help="Skip injection phase")
     ap.add_argument("--no-auth",      action="store_true", help="Skip auth-required phases")
+    ap.add_argument("--environment", choices=["production", "non-production"],
+                    help="MANDATORY: target environment. 'non-production' runs "
+                         "full testing; 'production' runs partial testing with no "
+                         "write-method state changes and no business-flow / "
+                         "mass-assignment phases. Required (no default) unless set "
+                         "in the settings file.")
     ap.add_argument("--list-phases",  action="store_true", help="List all phases and exit")
     ap.add_argument("--username",     metavar="USER",  help="Auth username")
     ap.add_argument("--password",     metavar="PASS",  help="Auth password")
@@ -2255,6 +2332,8 @@ def _apply_args(settings: dict, args: argparse.Namespace) -> dict:
         scan["timeout"] = args.timeout
     if args.proxy:
         scan["proxy"] = args.proxy
+    if getattr(args, "environment", None):
+        scan["environment"] = args.environment
     if args.fast:
         scan["phases"]["injection"] = False
         scan["phases"]["jwt"] = False
@@ -2376,18 +2455,79 @@ def _extract_json_keys(obj, prefix="") -> list:
     return keys
 
 
-def _safe_get(sess: requests.Session, url: str, timeout: int = 10, **kwargs):
+_BACKOFF_CAP_SECONDS = 30.0   # never sleep longer than this on a single 429
+
+
+def _honor_retry_after(resp) -> None:
+    """C14: when the target returns HTTP 429, sleep per Retry-After (capped) so
+    Siphon stops hammering an overloaded/limiting endpoint. The 429 response is
+    returned to the caller unchanged so rate-limit *detection* still works."""
     try:
-        return sess.get(url, timeout=timeout, **kwargs)
+        import time as _t
+        ra = (resp.headers.get("Retry-After", "") or "").strip()
+        delay = 2.0
+        if ra:
+            if ra.isdigit():
+                delay = float(ra)
+            else:
+                try:
+                    from email.utils import parsedate_to_datetime as _pdt
+                    from datetime import datetime as _dt, timezone as _tz
+                    delay = max(0.0, (_pdt(ra) - _dt.now(_tz.utc)).total_seconds())
+                except Exception:
+                    delay = 2.0
+        _t.sleep(min(max(delay, 0.0), _BACKOFF_CAP_SECONDS))
     except Exception:
-        return None
+        pass
+
+
+def _safe_get(sess: requests.Session, url: str, timeout: int = 10, **kwargs):
+    return _safe_request(sess, "GET", url, timeout=timeout, **kwargs)
 
 
 def _safe_request(sess: requests.Session, method: str, url: str, timeout: int = 10, **kwargs):
     try:
-        return sess.request(method, url, timeout=timeout, **kwargs)
+        resp = sess.request(method, url, timeout=timeout, **kwargs)
     except Exception:
         return None
+    if resp is not None and resp.status_code == 429:
+        _honor_retry_after(resp)
+    return resp
+
+
+def _run_logged(cmd, *, output_file=None, tool_name="", timeout=None, text=True, **kw):
+    """subprocess.run wrapper that emits a §14 `.log` sibling next to the
+    primary output_file via the shared pr0t31n_tool_runner. Returns a
+    CompletedProcess (synthesised on timeout so callers never break). Degrades
+    gracefully (no .log) when the shared module is unavailable."""
+    import subprocess as _sp
+    from datetime import datetime as _dt, timezone as _tz
+    started = _dt.now(_tz.utc)
+    out, err, rc, proc = "", "", -1, None
+    try:
+        proc = _sp.run(cmd, capture_output=True, text=text, timeout=timeout, **kw)
+        rc = proc.returncode
+        out = proc.stdout if isinstance(proc.stdout, str) else ((proc.stdout or b"").decode("utf-8", "replace"))
+        err = proc.stderr if isinstance(proc.stderr, str) else ((proc.stderr or b"").decode("utf-8", "replace"))
+    except _sp.TimeoutExpired as e:
+        out = (e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")) or ""
+        err = "(timeout)"
+        proc = _sp.CompletedProcess(cmd, rc, out if text else out.encode(), err if text else err.encode())
+    ended = _dt.now(_tz.utc)
+    try:
+        import sys as _s
+        if "/opt/pr0t31n/shared" not in _s.path:
+            _s.path.insert(0, "/opt/pr0t31n/shared")
+        import pr0t31n_tool_runner as _ur
+        _ur.write_tool_log(
+            cmd=cmd, started=started, ended=ended, exit_code=rc,
+            stdout=out, stderr=err,
+            tool_name=tool_name or (cmd[0] if cmd else "tool"),
+            output_file=str(output_file) if output_file else None,
+        )
+    except Exception:
+        pass
+    return proc
 
 
 # ---------------------------------------------------------------------------
@@ -2438,6 +2578,16 @@ def _detect_spec_format(content_dict: dict | None, content_str: str) -> str:
     return "unknown"
 
 
+def _resolve_pm_vars(value, varmap: dict):
+    """Substitute Postman {{variable}} references using a collection var map.
+    Non-string values pass through unchanged; unknown variables are left as-is."""
+    if isinstance(value, str) and "{{" in value:
+        return re.sub(r"\{\{\s*([^}]+?)\s*\}\}",
+                      lambda m: str(varmap.get(m.group(1).strip(), m.group(0))),
+                      value)
+    return value
+
+
 def _parse_postman_spec(collection: dict) -> list:
     """Parse Postman Collection v2.0/v2.1 into endpoint inventory."""
     inventory: list = []
@@ -2463,7 +2613,8 @@ def _parse_postman_spec(collection: dict) -> list:
                 else:
                     path = urlparse(raw).path or "/"
                 qparams = [
-                    {"name": q.get("key", ""), "in": "query", "required": False}
+                    {"name": q.get("key", ""), "in": "query", "required": False,
+                     "example": q.get("value", "")}
                     for q in url_obj.get("query", [])
                     if isinstance(q, dict) and q.get("key") and not q.get("disabled")
                 ]
@@ -2471,6 +2622,7 @@ def _parse_postman_spec(collection: dict) -> list:
                 continue
 
             body_fields: list = []
+            body_example: dict = {}
             body = req.get("body", {})
             if isinstance(body, dict):
                 mode = body.get("mode", "")
@@ -2479,25 +2631,56 @@ def _parse_postman_spec(collection: dict) -> list:
                         raw_body = json.loads(body.get("raw", "{}"))
                         if isinstance(raw_body, dict):
                             body_fields = list(raw_body.keys())
+                            body_example = raw_body
                     except Exception:
                         pass
                 elif mode in ("urlencoded", "formdata"):
                     for f in body.get(mode, []):
                         if isinstance(f, dict) and f.get("key") and not f.get("disabled"):
                             body_fields.append(f["key"])
+                            body_example[f["key"]] = f.get("value", "")
+
+            # Saved example responses — a known-good oracle for differential tests
+            observed_responses: list = []
+            for ex in (item.get("response", []) or []):
+                if isinstance(ex, dict):
+                    eb = ex.get("body", "")
+                    observed_responses.append({
+                        "status": ex.get("code", 0),
+                        "body":   eb if isinstance(eb, str) else "",
+                    })
 
             inventory.append({
-                "method":        method,
-                "path":          path,
-                "params":        qparams,
-                "body_fields":   body_fields,
-                "auth_required": bool(req.get("auth")),
-                "operation_id":  item.get("name", ""),
-                "tags":          [],
-                "summary":       item.get("name", ""),
+                "method":             method,
+                "path":               path,
+                "params":             qparams,
+                "body_fields":        body_fields,
+                "body_example":       body_example,
+                "observed_responses": observed_responses,
+                "auth_required":      bool(req.get("auth")),
+                "operation_id":       item.get("name", ""),
+                "tags":               [],
+                "summary":            item.get("name", ""),
             })
 
     _items_to_inventory(collection.get("item", []))
+
+    # Phase E: resolve {{collection variables}} in paths and example values so
+    # harvested values are usable as-is (e.g. {{base_id}} -> 42).
+    varmap = {}
+    for v in (collection.get("variable", []) or []):
+        if isinstance(v, dict) and v.get("key") is not None:
+            varmap[str(v["key"])] = v.get("value", "")
+    if varmap:
+        for ep in inventory:
+            ep["path"] = _resolve_pm_vars(ep.get("path", ""), varmap)
+            for p in ep.get("params", []):
+                if isinstance(p, dict) and "example" in p:
+                    p["example"] = _resolve_pm_vars(p["example"], varmap)
+            be = ep.get("body_example")
+            if isinstance(be, dict):
+                ep["body_example"] = {k: _resolve_pm_vars(v, varmap)
+                                      for k, v in be.items()}
     return inventory
 
 
@@ -2557,17 +2740,20 @@ def _parse_insomnia_spec(export: dict) -> list:
         except Exception:
             path = "/"
         params = [
-            {"name": p.get("name", ""), "in": "query", "required": False}
+            {"name": p.get("name", ""), "in": "query", "required": False,
+             "example": p.get("value", "")}
             for p in resource.get("parameters", [])
             if isinstance(p, dict) and not p.get("disabled")
         ]
         body_fields: list = []
+        body_example: dict = {}
         body = resource.get("body", {})
         if isinstance(body, dict) and "json" in body.get("mimeType", ""):
             try:
                 c = json.loads(body.get("text", "{}"))
                 if isinstance(c, dict):
                     body_fields = list(c.keys())
+                    body_example = c
             except Exception:
                 pass
         inventory.append({
@@ -2575,6 +2761,7 @@ def _parse_insomnia_spec(export: dict) -> list:
             "path":          path,
             "params":        params,
             "body_fields":   body_fields,
+            "body_example":  body_example,
             "auth_required": bool(resource.get("authentication")),
             "operation_id":  resource.get("name", ""),
             "tags":          [],
@@ -2599,11 +2786,13 @@ def _parse_har_spec(har: dict) -> list:
             continue
         seen.add(key)
         params = [
-            {"name": q.get("name", ""), "in": "query", "required": False}
+            {"name": q.get("name", ""), "in": "query", "required": False,
+             "example": q.get("value", "")}
             for q in req.get("queryString", [])
             if isinstance(q, dict)
         ]
         body_fields: list = []
+        body_example: dict = {}
         post = req.get("postData", {})
         if isinstance(post, dict):
             if "json" in post.get("mimeType", ""):
@@ -2611,23 +2800,34 @@ def _parse_har_spec(har: dict) -> list:
                     c = json.loads(post.get("text", "{}"))
                     if isinstance(c, dict):
                         body_fields = list(c.keys())
+                        body_example = c
                 except Exception:
                     pass
             else:
-                body_fields = [
-                    p.get("name", "")
-                    for p in post.get("params", [])
-                    if isinstance(p, dict) and p.get("name")
-                ]
+                for p in post.get("params", []):
+                    if isinstance(p, dict) and p.get("name"):
+                        body_fields.append(p["name"])
+                        body_example[p["name"]] = p.get("value", "")
+        # Real response body — the highest-fidelity known-good oracle
+        observed_responses: list = []
+        resp = entry.get("response", {})
+        if isinstance(resp, dict):
+            rb = (resp.get("content", {}) or {}).get("text", "")
+            observed_responses.append({
+                "status": resp.get("status", 0),
+                "body":   rb if isinstance(rb, str) else "",
+            })
         inventory.append({
-            "method":        method,
-            "path":          path,
-            "params":        params,
-            "body_fields":   body_fields,
-            "auth_required": False,
-            "operation_id":  f"{method}:{path}",
-            "tags":          [],
-            "summary":       f"{method} {path}",
+            "method":             method,
+            "path":               path,
+            "params":             params,
+            "body_fields":        body_fields,
+            "body_example":       body_example,
+            "observed_responses": observed_responses,
+            "auth_required":      False,
+            "operation_id":       f"{method}:{path}",
+            "tags":               [],
+            "summary":            f"{method} {path}",
         })
     return inventory
 
@@ -2701,24 +2901,279 @@ def _extract_spec_credentials(spec: dict, fmt: str) -> dict:
     return creds
 
 
+# ---------------------------------------------------------------------------
+# Value-aware inventory engine (Phase A — v2.13.0)
+#   - enriches the endpoint inventory with parameter type/format/enum/example
+#     and observed values harvested from the spec / data file
+#   - resolves an "expected" value for any parameter using the precedence
+#     observed > example > default > enum > format-aware > name-heuristic > type
+#   - builds fully valid request bodies and (single-field-mutated) requests
+# All stdlib; additive — existing inventory consumers are unaffected.
+# ---------------------------------------------------------------------------
+
+# (type, format) inferred from a field name when the spec declares nothing.
+_FIELD_TYPE_HEURISTICS = [
+    (r"(^|_)(uuid|guid)$",                                  ("string", "uuid")),
+    (r"(^|_)e?mail(_?address)?$",                           ("string", "email")),
+    (r"(^|_)(url|uri|link|callback|redirect|webhook)s?$",   ("string", "uri")),
+    (r"(_at|_on)$|(^|_)(date|datetime|timestamp|time)$",    ("string", "date-time")),
+    (r"(^|_)(phone|mobile|tel|msisdn)$",                    ("string", "phone")),
+    (r"(^|_)(password|passwd|pwd|secret)$",                 ("string", "password")),
+    (r"(^|_)(lat|latitude|lng|lon|longitude)$",             ("number", "")),
+    (r"(^|_)(price|amount|qty|quantity|count|total|balance|cost|fee)$", ("number", "")),
+    (r"((^|_)(is|has)_)\w+|(^|_)(enabled|active|disabled|verified|flag)$", ("boolean", "")),
+    (r"(^|_)(zip|postal|postcode)$",                        ("string", "")),
+    (r"(^|_)(country|currency|locale|lang|language)$",      ("string", "")),
+    (r"(^|_)(token|api_?key|access_?token|refresh_?token|key|secret)$", ("string", "token")),
+    (r"(^|_)(page|offset|limit|size|per_page)$",            ("integer", "")),
+    (r"(^|_)(sort|order|direction)$",                       ("string", "")),
+    (r"(^|_)(slug)$",                                       ("string", "slug")),
+    (r"(^|_)(colou?r)$",                                    ("string", "hex")),
+    (r"(^|_)(file|filename|filepath|path)$",                ("string", "")),
+    (r"(^|_)\w*id$",                                        ("integer", "")),
+]
+_FIELD_TYPE_RE = [(re.compile(p, re.I), t) for p, t in _FIELD_TYPE_HEURISTICS]
+
+
+def _infer_type_from_name(name: str) -> tuple:
+    """Return (type, format) inferred from a parameter / field name."""
+    n = str(name or "")
+    for rx, tf in _FIELD_TYPE_RE:
+        if rx.search(n):
+            return tf
+    return ("string", "")
+
+
+def _gen_value_for(vtype: str, vfmt: str = "", name: str = "",
+                   enum=None, example=None, default=None, observed=None):
+    """Generate a plausibly-valid value, honouring observed/example/enum first."""
+    import uuid as _uuid, random as _random, string as _string
+    if observed:
+        for o in (observed if isinstance(observed, list) else [observed]):
+            if o not in (None, ""):
+                return o
+    if example not in (None, ""):
+        return example
+    if default not in (None, ""):
+        return default
+    if enum:
+        try:
+            return enum[0]
+        except Exception:
+            pass
+    t = (vtype or "").lower()
+    f = (vfmt or "").lower()
+    if f == "uuid":
+        return str(_uuid.uuid4())
+    if f == "email":
+        return "test@example.com"
+    if f in ("uri", "url"):
+        return "https://example.com/test"
+    if f in ("date-time", "datetime"):
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if f == "date":
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if f == "phone":
+        return "+15555550100"
+    if f == "password":
+        return "P@ssw0rd!Test1"
+    if f == "token":
+        return "".join(_random.choices(_string.ascii_letters + _string.digits, k=24))
+    if f == "slug":
+        return "test-slug"
+    if f == "hex":
+        return "#3366ff"
+    if f == "ipv4":
+        return "192.0.2.10"
+    if t in ("integer", "number"):
+        return 1
+    if t == "boolean":
+        return True
+    if t == "array":
+        return []
+    if t == "object":
+        return {}
+    # name-based fallback when the declared type is unknown / plain string
+    it, iff = _infer_type_from_name(name)
+    if (it, iff) != ("string", "") and t in ("", "string") and not f:
+        return _gen_value_for(it, iff, name)
+    return "test"
+
+
+def resolve_value(param: dict):
+    """Resolve an expected value for an enriched parameter / schema-node dict."""
+    if not isinstance(param, dict):
+        return "test"
+    return _gen_value_for(
+        param.get("type", ""), param.get("format", ""),
+        param.get("name", ""), param.get("enum"),
+        param.get("example"), param.get("default"),
+        param.get("observed_values"),
+    )
+
+
+def _schema_from_example(value, _depth: int = 0):
+    """Infer a SchemaNode from a concrete example value (from a data file)."""
+    if _depth > 8:
+        return {}
+    if isinstance(value, bool):
+        return {"type": "boolean", "example": value}
+    if isinstance(value, int):
+        return {"type": "integer", "example": value}
+    if isinstance(value, float):
+        return {"type": "number", "example": value}
+    if isinstance(value, str):
+        return {"type": "string", "example": value}
+    if isinstance(value, list):
+        node = {"type": "array"}
+        if value:
+            node["items"] = _schema_from_example(value[0], _depth + 1)
+        return node
+    if isinstance(value, dict):
+        return {"type": "object", "properties": {
+            k: _schema_from_example(v, _depth + 1) for k, v in value.items()
+        }}
+    return {"type": "string"}
+
+
+def build_valid_body(body_schema: dict, _depth: int = 0):
+    """Construct a valid example body (dict/list/scalar) from a SchemaNode."""
+    if not isinstance(body_schema, dict) or _depth > 8:
+        return {}
+    t = (body_schema.get("type") or "").lower()
+    props = body_schema.get("properties")
+    if props or t == "object":
+        out = {}
+        for name, sub in (props or {}).items():
+            if not isinstance(sub, dict):
+                continue
+            sub = dict(sub)
+            sub.setdefault("name", name)
+            if sub.get("properties") or sub.get("type") == "array":
+                out[name] = build_valid_body(sub, _depth + 1)
+            else:
+                out[name] = resolve_value(sub)
+        return out
+    if t == "array":
+        item = body_schema.get("items")
+        if isinstance(item, dict) and (item.get("properties") or item.get("type") == "array"):
+            return [build_valid_body(item, _depth + 1)]
+        return [resolve_value(item if isinstance(item, dict) else {})]
+    return resolve_value(body_schema)
+
+
+def _enrich_param(p: dict) -> None:
+    """Fill missing type/format on a query/path/header parameter dict, in place."""
+    if not isinstance(p, dict):
+        return
+    if not p.get("type"):
+        it, iff = _infer_type_from_name(p.get("name", ""))
+        p["type"] = it
+        if iff and not p.get("format"):
+            p["format"] = iff
+    p.setdefault("format", "")
+    p.setdefault("enum", [])
+
+
+def enrich_inventory(inventory: list) -> list:
+    """Idempotently enrich a parsed inventory with value-aware metadata.
+
+    Additive: existing keys (params/body_fields/method/path/…) are preserved;
+    new keys (parameter types, body_schema, observed_responses) are filled in.
+    Safe to call more than once."""
+    for ep in inventory or []:
+        if not isinstance(ep, dict):
+            continue
+        for p in ep.get("params", []) or []:
+            _enrich_param(p)
+        bs = ep.get("body_schema") or {}
+        if not (isinstance(bs, dict) and bs.get("properties")):
+            ex = ep.get("body_example") or {}
+            if isinstance(ex, dict) and ex:
+                bs = _schema_from_example(ex)
+            elif ep.get("body_fields"):
+                bs = {"type": "object", "properties": {}}
+                for fld in ep["body_fields"]:
+                    it, iff = _infer_type_from_name(fld)
+                    bs["properties"][fld] = {"type": it, "format": iff}
+            ep["body_schema"] = bs
+        # fold observed body-example values into the schema properties
+        ex = ep.get("body_example") or {}
+        props = (ep.get("body_schema") or {}).get("properties", {})
+        if isinstance(ex, dict):
+            for k, v in ex.items():
+                if k in props and isinstance(props[k], dict):
+                    props[k].setdefault("example", v)
+        ep.setdefault("observed_responses", [])
+    return inventory
+
+
+def _build_request(endpoint: dict, base_url: str, mutate: tuple = None,
+                   overrides: dict = None) -> dict:
+    """Assemble a fully valid request from an enriched endpoint.
+
+    Returns {method, url, params, json, headers}. `mutate=(field, value)`
+    swaps exactly one query/body field for a test value while keeping the
+    rest of the request valid. `overrides` is a {name: value} map applied to
+    both query parameters and the body."""
+    overrides = overrides or {}
+    method = (endpoint.get("method") or "GET").upper()
+    path = endpoint.get("path", "/")
+    query: dict = {}
+    for p in endpoint.get("params", []) or []:
+        loc = p.get("in", "query")
+        name = p.get("name", "")
+        if not name:
+            continue
+        val = overrides.get(name, resolve_value(p))
+        if loc == "path":
+            path = path.replace("{%s}" % name, str(val)).replace(":%s" % name, str(val))
+        elif loc == "query" and (p.get("required") or name in overrides):
+            query[name] = val
+    body = None
+    if method not in ("GET", "HEAD"):
+        body = build_valid_body(endpoint.get("body_schema") or {})
+    if isinstance(body, dict):
+        for k, v in overrides.items():
+            body[k] = v
+    if mutate:
+        mf, mv = mutate
+        if isinstance(body, dict) and (mf in body or mf not in query):
+            body[mf] = mv
+        else:
+            query[mf] = mv
+    if path.startswith("http"):
+        url = path
+    else:
+        url = base_url.rstrip("/") + "/" + path.lstrip("/")
+    return {"method": method, "url": url, "params": query,
+            "json": body if isinstance(body, dict) else None, "headers": {}}
+
+
 def _dispatch_spec_parse(content_dict: dict | None,
                          content_str: str, fmt: str) -> list:
-    """Dispatch spec content to the correct parser and return endpoint list."""
+    """Dispatch spec content to the correct parser and return endpoint list.
+
+    The parsed inventory is enriched (Phase A) with value-aware metadata
+    before being returned, so every downstream consumer sees parameter
+    types/formats/examples and a reusable body schema."""
     if fmt in ("openapi3", "swagger2", "yaml_openapi") and content_dict:
-        return _parse_openapi_spec(content_dict)
-    if fmt == "postman" and content_dict:
-        return _parse_postman_spec(content_dict)
-    if fmt in ("graphql_introspection", "graphql_sdl"):
-        return _parse_graphql_spec(content_dict if fmt == "graphql_introspection"
-                                   else content_str)
-    if fmt == "insomnia" and content_dict:
-        return _parse_insomnia_spec(content_dict)
-    if fmt == "har" and content_dict:
-        return _parse_har_spec(content_dict)
-    # Unknown / fallback: try OpenAPI parser
-    if content_dict and "paths" in content_dict:
-        return _parse_openapi_spec(content_dict)
-    return []
+        result = _parse_openapi_spec(content_dict)
+    elif fmt == "postman" and content_dict:
+        result = _parse_postman_spec(content_dict)
+    elif fmt in ("graphql_introspection", "graphql_sdl"):
+        result = _parse_graphql_spec(content_dict if fmt == "graphql_introspection"
+                                     else content_str)
+    elif fmt == "insomnia" and content_dict:
+        result = _parse_insomnia_spec(content_dict)
+    elif fmt == "har" and content_dict:
+        result = _parse_har_spec(content_dict)
+    elif content_dict and "paths" in content_dict:
+        # Unknown / fallback: try OpenAPI parser
+        result = _parse_openapi_spec(content_dict)
+    else:
+        result = []
+    return enrich_inventory(result)
 
 
 def _load_spec_file(path_or_url: str, sess: requests.Session,
@@ -3083,6 +3538,52 @@ def _parse_openapi_spec(spec: dict) -> list:
         if parsed.path and parsed.path != "/":
             base = parsed.path.rstrip("/")
 
+    def _resolve_ref(node, _depth=0):
+        """Resolve a single JSON-pointer $ref against the spec root."""
+        if not isinstance(node, dict) or _depth > 12:
+            return node if isinstance(node, dict) else {}
+        ref = node.get("$ref")
+        if not (isinstance(ref, str) and ref.startswith("#/")):
+            return node
+        target = spec
+        for part in ref[2:].split("/"):
+            part = part.replace("~1", "/").replace("~0", "~")
+            if isinstance(target, dict) and part in target:
+                target = target[part]
+            else:
+                return {}
+        if isinstance(target, dict) and "$ref" in target:
+            return _resolve_ref(target, _depth + 1)
+        return target if isinstance(target, dict) else {}
+
+    def _norm_schema(schema, _depth=0):
+        """Normalise an OAS schema (with $ref) into a SchemaNode."""
+        if not isinstance(schema, dict) or _depth > 8:
+            return {}
+        schema = _resolve_ref(schema)
+        if not isinstance(schema, dict):
+            return {}
+        node = {}
+        for k in ("type", "format", "enum", "example", "default", "pattern",
+                  "minimum", "maximum", "minLength", "maxLength"):
+            if k in schema:
+                node[k] = schema[k]
+        if schema.get("nullable"):
+            node["nullable"] = True
+        if isinstance(schema.get("required"), list):
+            node["required"] = schema["required"]
+        props = schema.get("properties")
+        if isinstance(props, dict):
+            node.setdefault("type", "object")
+            node["properties"] = {
+                n: _norm_schema(sub, _depth + 1) for n, sub in props.items()
+            }
+        items = schema.get("items")
+        if items is not None:
+            node.setdefault("type", "array")
+            node["items"] = _norm_schema(items, _depth + 1)
+        return node
+
     for path, methods in paths.items():
         if not isinstance(methods, dict):
             continue
@@ -3094,31 +3595,53 @@ def _parse_openapi_spec(spec: dict) -> list:
                 params = []
                 for p in op.get("parameters", []):
                     if isinstance(p, dict):
+                        p = _resolve_ref(p)
+                        sch = p.get("schema") if isinstance(p.get("schema"), dict) else p
+                        sch = _norm_schema(sch)
                         params.append({
-                            "name": p.get("name", ""),
-                            "in":   p.get("in", "query"),
+                            "name":     p.get("name", ""),
+                            "in":       p.get("in", "query"),
                             "required": p.get("required", False),
+                            "type":     sch.get("type", ""),
+                            "format":   sch.get("format", ""),
+                            "enum":     sch.get("enum", []),
+                            "example":  p.get("example", sch.get("example")),
+                            "default":  sch.get("default"),
                         })
-                # Extract request body fields (OAS3)
+                # Extract request body schema + field names (OAS3)
                 body_fields = []
+                body_schema = {}
                 req_body = op.get("requestBody", {})
                 if req_body:
-                    content = req_body.get("content", {})
-                    for ct, ct_info in content.items():
-                        schema = ct_info.get("schema", {})
-                        props = schema.get("properties", {})
-                        body_fields.extend(list(props.keys()))
+                    req_body = _resolve_ref(req_body)
+                    for ct, ct_info in (req_body.get("content", {}) or {}).items():
+                        if isinstance(ct_info, dict):
+                            body_schema = _norm_schema(ct_info.get("schema", {}))
+                            body_fields = list(body_schema.get("properties", {}).keys())
+                            break
+                # Response schemas — captured for later response-shape diffing
+                response_schemas = {}
+                for code_k, rinfo in (op.get("responses", {}) or {}).items():
+                    if not isinstance(rinfo, dict):
+                        continue
+                    rinfo = _resolve_ref(rinfo)
+                    for ct, ci in (rinfo.get("content", {}) or {}).items():
+                        if isinstance(ci, dict):
+                            response_schemas[str(code_k)] = _norm_schema(ci.get("schema", {}))
+                            break
 
                 auth_required = bool(op.get("security", spec.get("security", [])))
                 inventory.append({
-                    "method":         method.upper(),
-                    "path":           base + path,
-                    "params":         params,
-                    "body_fields":    body_fields,
-                    "auth_required":  auth_required,
-                    "operation_id":   op.get("operationId", ""),
-                    "tags":           op.get("tags", []),
-                    "summary":        op.get("summary", ""),
+                    "method":           method.upper(),
+                    "path":             base + path,
+                    "params":           params,
+                    "body_fields":      body_fields,
+                    "body_schema":      body_schema,
+                    "response_schemas": response_schemas,
+                    "auth_required":    auth_required,
+                    "operation_id":     op.get("operationId", ""),
+                    "tags":             op.get("tags", []),
+                    "summary":          op.get("summary", ""),
                 })
     return inventory
 
@@ -3318,8 +3841,8 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
 
     results: list = []
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True,
+        proc = _run_logged(
+            cmd, output_file=out_file, tool_name="kiterunner", text=True,
             timeout=scan.get("max_tool_time", 120),
         )
         raw = proc.stdout + ("\n" + out_file.read_text(encoding="utf-8")
@@ -3398,8 +3921,8 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
 
     results: list = []
     try:
-        subprocess.run(
-            cmd, capture_output=True,
+        _run_logged(
+            cmd, output_file=out_file, tool_name="ffuf",
             timeout=scan.get("max_tool_time", 120),
         )
         if out_file.exists():
@@ -3478,8 +4001,8 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
 
     results: list = []
     try:
-        subprocess.run(
-            cmd, capture_output=True,
+        _run_logged(
+            cmd, output_file=out_file, tool_name="feroxbuster",
             timeout=scan.get("max_tool_time", 120),
         )
         if out_file.exists():
@@ -3552,8 +4075,8 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
 
     results: list = []
     try:
-        subprocess.run(
-            cmd, capture_output=True,
+        _run_logged(
+            cmd, output_file=out_file, tool_name="dirsearch",
             timeout=scan.get("max_tool_time", 120),
         )
         if out_file.exists():
@@ -3596,16 +4119,9 @@ def _run_ffuf_params(endpoint_url: str, phase: str, scan: dict,
     rate    = scan.get("tool_rate", 50)
     out_file = output.output_path(phase, f"ffuf_params_{re.sub(r'[^\\w]', '_', endpoint_url)[:60]}.json")
 
-    # Common API parameter wordlist (minimal inline)
-    _param_words = [
-        "id", "user_id", "account_id", "admin", "debug", "format", "callback",
-        "token", "key", "api_key", "page", "limit", "sort", "filter", "search",
-        "q", "query", "data", "field", "fields", "include", "exclude", "expand",
-        "type", "status", "role", "action", "cmd", "command", "file", "path",
-        "url", "redirect", "next", "return", "from", "to", "start", "end",
-        "username", "password", "email", "name", "value", "param", "input",
-        "output", "mode", "version", "lang", "locale", "timezone",
-    ]
+    # Curated API parameter-name wordlist (data/api_param_names.txt; falls back
+    # to the in-code list when the data file is absent).
+    _param_words = _load_param_names()
     _tmp_wl = None
     try:
         fd, _tmp_wl = tempfile.mkstemp(suffix=".txt", prefix="siphon_pw_")
@@ -3631,7 +4147,7 @@ def _run_ffuf_params(endpoint_url: str, phase: str, scan: dict,
             hdrs += ["-H", f"Authorization: {token_type} {auth_cfg['auth_token']}"]
         cmd += hdrs
 
-        subprocess.run(cmd, capture_output=True, timeout=30)
+        _run_logged(cmd, output_file=out_file, tool_name="ffuf", timeout=30)
 
         if out_file.exists():
             data = json.loads(out_file.read_text(encoding="utf-8"))
@@ -4566,10 +5082,121 @@ def phase_recon(settings: dict, sess: requests.Session,
 # ---------------------------------------------------------------------------
 
 _ALL_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE"]
+
+
+_VALID_ENVIRONMENTS = ("production", "non-production")
+
+
+def _environment(scan: dict) -> str:
+    return (scan.get("environment") or "").strip().lower()
+
+
+def _is_production(scan: dict) -> bool:
+    """True only when the engagement is explicitly marked production."""
+    return _environment(scan) == "production"
+
+
+def _destructive_allowed(method: str, scan: dict) -> bool:
+    """Safety gate (v2.20.0): may we send state-changing / injection payloads to
+    this HTTP method?
+
+    Read methods (GET/HEAD/OPTIONS) are always allowed. Write methods
+    (POST/PUT/PATCH/DELETE/TRACE) are allowed only in NON-PRODUCTION. In
+    production, Siphon performs partial testing with no write-method state
+    changes (governed by the mandatory `environment` setting)."""
+    if (method or "GET").upper() in ("GET", "HEAD", "OPTIONS"):
+        return True
+    return not _is_production(scan)
+
+
 _COMMON_PARAMS = ["id", "user_id", "account_id", "admin", "debug",
                   "format", "callback", "jsonp", "token", "key", "api_key",
                   "page", "limit", "sort", "filter", "search", "q"]
 _FUZZ_VALUES = ["1", "true", "admin", "null", "undefined", "0", "-1", "99999"]
+
+# ---------------------------------------------------------------------------
+# Phase D — typed fuzz corpora + parameter-name wordlists
+#   Replaces the flat 8-item _FUZZ_VALUES with per-type valid/boundary/malformed
+#   corpora chosen from the parameter's detected type (Phase A) or inferred from
+#   its name. Parameter-name wordlists are loaded from data/api_param_names.txt
+#   (curated, API-oriented) with the in-code list as a fallback. Both the value
+#   corpora and the name wordlist can be overridden per engagement by editing
+#   the files under <siphon>/data/ — no code change required.
+# ---------------------------------------------------------------------------
+
+# type -> ordered test values (valid first, then boundary, then malformed)
+_TYPED_FUZZ = {
+    "integer": ["1", "0", "-1", "2147483648", "9999999999", "1.5", "abc", "null"],
+    "number":  ["1.5", "0", "-1", "1e309", "NaN", "abc", "null"],
+    "boolean": ["true", "false", "1", "0", "yes", "null", "2"],
+    "string":  ["test", "", "A" * 1024, "%00", "🙂", "${7*7}", "null"],
+    "uuid":    ["00000000-0000-0000-0000-000000000000",
+                "11111111-1111-1111-1111-111111111111", "not-a-uuid", "1"],
+    "email":   ["test@example.com", "a@b", "test@example.com%0d%0aBcc:x@y.z",
+                "not-an-email", "' OR '1'='1"],
+    "date-time": ["2026-01-01T00:00:00Z", "1970-01-01T00:00:00Z",
+                  "0000-00-00T00:00:00Z", "9999-12-31T23:59:59Z", "not-a-date"],
+    "uri":     ["https://example.com", "http://127.0.0.1", "file:///etc/passwd",
+                "not-a-url", "javascript:alert(1)"],
+}
+
+_PARAM_NAME_CACHE: "list | None" = None
+_FUZZ_OVERRIDE_CACHE: "dict | None" = None
+
+
+def _data_dir() -> Path:
+    return Path(__file__).resolve().parent / "data"
+
+
+def _load_param_names() -> list:
+    """Curated API parameter-name wordlist from data/api_param_names.txt.
+
+    Falls back to (and is always unioned with) the in-code _COMMON_PARAMS so
+    the tool works even when the data file is missing."""
+    global _PARAM_NAME_CACHE
+    if _PARAM_NAME_CACHE is not None:
+        return _PARAM_NAME_CACHE
+    names: list = list(_COMMON_PARAMS)
+    try:
+        f = _data_dir() / "api_param_names.txt"
+        if f.exists():
+            for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and line not in names:
+                    names.append(line)
+    except Exception:
+        pass
+    _PARAM_NAME_CACHE = names
+    return names
+
+
+def _typed_fuzz_values(name: str = "", vtype: str = "", vformat: str = "",
+                       limit: int = 4) -> list:
+    """Return type-appropriate fuzz values for a parameter.
+
+    Precedence: explicit declared type/format (Phase A) → name-based inference
+    → generic string corpus. An optional data/fuzz_values.json file may override
+    or extend the per-type corpora."""
+    global _FUZZ_OVERRIDE_CACHE
+    if _FUZZ_OVERRIDE_CACHE is None:
+        _FUZZ_OVERRIDE_CACHE = {}
+        try:
+            f = _data_dir() / "fuzz_values.json"
+            if f.exists():
+                data = json.loads(f.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    _FUZZ_OVERRIDE_CACHE = data
+        except Exception:
+            _FUZZ_OVERRIDE_CACHE = {}
+    t = (vtype or "").lower()
+    f = (vformat or "").lower()
+    if not t and not f:
+        it, iff = _infer_type_from_name(name)
+        t, f = it, iff
+    key = f if f in _TYPED_FUZZ or f in _FUZZ_OVERRIDE_CACHE else t
+    values = _FUZZ_OVERRIDE_CACHE.get(key) or _TYPED_FUZZ.get(key) \
+        or _TYPED_FUZZ["string"]
+    return list(values)[:limit] if limit else list(values)
 
 
 def phase_fuzzing(settings: dict, sess: requests.Session,
@@ -4612,6 +5239,10 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
         for method in _ALL_METHODS:
             if method in documented_methods:
                 continue
+            # Safety gate (Phase F): don't fire write methods at endpoints unless
+            # destructive testing is authorised.
+            if not _destructive_allowed(method, scan):
+                continue
             resp = _safe_request(sess, method, url, timeout=timeout)
             if not resp:
                 continue
@@ -4629,9 +5260,9 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
 
         # Parameter fuzzing: inject common params not in spec
         documented_param_names = {p["name"] for p in ep.get("params", [])}
-        fuzz_params = [p for p in _COMMON_PARAMS if p not in documented_param_names]
-        for param in fuzz_params[:5]:  # limit per endpoint
-            for val in _FUZZ_VALUES[:2]:
+        fuzz_params = [p for p in _load_param_names() if p not in documented_param_names]
+        for param in fuzz_params[:8]:  # limit per endpoint
+            for val in _typed_fuzz_values(param, limit=2):
                 test_url = f"{url}?{param}={val}"
                 resp = _safe_get(sess, test_url, timeout=timeout)
                 if resp and resp.status_code == 200:
@@ -4651,6 +5282,9 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
                             remediation="Document all accepted parameters; reject unknown ones.",
                         )
                     break
+
+        # Phase E: schema-driven input-validation abuse on documented parameters
+        _schema_abuse_checks(ep, root, sess, output, timeout, scan)
 
     # FFUF parameter fuzzing on top endpoints
     tools_cfg = scan.get("tools", {})
@@ -4672,10 +5306,12 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
 _SQLI_PAYLOADS = [
     ("'", "single quote"),
     ("' OR '1'='1", "OR injection"),
-    ("1' AND SLEEP(5)--", "time-based blind"),
     ("\" OR \"1\"=\"1", "double-quote OR"),
-    ("1; DROP TABLE users--", "stacked query"),
 ]
+# NOTE (v2.20.0): destructive stacked queries (DROP/DELETE/UPDATE) are NOT
+# permitted in Siphon. Time-based blind detection lives solely in the
+# differential engine (_time_blind_sqli); error-based payloads above only
+# trigger/observe parser errors and never modify data.
 
 _NOSQLI_PAYLOADS = [
     ('{"$ne": null}', "not-equal null"),
@@ -4775,17 +5411,495 @@ _TRAVERSAL_RE = re.compile(r'root:.*:/bin/|daemon:.*:/usr/sbin|Win\.ini|\[boot l
 
 
 def _test_injection(sess: requests.Session, url: str, method: str,
-                    param_name: str, payload: str, timeout: int) -> requests.Response | None:
-    """Send injection payload via query param or JSON body."""
+                    param_name: str, payload: str, timeout: int,
+                    endpoint: dict | None = None) -> requests.Response | None:
+    """Send an injection payload via query parameter or JSON body.
+
+    Phase B: when the endpoint is non-GET and a body schema is known, the
+    payload is injected into an otherwise-valid body — every other field is
+    populated with a resolved valid value — so the request survives input
+    validation and the payload actually reaches the injection sink. This
+    fixes the historical single-field false-negative on POST/PUT/PATCH
+    endpoints (where {param: payload} alone was rejected with HTTP 400 before
+    the payload was ever evaluated). Falls back to the legacy single-field
+    body when no endpoint/schema is available, so nothing regresses."""
     try:
+        # Determine where the parameter lives (query/path vs request body).
+        location = "body"
+        if endpoint is not None:
+            for p in endpoint.get("params", []) or []:
+                if p.get("name") == param_name:
+                    location = p.get("in", "query")
+                    break
         if method in ("GET", "HEAD"):
-            test_url = f"{url}?{quote(param_name)}={quote(payload)}"
-            return sess.get(test_url, timeout=timeout)
-        else:
-            body = {param_name: payload}
-            return sess.request(method, url, json=body, timeout=timeout)
+            sep = "&" if "?" in url else "?"
+            return sess.get(f"{url}{sep}{quote(param_name)}={quote(payload)}",
+                            timeout=timeout)
+        body: dict = {}
+        if endpoint is not None:
+            vb = build_valid_body(endpoint.get("body_schema") or {})
+            if isinstance(vb, dict):
+                body = vb
+        if location in ("query", "path"):
+            sep = "&" if "?" in url else "?"
+            test_url = f"{url}{sep}{quote(param_name)}={quote(payload)}"
+            return sess.request(method, test_url,
+                                json=body if body else None, timeout=timeout)
+        body[param_name] = payload
+        return sess.request(method, url, json=body, timeout=timeout)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Differential analysis engine (Phase C — v2.15.0)
+#   Establishes a known-good baseline from a fully valid request, then scores
+#   mutated responses against it. Enables boolean-based and time-based blind
+#   SQL-injection detection that does NOT rely on database error strings in
+#   the response (the historical blind-injection gap).
+# ---------------------------------------------------------------------------
+
+_BOOL_TRUE_PAYLOAD  = "1' OR '1'='1"
+_BOOL_FALSE_PAYLOAD = "1' AND '1'='2"
+_TIME_BLIND_PAYLOADS = [
+    ("1' AND SLEEP(5)-- -",          "MySQL SLEEP"),
+    ("1'||(SELECT pg_sleep(5))||'",  "PostgreSQL pg_sleep"),
+    ("1' WAITFOR DELAY '0:0:5'-- -", "MSSQL WAITFOR DELAY"),
+]
+_TIME_BLIND_THRESHOLD = 4.5   # seconds — SLEEP(5) minus a jitter margin
+
+
+def _resp_text(r) -> str:
+    try:
+        return r.text or ""
+    except Exception:
+        return ""
+
+
+def _similarity(a: str, b: str) -> float:
+    """Bounded difflib ratio over a capped sample (guards O(n^2) cost)."""
+    a = (a or "")[:4096]
+    b = (b or "")[:4096]
+    if not a and not b:
+        return 1.0
+    return difflib.SequenceMatcher(None, a, b, autojunk=True).ratio()
+
+
+def _capture_baseline(sess, endpoint, base_url, timeout, samples: int = 2):
+    """Send valid requests and capture a known-good response profile, or None."""
+    req = _build_request(endpoint, base_url)
+    last = None
+    lat: list = []
+    for _ in range(max(1, samples)):
+        try:
+            r = sess.request(req["method"], req["url"],
+                             params=req["params"] or None, json=req["json"],
+                             timeout=timeout)
+        except Exception:
+            return None
+        last = r
+        try:
+            lat.append(r.elapsed.total_seconds())
+        except Exception:
+            lat.append(0.0)
+    if last is None:
+        return None
+    return {
+        "status":         last.status_code,
+        "sample":         _resp_text(last)[:4096],
+        "median_latency": statistics.median(lat) if lat else 0.0,
+    }
+
+
+def _boolean_blind_sqli(sess, url, method, param, endpoint, baseline, timeout):
+    """Return an evidence string when a boolean-based blind SQLi signature is seen.
+
+    Signature: the TRUE condition tracks the known-good baseline while the FALSE
+    condition diverges — proving the injected boolean changes query results."""
+    rt = _test_injection(sess, url, method, param, _BOOL_TRUE_PAYLOAD, timeout, endpoint)
+    rf = _test_injection(sess, url, method, param, _BOOL_FALSE_PAYLOAD, timeout, endpoint)
+    if not (rt and rf):
+        return None
+    bsample = baseline.get("sample", "")
+    sim_true  = _similarity(_resp_text(rt), bsample)
+    sim_false = _similarity(_resp_text(rf), bsample)
+    sim_tf    = _similarity(_resp_text(rt), _resp_text(rf))
+    true_tracks    = (rt.status_code == baseline.get("status")) and sim_true >= 0.95
+    false_diverges = (rf.status_code != baseline.get("status")) or sim_false < 0.90
+    if true_tracks and false_diverges and sim_tf < 0.90:
+        return (f"TRUE payload ({_BOOL_TRUE_PAYLOAD}) tracked the baseline "
+                f"(similarity={sim_true:.2f}, HTTP {rt.status_code}); FALSE payload "
+                f"({_BOOL_FALSE_PAYLOAD}) diverged (similarity={sim_false:.2f}, "
+                f"HTTP {rf.status_code}); TRUE-vs-FALSE similarity={sim_tf:.2f}.")
+    return None
+
+
+def _time_blind_sqli(sess, url, method, param, endpoint, baseline, timeout):
+    """Return an evidence string when a time-based blind SQLi delay is confirmed.
+
+    A delay payload must induce a response slower than the threshold on TWO
+    consecutive probes (jitter guard). Skipped when the timeout is too small to
+    observe the delay or when the baseline is already slow."""
+    base_med = (baseline or {}).get("median_latency", 0.0)
+    threshold = max(_TIME_BLIND_THRESHOLD, base_med * 2 + 3.0)
+    # The delay payloads sleep ~5s, so the timeout must exceed the sleep (plus
+    # margin) to ever receive the delayed response, and must exceed the
+    # detection threshold to be able to observe it.
+    if timeout < 7 or threshold >= timeout:
+        return None
+    for payload, desc in _TIME_BLIND_PAYLOADS[:2]:
+        r1 = _test_injection(sess, url, method, param, payload, timeout, endpoint)
+        if not r1:
+            continue
+        try:
+            d1 = r1.elapsed.total_seconds()
+        except Exception:
+            d1 = 0.0
+        if d1 < threshold:
+            continue
+        r2 = _test_injection(sess, url, method, param, payload, timeout, endpoint)
+        try:
+            d2 = r2.elapsed.total_seconds() if r2 else 0.0
+        except Exception:
+            d2 = 0.0
+        if d2 >= threshold:
+            return (f"{desc} payload induced a repeatable delay "
+                    f"(baseline≈{base_med:.2f}s, probe1={d1:.1f}s, probe2={d2:.1f}s, "
+                    f"threshold={threshold:.1f}s). Payload: {payload}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Schema-abuse engine (Phase E — v2.17.0)
+#   Uses the value-aware inventory (types / enums / numeric bounds from Phase A)
+#   to detect missing server-side input validation. A valid baseline request
+#   must be accepted first (false-positive gate); each test then sends an
+#   otherwise-valid request with ONE field set to an invalid value and flags
+#   acceptance (2xx) as missing validation. Conservative: LOW/MEDIUM severity,
+#   Tentative confidence (accepted-not-rejected is a hygiene signal).
+# ---------------------------------------------------------------------------
+
+_ACCEPTED_STATUS = (200, 201, 202, 204)
+
+
+def _enum_violation_value(enum: list) -> str:
+    bad = "siphon_not_in_enum_zzz"
+    return bad if bad not in enum else bad + "_2"
+
+
+# Phase E.2 — endpoint-level abuse checks (HPP, content-type confusion,
+# resource consumption, and BOPLA response-shape diff with example-response oracle)
+
+_PII_KEY_RE = re.compile(
+    r"(ssn|social_security|passwd|password|secret|api_?key|access_?token|"
+    r"refresh_?token|credit_?card|card_?number|cardnumber|cvv|cvc|pin|"
+    r"date_of_birth|dob|tax_?id|salary|private_?key|auth_?token|session_?token)",
+    re.I)
+_PAGINATION_PARAMS = {"limit", "per_page", "page_size", "pagesize", "count",
+                      "size", "offset", "page", "rows", "max_results", "take"}
+
+
+def _json_keys(text: str) -> set:
+    """Collect object keys (to depth 2) from a JSON response body."""
+    try:
+        obj = json.loads(text)
+    except Exception:
+        return set()
+    keys: set = set()
+
+    def _walk(o, d):
+        if d > 2:
+            return
+        if isinstance(o, dict):
+            for k, v in o.items():
+                keys.add(k)
+                _walk(v, d + 1)
+        elif isinstance(o, list):
+            for it in o[:3]:
+                _walk(it, d + 1)
+    _walk(obj, 0)
+    return keys
+
+
+def _keys_with_scalar_value(text: str, names: set) -> set:
+    """Return the subset of `names` that appear in the JSON body with a
+    non-empty scalar value (str/int/float, excluding bool/empty)."""
+    try:
+        obj = json.loads(text)
+    except Exception:
+        return set()
+    found: set = set()
+
+    def _walk(o, d):
+        if d > 2:
+            return
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if (k in names and isinstance(v, (str, int, float))
+                        and not isinstance(v, bool)
+                        and (not isinstance(v, str) or v.strip())):
+                    found.add(k)
+                _walk(v, d + 1)
+        elif isinstance(o, list):
+            for it in o[:3]:
+                _walk(it, d + 1)
+    _walk(obj, 0)
+    return found
+
+
+def _schema_declared_keys(node: dict, _depth: int = 0) -> set:
+    """Collect property names declared by a SchemaNode (to depth 4)."""
+    keys: set = set()
+    if not isinstance(node, dict) or _depth > 4:
+        return keys
+    props = node.get("properties")
+    if isinstance(props, dict):
+        for k, sub in props.items():
+            keys.add(k)
+            keys |= _schema_declared_keys(sub, _depth + 1)
+    if isinstance(node.get("items"), dict):
+        keys |= _schema_declared_keys(node["items"], _depth + 1)
+    return keys
+
+
+def _response_shape_diff(endpoint, response, url, method, output) -> None:
+    """BOPLA / excessive-data-exposure: flag sensitive response fields that are
+    NOT declared by the response schema. The expected key set comes from the
+    OpenAPI response schema, or — when none exists — from a saved example
+    response (HAR / Postman) used as a known-good oracle."""
+    actual = _json_keys(_resp_text(response))
+    if not actual:
+        return
+    declared: set = set()
+    for _code, node in (endpoint.get("response_schemas") or {}).items():
+        declared |= _schema_declared_keys(node)
+    if not declared:
+        for obs in (endpoint.get("observed_responses") or []):
+            declared |= _json_keys(obs.get("body", ""))
+    if not declared:
+        return  # no oracle to compare against
+    sensitive = sorted(k for k in actual if k not in declared and _PII_KEY_RE.search(k))
+    if not sensitive:
+        return
+    # B9 value-shape validation: a sensitive-NAMED field is only high-confidence
+    # when it actually carries non-empty scalar data (a `token`/`key` field that
+    # is null/empty/bool — e.g. a pagination cursor flag — is a likely FP).
+    with_value = _keys_with_scalar_value(_resp_text(response), set(sensitive))
+    confident = bool(with_value)
+    reported = sorted(with_value) if confident else sensitive
+    output.add_finding(
+        phase="data_exposure",
+        title="Excessive Data Exposure — Sensitive Fields in API Response",
+        severity="HIGH", url=url, method=method,
+        detail=f"The response returned sensitive field(s) that are not part of the documented response contract: {reported}. The API returns more data than its schema declares and relies on the client to filter it (excessive data exposure / BOPLA).",
+        evidence=("Undeclared sensitive response fields carrying data: " + str(reported)) if confident
+                 else ("Undeclared fields whose names match sensitive patterns (values empty/non-scalar — verify manually): " + str(reported)),
+        remediation="Return only the fields defined by the response contract; filter sensitive properties server-side using explicit allow-lists rather than relying on clients to ignore them.",
+        confidence="Firm" if confident else "Tentative",
+    )
+
+
+def _content_type_confusion(endpoint, base_url, sess, timeout, url, method, output) -> None:
+    """Flag JSON endpoints that also accept a form-urlencoded body (parser-
+    differential / validation-bypass / CSRF surface)."""
+    if method in ("GET", "HEAD"):
+        return
+    body = build_valid_body(endpoint.get("body_schema") or {})
+    if not isinstance(body, dict) or not body:
+        return
+    rq = _build_request(endpoint, base_url)
+    form = {k: ("" if v is None else str(v)) for k, v in body.items()
+            if not isinstance(v, (dict, list))}
+    if not form:
+        return
+    try:
+        r = sess.request(rq["method"], rq["url"], params=rq["params"] or None,
+                         data=form, timeout=timeout)
+    except Exception:
+        return
+    if r is not None and r.status_code in _ACCEPTED_STATUS:
+        output.add_finding(
+            phase="fuzzing",
+            title="Content-Type Confusion — Alternate Body Format Accepted",
+            severity="LOW", url=url, method=method,
+            detail=f"The endpoint accepted a form-urlencoded body (HTTP {r.status_code}) for a request documented to use JSON. Accepting multiple body formats can enable parser-differential attacks, input-validation bypass, and CSRF.",
+            evidence="Form-urlencoded body accepted on a JSON endpoint.",
+            remediation="Enforce the expected Content-Type and reject requests whose body media type does not match the declared one.",
+            confidence="Tentative",
+        )
+
+
+def _resource_consumption(endpoint, base_url, sess, timeout, url, method, base, output) -> None:
+    """API4: flag pagination-style parameters that accept an extreme value and
+    return a materially larger result set (no server-side cap)."""
+    targets = [p for p in (endpoint.get("params") or [])
+               if (p.get("name", "") or "").lower() in _PAGINATION_PARAMS]
+    for name in ((endpoint.get("body_schema") or {}).get("properties", {}) or {}):
+        if name.lower() in _PAGINATION_PARAMS:
+            targets.append({"name": name, "in": "body"})
+    base_len = len(_resp_text(base))
+    for p in targets[:2]:
+        name = p.get("name")
+        loc = p.get("in", "query")
+        huge = 1_000_000
+        rq = _build_request(endpoint, base_url)
+        q = dict(rq["params"] or {})
+        body = dict(rq["json"]) if isinstance(rq["json"], dict) else None
+        if loc == "body":
+            body = body or {}
+            body[name] = huge
+        else:
+            q[name] = huge
+        try:
+            r = sess.request(rq["method"], rq["url"], params=q or None,
+                             json=body, timeout=timeout)
+        except Exception:
+            continue
+        if r is not None and r.status_code in _ACCEPTED_STATUS:
+            rlen = len(_resp_text(r))
+            if rlen > max(base_len * 5, base_len + 50000):
+                output.add_finding(
+                    phase="rate_limiting",
+                    title="Unbounded Resource Consumption via Pagination Parameter",
+                    severity="MEDIUM", url=url, method=method,
+                    detail=f"Parameter '{name}' accepted an extreme value ({huge}) and returned a ~{rlen}-byte response versus a {base_len}-byte baseline, indicating the API does not cap the result-set size regardless of the client-supplied value (API4 Unrestricted Resource Consumption).",
+                    evidence=f"{name}={huge} returned {rlen} bytes (baseline {base_len}).",
+                    remediation="Enforce a server-side maximum page size / result-set cap independent of client input.",
+                    confidence="Firm",
+                )
+                break
+
+
+def _hpp_check(endpoint, base_url, sess, timeout, url, method, base, output) -> None:
+    """Flag ambiguous duplicate-query-parameter handling (HTTP parameter
+    pollution): a repeated parameter is accepted and changes the response."""
+    qp = [p for p in (endpoint.get("params") or [])
+          if p.get("in", "query") == "query" and p.get("name")]
+    if not qp:
+        return
+    name = qp[0]["name"]
+    good = str(resolve_value(qp[0]))
+    rq = _build_request(endpoint, base_url)
+    q = dict(rq["params"] or {})
+    q[name] = [good, "siphon_hpp2"]   # repeated query parameter
+    try:
+        r = sess.request(rq["method"], rq["url"], params=q, json=rq["json"], timeout=timeout)
+    except Exception:
+        return
+    if r is None or r.status_code not in _ACCEPTED_STATUS:
+        return
+    if r.status_code != base.status_code or abs(len(_resp_text(r)) - len(_resp_text(base))) > 256:
+        output.add_finding(
+            phase="fuzzing",
+            title="HTTP Parameter Pollution",
+            severity="LOW", url=url, method=method,
+            detail=f"Duplicate '{name}' query parameters were accepted and produced a response that differs from the single-value baseline, indicating ambiguous duplicate-parameter handling that can be abused to bypass input filters or WAF rules (HPP).",
+            evidence=f"Duplicated query parameter '{name}' changed the response.",
+            remediation="Define deterministic handling for duplicate parameters; reject or canonicalise repeated keys and apply validation after canonicalisation.",
+            confidence="Tentative",
+        )
+
+
+def _schema_abuse_checks(endpoint: dict, base_url: str, sess, output, timeout,
+                         scan: dict | None = None) -> None:
+    method = (endpoint.get("method") or "GET").upper()
+    path = endpoint.get("path", "/")
+    url = path if path.startswith("http") else base_url.rstrip("/") + "/" + path.lstrip("/")
+
+    # Safety gate (Phase F): the baseline + abuse requests are state-changing on
+    # write methods — skip unless destructive testing is authorised.
+    if scan is not None and not _destructive_allowed(method, scan):
+        return
+
+    # FP gate: a fully valid request must be accepted before abuse means anything
+    req = _build_request(endpoint, base_url)
+    try:
+        base = sess.request(req["method"], req["url"], params=req["params"] or None,
+                            json=req["json"], timeout=timeout)
+    except Exception:
+        return
+    if not base or base.status_code not in _ACCEPTED_STATUS:
+        return
+
+    def _send_invalid(name, location, value):
+        rq = _build_request(endpoint, base_url)
+        q = dict(rq["params"] or {})
+        body = dict(rq["json"]) if isinstance(rq["json"], dict) else None
+        if location == "body":
+            if body is None:
+                body = {}
+            body[name] = value
+        else:
+            q[name] = value
+        try:
+            return sess.request(rq["method"], rq["url"], params=q or None,
+                                json=body, timeout=timeout)
+        except Exception:
+            return None
+
+    targets = []
+    for p in endpoint.get("params", []) or []:
+        if p.get("name"):
+            targets.append({**p, "_loc": p.get("in", "query")})
+    for name, node in ((endpoint.get("body_schema") or {}).get("properties", {}) or {}).items():
+        if isinstance(node, dict):
+            targets.append({"name": name, "_loc": "body", **node})
+
+    for p in targets[:6]:
+        name = p.get("name", "")
+        loc = p.get("_loc", "query")
+        # 1. Enumerated value restriction
+        enum = p.get("enum") or []
+        if enum:
+            r = _send_invalid(name, loc, _enum_violation_value(enum))
+            if r is not None and r.status_code in _ACCEPTED_STATUS:
+                output.add_finding(
+                    phase="fuzzing",
+                    title="Enumerated Parameter Value Restriction Not Enforced",
+                    severity="LOW", url=url,
+                    detail=f"Parameter '{name}' declares an enumerated set of allowed values {enum}, but the server accepted an out-of-enum value (HTTP {r.status_code}) instead of rejecting it. Server-side value validation appears to be missing.",
+                    evidence=f"Out-of-enum value accepted on parameter '{name}'.",
+                    remediation="Validate parameter values server-side against the declared allowed set and reject unknown values with HTTP 400.",
+                    method=method, confidence="Tentative",
+                )
+            continue
+        # 2. Numeric boundary
+        if p.get("type") in ("integer", "number") and ("maximum" in p or "minimum" in p):
+            if "maximum" in p:
+                bad = (p.get("maximum") or 0) + 1_000_000
+            else:
+                bad = (p.get("minimum") or 0) - 1_000_000
+            r = _send_invalid(name, loc, bad)
+            if r is not None and r.status_code in _ACCEPTED_STATUS:
+                output.add_finding(
+                    phase="fuzzing",
+                    title="Numeric Parameter Boundary Not Enforced",
+                    severity="LOW", url=url,
+                    detail=f"Parameter '{name}' declares numeric bounds but the server accepted an out-of-range value ({bad}, HTTP {r.status_code}) without rejecting it.",
+                    evidence=f"Out-of-range value {bad} accepted on parameter '{name}'.",
+                    remediation="Enforce the declared minimum/maximum constraints server-side.",
+                    method=method, confidence="Tentative",
+                )
+            continue
+        # 3. Type confusion — scalar field accepts a JSON array
+        if p.get("type") in ("string", "integer", "number", "boolean"):
+            r = _send_invalid(name, loc, [42])
+            if r is not None and r.status_code in _ACCEPTED_STATUS:
+                output.add_finding(
+                    phase="fuzzing",
+                    title="Parameter Type Confusion Accepted",
+                    severity="MEDIUM", url=url,
+                    detail=f"Parameter '{name}' is declared as a scalar ({p.get('type')}) but the server accepted a JSON array value (HTTP {r.status_code}). Type confusion can enable NoSQL operator injection, authentication bypass, or application logic errors.",
+                    evidence=f"Non-scalar (array) value accepted on parameter '{name}'.",
+                    remediation="Enforce strict type validation; reject values whose JSON type does not match the declared schema type.",
+                    method=method, confidence="Tentative",
+                )
+
+    # Phase E.2 — endpoint-level checks (reuse the captured baseline response)
+    _response_shape_diff(endpoint, base, url, method, output)
+    _content_type_confusion(endpoint, base_url, sess, timeout, url, method, output)
+    _resource_consumption(endpoint, base_url, sess, timeout, url, method, base, output)
+    _hpp_check(endpoint, base_url, sess, timeout, url, method, base, output)
 
 
 def _endpoint_dir_name(method: str, url: str) -> str:
@@ -4850,7 +5964,14 @@ def _save_http_evidence(output: "OutputManager", phase: str, label: str,
     resp_lines.append(r.text[:524288])
     resp_path.write_text("\n".join(resp_lines), encoding="utf-8")
 
-    return str(req_path), str(resp_path)
+    # §13c: evidence paths are recorded relative to the run directory root so
+    # downstream consumers (Crucible, Prometheus, Helm bundles) resolve them.
+    def _rel(p):
+        try:
+            return str(p.relative_to(output.out_dir))
+        except Exception:
+            return str(p)
+    return _rel(req_path), _rel(resp_path)
 
 
 def phase_injection(settings: dict, sess: requests.Session,
@@ -4868,12 +5989,23 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     # Cap endpoints tested
     test_endpoints = inventory[:20]
+    # Safety gate (v2.20.0): in production, write-method endpoints are excluded
+    # from every active injection sub-block (no state changes). Non-production
+    # tests everything.
+    _gated = [ep for ep in test_endpoints
+              if _destructive_allowed(ep.get("method", "GET"), scan)]
 
+    _inj_skipped_destructive = 0
     for ep in test_endpoints:
         if _shutdown_requested:
             break
         url = root + ep["path"]
         method = ep["method"]
+        # Safety gate (Phase F): injection on a write method now sends valid,
+        # state-changing requests — skip unless destructive testing is authorised.
+        if not _destructive_allowed(method, scan):
+            _inj_skipped_destructive += 1
+            continue
         params = ep.get("params", []) or []
         body_fields = ep.get("body_fields", []) or []
 
@@ -4883,11 +6015,27 @@ def phase_injection(settings: dict, sess: requests.Session,
             # Fuzz common params anyway
             test_params = ["id", "q", "search", "username", "user", "filter"]
 
+        # Phase C: known-good baseline captured lazily once per endpoint; the
+        # (expensive) time-based probe runs at most once per endpoint.
+        _dx_baseline = None
+        _time_done = False
+
         for param in test_params[:4]:  # cap per endpoint
-            # SQLi
+            sqli_hit = False
+            # SQLi (error-based) with confirming second probe (B3): an
+            # unbalanced quote must surface a DB error that a BALANCED control
+            # input does NOT — this proves the error is injection-driven and not
+            # static page text (docs/blogs mentioning SQL errors).
             for payload, desc in _SQLI_PAYLOADS[:3]:
-                resp = _test_injection(sess, url, method, param, payload, timeout)
+                resp = _test_injection(sess, url, method, param, payload, timeout, ep)
                 if resp and _SQL_ERR_RE.search(resp.text):
+                    # Control: send a balanced/benign value; if the same error
+                    # pattern is still present, it's not injection-driven → skip.
+                    _ctrl = _test_injection(sess, url, method, param,
+                                            resolve_value(next((p for p in (ep.get("params") or [])
+                                                                if p.get("name") == param), {"name": param})),
+                                            timeout, ep)
+                    _confirmed = not (_ctrl is not None and _SQL_ERR_RE.search(_ctrl.text or ""))
                     _rq, _rp = _save_http_evidence(output, "injection", f"sqli_{param}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
@@ -4895,11 +6043,56 @@ def phase_injection(settings: dict, sess: requests.Session,
                         severity="CRITICAL",
                         url=url,
                         detail="User-controlled input is incorporated into SQL queries without parameterisation, allowing an attacker to read, modify, or delete database contents.",
-                        evidence=f"Response snippet: {resp.text[:300]}",
+                        evidence=(f"Injection payload triggered a database error; balanced control "
+                                  f"input {'did NOT reproduce it (confirmed)' if _confirmed else 'also reproduced it (unconfirmed — possible static page text)'}.\n"
+                                  f"Response snippet: {resp.text[:300]}"),
                         output_file=f"{_rq},{_rp}",
                         remediation="Replace all dynamic SQL string construction with parameterised queries or prepared statements and suppress database error output in production responses.",
+                        confidence="Firm" if _confirmed else "Tentative",
                     )
-                    break
+                    sqli_hit = _confirmed
+                    if _confirmed:
+                        break
+
+            # Boolean-based blind SQLi — differential (TRUE tracks baseline,
+            # FALSE diverges). Only when error-based did not already confirm.
+            if not sqli_hit:
+                if _dx_baseline is None:
+                    _dx_baseline = _capture_baseline(sess, ep, root, timeout)
+                if _dx_baseline:
+                    _bb = _boolean_blind_sqli(sess, url, method, param, ep, _dx_baseline, timeout)
+                    if _bb:
+                        output.add_finding(
+                            phase="injection",
+                            title="Blind SQL Injection (Boolean-Based)",
+                            severity="CRITICAL",
+                            url=url,
+                            detail="The application is vulnerable to boolean-based blind SQL injection: a TRUE injected condition returns the baseline response while a FALSE condition returns a materially different response, proving that user input alters the SQL query logic even though no database error is surfaced.",
+                            evidence=_bb,
+                            remediation="Replace dynamic SQL construction with parameterised queries / prepared statements; do not build queries by string concatenation of user input.",
+                            confidence="Firm",
+                        )
+                        sqli_hit = True
+
+            # Time-based blind SQLi — at most once per endpoint (expensive on a
+            # vulnerable target; near-free on a non-vulnerable one).
+            if not sqli_hit and not _time_done and timeout >= 7:
+                _time_done = True
+                if _dx_baseline is None:
+                    _dx_baseline = _capture_baseline(sess, ep, root, timeout)
+                _tb = _time_blind_sqli(sess, url, method, param, ep, _dx_baseline or {}, timeout)
+                if _tb:
+                    output.add_finding(
+                        phase="injection",
+                        title="Blind SQL Injection (Time-Based)",
+                        severity="CRITICAL",
+                        url=url,
+                        detail="The application is vulnerable to time-based blind SQL injection: a time-delay payload (e.g. SLEEP / pg_sleep / WAITFOR) produced a repeatable, measurable delay in the response, proving that injected SQL is executed by the backend database.",
+                        evidence=_tb,
+                        remediation="Replace dynamic SQL construction with parameterised queries / prepared statements; do not build queries by string concatenation of user input.",
+                        confidence="Firm",
+                    )
+                    sqli_hit = True
 
             # NoSQLi
             for payload, desc in _NOSQLI_PAYLOADS[:2]:
@@ -4908,8 +6101,12 @@ def phase_injection(settings: dict, sess: requests.Session,
                         test_url = f"{url}?{param}={quote(payload)}"
                         resp = sess.get(test_url, timeout=timeout)
                     else:
-                        # Try JSON operator injection
-                        body = {param: {"$ne": None}}
+                        # JSON operator injection inside an otherwise-valid body
+                        # so the request survives schema validation.
+                        body = build_valid_body(ep.get("body_schema") or {})
+                        if not isinstance(body, dict):
+                            body = {}
+                        body[param] = {"$ne": None}
                         resp = sess.request(method, url, json=body, timeout=timeout)
                     if resp and _NOSQL_ERR_RE.search(resp.text):
                         _rq, _rp = _save_http_evidence(output, "injection", f"nosql_{param}", resp, endpoint_url=url, method=method)
@@ -4927,26 +6124,43 @@ def phase_injection(settings: dict, sess: requests.Session,
                 except Exception:
                     pass
 
-            # SSTI
-            for payload, desc in _SSTI_PAYLOADS[:3]:
-                resp = _test_injection(sess, url, method, param, payload, timeout)
-                if resp and re.search(r'\b49\b', resp.text):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"ssti_{param}", resp, endpoint_url=url, method=method)
-                    output.add_finding(
-                        phase="injection",
-                        title="Server-Side Template Injection (SSTI)",
-                        severity="CRITICAL",
-                        url=url,
-                        detail="User-controlled input is evaluated as template syntax by a server-side template engine (e.g., Jinja2, Twig, Freemarker), enabling arbitrary server-side code execution.",
-                        evidence=f"Response contains '49': {resp.text[:200]}",
-                        output_file=f"{_rq},{_rp}",
-                        remediation="Never pass user input directly to template rendering functions; treat user data as context variables only and use sandboxed or logic-less template engines where user-controlled content must appear in templates.",
-                    )
-                    break
+            # SSTI — randomised arithmetic sentinel (B1): pick two random 3-digit
+            # operands so the expected product is a unique 5-6 digit number that
+            # is extremely unlikely to occur in the page by chance (the old
+            # bare "49" check false-positived on any "49" in the response).
+            import random as _ssti_rand
+            _a = _ssti_rand.randint(311, 989)
+            _b = _ssti_rand.randint(311, 989)
+            _expect = str(_a * _b)
+            _ssti_templates = ["{{%d*%d}}", "${%d*%d}", "#{%d*%d}", "<%%= %d*%d %%>", "*{%d*%d}"]
+            for _tmpl in _ssti_templates[:3]:
+                payload = _tmpl % (_a, _b)
+                resp = _test_injection(sess, url, method, param, payload, timeout, ep)
+                if not resp or _expect not in resp.text:
+                    continue
+                # Control probe: the literal product must NOT already be present
+                # when the operands are sent un-evaluated (proves evaluation, not
+                # reflection / coincidence).
+                _ctrl = _test_injection(sess, url, method, param, f"{_a}x{_b}", timeout, ep)
+                if _ctrl is not None and _expect in (_ctrl.text or ""):
+                    continue
+                _rq, _rp = _save_http_evidence(output, "injection", f"ssti_{param}", resp, endpoint_url=url, method=method)
+                output.add_finding(
+                    phase="injection",
+                    title="Server-Side Template Injection (SSTI)",
+                    severity="CRITICAL",
+                    url=url,
+                    detail="User-controlled input is evaluated as template syntax by a server-side template engine (e.g., Jinja2, Twig, Freemarker), enabling arbitrary server-side code execution.",
+                    evidence=f"Template expression {payload!r} evaluated to {_expect} in the response (control probe confirmed it was not a reflection).",
+                    output_file=f"{_rq},{_rp}",
+                    remediation="Never pass user input directly to template rendering functions; treat user data as context variables only and use sandboxed or logic-less template engines where user-controlled content must appear in templates.",
+                    confidence="Firm",
+                )
+                break
 
             # LDAP
             for payload, desc in _LDAP_PAYLOADS[:2]:
-                resp = _test_injection(sess, url, method, param, payload, timeout)
+                resp = _test_injection(sess, url, method, param, payload, timeout, ep)
                 if resp and resp.status_code == 200:
                     if re.search(r'(ldap|directory|dn=|objectClass)', resp.text, re.I):
                         _rq, _rp = _save_http_evidence(output, "injection", f"ldap_{param}", resp, endpoint_url=url, method=method)
@@ -4963,7 +6177,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                         break
 
     # XXE test — for endpoints that might accept XML
-    for ep in test_endpoints[:5]:
+    for ep in _gated[:5]:
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -4980,6 +6194,16 @@ def phase_injection(settings: dict, sess: requests.Session,
                 timeout=timeout,
             )
             if resp and re.search(r'(root:x:|nobody:|daemon:)', resp.text):
+                # Control probe (B4): send a benign XML doc without the external
+                # entity; if the passwd pattern is still present, it's static
+                # page content, not entity expansion → suppress the FP.
+                _ctrl = sess.request(
+                    ep["method"], url,
+                    data='<?xml version="1.0"?><root>siphon</root>',
+                    headers={"Content-Type": "application/xml"}, timeout=timeout,
+                )
+                if _ctrl is not None and re.search(r'(root:x:|nobody:|daemon:)', _ctrl.text or ""):
+                    continue
                 _rq, _rp = _save_http_evidence(output, "injection", "xxe", resp, endpoint_url=url, method=ep["method"])
                 output.add_finding(
                     phase="injection",
@@ -4987,15 +6211,16 @@ def phase_injection(settings: dict, sess: requests.Session,
                     severity="CRITICAL",
                     url=url,
                     detail="XXE payload caused /etc/passwd content to appear in response.",
-                    evidence=f"Response snippet: {resp.text[:300]}",
+                    evidence=f"Response snippet: {resp.text[:300]} (control probe without the external entity did not return the passwd pattern).",
                     output_file=f"{_rq},{_rp}",
                     remediation="Disable external entity processing in XML parsers.",
+                    confidence="Firm",
                 )
         except Exception:
             pass
 
     # XSS — reflected XSS via query/body parameters
-    for ep in test_endpoints[:10]:
+    for ep in _gated[:10]:
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -5023,7 +6248,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                     break
 
     # Command Injection
-    for ep in test_endpoints[:10]:
+    for ep in _gated[:10]:
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -5035,8 +6260,14 @@ def phase_injection(settings: dict, sess: requests.Session,
             test_params = ["cmd", "exec", "command", "run", "host", "ping", "name"]
         for param in test_params[:3]:
             for cmd_pay, cmd_pat in _CMD_PAYLOADS[:2]:
-                resp = _test_injection(sess, url, method, param, "test" + cmd_pay, timeout)
+                resp = _test_injection(sess, url, method, param, "test" + cmd_pay, timeout, ep)
                 if resp and cmd_pat.search(resp.text):
+                    # Control probe (B5): a benign value (no command separator)
+                    # must NOT produce the `uid=NNN(` pattern, else it's static
+                    # page text, not command execution.
+                    _ctrl = _test_injection(sess, url, method, param, "test", timeout, ep)
+                    if _ctrl is not None and cmd_pat.search(_ctrl.text or ""):
+                        continue
                     _rq, _rp = _save_http_evidence(output, "injection", f"cmdi_{param}", resp, endpoint_url=url, method=method)
                     output.add_finding(
                         phase="injection",
@@ -5044,14 +6275,15 @@ def phase_injection(settings: dict, sess: requests.Session,
                         severity="CRITICAL",
                         url=url,
                         detail="User-controlled input is passed unsanitised to a system shell or OS command execution function, allowing an attacker to execute arbitrary commands on the host.",
-                        evidence=f"uid= pattern found in response: {resp.text[:300]}",
+                        evidence=f"uid= pattern found only with the injected command separator (control probe without it did not): {resp.text[:300]}",
                         output_file=f"{_rq},{_rp}",
                         remediation="Eliminate shell calls that incorporate user input; use language-native library functions instead; where shell invocation is unavoidable, apply strict allowlist validation on all input values.",
+                        confidence="Firm",
                     )
                     break
 
     # CRLF Injection
-    for ep in test_endpoints[:10]:
+    for ep in _gated[:10]:
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -5079,7 +6311,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                 break
 
     # Path Traversal / LFI
-    for ep in test_endpoints[:15]:
+    for ep in _gated[:15]:
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -5114,7 +6346,7 @@ def phase_injection(settings: dict, sess: requests.Session,
         "+cmd|'/C echo siphon_csv'!A0",
         "@SUM(1+1)*cmd|'/C echo siphon_csv'!A0",
     ]
-    for ep in test_endpoints[:10]:
+    for ep in _gated[:10]:
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -5144,7 +6376,7 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     # Log injection via request parameters
     _log_inject_payload = "%0asiphon_log_inject_SUCCESS%0a"
-    for ep in test_endpoints[:10]:
+    for ep in _gated[:10]:
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -5169,76 +6401,12 @@ def phase_injection(settings: dict, sess: requests.Session,
                 )
                 break
 
-    # Blind SQL injection — boolean-based
-    _bool_true_pay  = "' OR '1'='1"
-    _bool_false_pay = "' OR '1'='2"
-    for ep in test_endpoints[:8]:
-        if _shutdown_requested:
-            break
-        url = root + ep["path"]
-        method = ep["method"]
-        params = ep.get("params", []) or []
-        body_fields = ep.get("body_fields", []) or []
-        test_params = ([p["name"] for p in params] + body_fields) or ["id", "q", "search", "user"]
-        for param in test_params[:3]:
-            try:
-                r_t = _test_injection(sess, url, method, param, _bool_true_pay,  timeout)
-                r_f = _test_injection(sess, url, method, param, _bool_false_pay, timeout)
-                if (r_t and r_f
-                        and r_t.status_code == 200
-                        and abs(len(r_t.text) - len(r_f.text)) > 50):
-                    _rq, _rp = _save_http_evidence(output, "injection", f"sqli_bool_{param}", r_t, endpoint_url=url, method=method)
-                    output.add_finding(
-                        phase="injection",
-                        title="Blind SQL Injection (Boolean-Based)",
-                        severity="CRITICAL",
-                        url=url,
-                        detail="User-controlled input is incorporated into SQL queries without parameterisation, allowing an attacker to read, modify, or delete database contents.",
-                        evidence=(f"TRUE  payload: {_bool_true_pay} → {r_t.status_code} ({len(r_t.text)} bytes)\n"
-                                  f"FALSE payload: {_bool_false_pay} → {r_f.status_code} ({len(r_f.text)} bytes)"),
-                        output_file=f"{_rq},{_rp}",
-                        remediation="Replace all dynamic SQL string construction with parameterised queries or prepared statements and suppress database error output in production responses.",
-                    )
-                    break
-            except Exception:
-                pass
-
-    # Blind SQL injection — time-based
-    _TIME_SQLI = [
-        ("' AND SLEEP(3)--",           3.0),
-        ("'; WAITFOR DELAY '0:0:3'--", 3.0),
-        ("' AND pg_sleep(3)--",        3.0),
-    ]
-    import time as _ti
-    for ep in test_endpoints[:5]:
-        if _shutdown_requested:
-            break
-        url = root + ep["path"]
-        method = ep["method"]
-        params = ep.get("params", []) or []
-        body_fields = ep.get("body_fields", []) or []
-        test_params = ([p["name"] for p in params] + body_fields) or ["id", "user", "q"]
-        for param in test_params[:2]:
-            for tsql, delay in _TIME_SQLI:
-                try:
-                    t0   = _ti.monotonic()
-                    resp = _test_injection(sess, url, method, param, tsql, delay + 5)
-                    elapsed = _ti.monotonic() - t0
-                    if resp and elapsed >= delay:
-                        _rq, _rp = _save_http_evidence(output, "injection", f"sqli_time_{param}", resp, endpoint_url=url, method=method)
-                        output.add_finding(
-                            phase="injection",
-                            title="Blind SQL Injection (Time-Based)",
-                            severity="CRITICAL",
-                            url=url,
-                            detail="User-controlled input is incorporated into SQL queries without parameterisation, allowing an attacker to read, modify, or delete database contents.",
-                            evidence=f"Payload: {tsql}  Elapsed: {elapsed:.2f}s  Threshold: {delay}s",
-                            output_file=f"{_rq},{_rp}",
-                            remediation="Replace all dynamic SQL string construction with parameterised queries or prepared statements and suppress database error output in production responses.",
-                        )
-                        break
-                except Exception:
-                    pass
+    # Blind SQL injection (boolean- and time-based) is handled by the
+    # differential engine in the per-parameter loop above
+    # (_boolean_blind_sqli / _time_blind_sqli). The earlier standalone blocks
+    # here were removed in v2.20.0: they used a weak length-diff>50 heuristic
+    # (false-positive prone, no baseline) and a duplicate time-based pass, and
+    # were not covered by the safety gate.
 
     # Deserialization endpoint probing — YAML RCE and Pickle RCE
     _deser_probes = [
@@ -5261,6 +6429,9 @@ def phase_injection(settings: dict, sess: requests.Session,
     _probe_sess = auth_sess if auth_sess else sess
     for _dsuf, _dct, _dpayload, _dtitle, _ddesc in _deser_probes:
         if _shutdown_requested:
+            break
+        # Safety gate: deserialization probes POST RCE payloads — non-production only.
+        if not _destructive_allowed("POST", scan):
             break
         _durl = root + _dsuf
         try:
@@ -5291,6 +6462,10 @@ def phase_injection(settings: dict, sess: requests.Session,
         except Exception:
             pass
 
+    if _inj_skipped_destructive:
+        con.warn(f"[injection] Production: skipped active injection on "
+                 f"{_inj_skipped_destructive} write-method endpoint(s) "
+                 f"(no state changes in production).")
     con.status("injection", "done", "Injection tests complete")
 
 
@@ -5437,36 +6612,59 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                 )
                 _body_lower = resp.text[:8000].lower()
                 _path_lower = ep["path"].lower()
-                # Classify
-                if any(m in _body_lower for m in _PII_MARKERS):
-                    _sev   = "CRITICAL"
-                    _label = "PII MARKERS DETECTED in response body"
-                elif sum(1 for m in _USER_MARKERS if m in _body_lower) >= 2:
-                    _sev   = "HIGH"
-                    _label = ">=2 user-record markers detected in response body"
-                elif any(p in _path_lower for p in _ANON_OK_PATH):
-                    _sev   = "INFO"
-                    _label = "Endpoint matches anon-OK pattern (health/version/openapi)"
+                _has_pii  = any(m in _body_lower for m in _PII_MARKERS)
+                _has_user = sum(1 for m in _USER_MARKERS if m in _body_lower) >= 2
+                _anon_ok  = any(p in _path_lower for p in _ANON_OK_PATH)
+
+                # B6: authn-vs-unauthn 2nd probe. Re-request WITH credentials and
+                # compare. If the authenticated response is the same resource the
+                # unauthenticated client just received, auth provides no
+                # protection → confirmed. This kills the public-endpoint false
+                # positive (a benign public 200 with content but no protected data).
+                _auth_resp = None
+                if auth_sess is not None and auth_sess is not anon_sess:
+                    _auth_resp = _safe_request(auth_sess, ep["method"], url, timeout=timeout)
+                _confirmed = (_auth_resp is not None and _auth_resp.status_code == 200
+                              and _similarity(resp.text, _auth_resp.text) >= 0.90)
+
+                # Documented-public endpoint with no sensitive data → not a finding.
+                if _anon_ok and not (_has_pii or _has_user):
+                    continue
+                # Cannot show the unauth response is the protected resource
+                # (no sensitive markers AND not confirmed identical to the
+                # authenticated response) → suppress as a likely public 200.
+                if not (_has_pii or _has_user or _confirmed):
+                    continue
+
+                if _has_pii:
+                    _sev = "CRITICAL"; _label = "PII markers in unauthenticated response"
+                elif _has_user:
+                    _sev = "HIGH"; _label = ">=2 user-record markers in unauthenticated response"
+                elif _confirmed:
+                    _sev = "MEDIUM"; _label = "unauthenticated response matches the authenticated response"
                 elif any(p in _path_lower for p in _SENSITIVE_PATH):
-                    _sev   = "MEDIUM"
-                    _label = "Endpoint name suggests sensitive intent"
+                    _sev = "MEDIUM"; _label = "endpoint name suggests sensitive intent"
                 else:
-                    _sev   = "LOW"
-                    _label = "Generic 200 OK without PII/user markers"
+                    _sev = "LOW"; _label = "generic 200 without auth"
+                _conf = "Firm" if (_confirmed or _has_pii or _has_user) else "Tentative"
                 output.add_finding(
                     phase="auth_bypass",
                     title=f"Missing Authentication Enforcement ({_label})",
                     severity=_sev,
                     url=url,
-                    detail=(f"Endpoint {ep['method']} {ep['path']} returned 200 "
-                            f"without authentication. {_label}. "
-                            f"Risk derived from response-content classification "
-                            f"(2026-06-11 review)."),
+                    detail=(f"Endpoint {ep['method']} {ep['path']} returned 200 without "
+                            f"authentication. {_label}. "
+                            + ("An authenticated request returned the same resource, "
+                               "confirming authentication is not enforced."
+                               if _confirmed else
+                               "Classified from response content (authenticated "
+                               "comparison unavailable or differed).")),
                     evidence=f"HTTP {resp.status_code}: {resp.text[:200]}",
                     remediation="Enforce authentication on protected endpoints. "
                                 "If this endpoint is intentionally public (health/version/"
                                 "openapi), confirm it is on the documented public-API allow-list.",
                     output_file=str(_auth_file),
+                    confidence=_conf,
                 )
 
     # JWT attacks (only if auth session has a JWT)
@@ -5916,6 +7114,10 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
     """Phase 6: Mass assignment / over-posting attack testing."""
     output.set_phase_context(method="POST", from_spec=True, is_rogue=False)
     scan = settings["scan"]
+    if _is_production(scan):
+        con.status("mass_assignment", "skipped",
+                   "Skipped in production (state-changing over-posting; A10)")
+        return
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
     target = _parse_target(base_url)
@@ -5946,15 +7148,29 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
         method = ep["method"]
         body_fields = ep.get("body_fields", [])
 
-        # Build normal body (empty / default values)
-        normal_body = {f: "" for f in body_fields}
+        # C8: build a SCHEMA-VALID baseline body from the value-aware inventory
+        # (Phase A) so the request passes input validation and the injected
+        # privileged fields actually reach the model-binding layer. Falls back
+        # to empty-string fields when no schema is available.
+        _bs = ep.get("body_schema") or {}
+        if isinstance(_bs, dict) and _bs.get("properties"):
+            normal_body = build_valid_body(_bs)
+            if not isinstance(normal_body, dict):
+                normal_body = {f: "" for f in body_fields}
+        else:
+            normal_body = {f: "" for f in body_fields}
+        # Inject only privileged fields NOT already declared by the schema
+        # (true undeclared over-posting), plus the static privileged set.
+        _declared = set(normal_body.keys())
+        _undeclared_priv = {k: v for k, v in combined_payload.items()
+                            if k not in _declared}
 
         # Normal request baseline
         baseline = _safe_request(active_sess, method, url,
                                   json=normal_body, timeout=timeout)
 
-        # Mass assignment attempt: add extra fields
-        attack_body = {**normal_body, **combined_payload}
+        # Mass assignment attempt: add extra (undeclared) privileged fields
+        attack_body = {**normal_body, **_undeclared_priv}
         attack_resp = _safe_request(active_sess, method, url,
                                      json=attack_body, timeout=timeout)
 
@@ -6088,14 +7304,22 @@ _SSRF_PARAM_NAMES = re.compile(
 )
 
 _SSRF_PAYLOADS = [
-    "http://127.0.0.1:80/",
-    "http://127.0.0.1:22/",
-    "http://localhost:8080/admin",
+    # Cloud metadata services (highest value — credential/identity exposure)
     "http://169.254.169.254/latest/meta-data/",
-    "http://169.254.169.254/computeMetadata/v1/",
+    "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+    "http://metadata.google.internal/computeMetadata/v1/",
+    "http://169.254.169.254/metadata/instance?api-version=2021-02-01",   # Azure IMDS
+    "http://100.100.100.100/latest/meta-data/",                          # Alibaba Cloud
+    # Loopback / internal services
+    "http://127.0.0.1:80/",
+    "http://localhost:8080/admin",
     "http://[::1]/",
-    "http://0.0.0.0/",
-    "http://metadata.google.internal/",
+    # Alternate-encoding / parser-confusion bypasses
+    "http://2130706433/",                # 127.0.0.1 as a decimal integer
+    "http://example.com@127.0.0.1/",     # userinfo confusion
+    # Non-HTTP schemes (read-only probes of internal services)
+    "gopher://127.0.0.1:6379/_%2A1%0d%0a%244%0d%0aINFO%0d%0a",   # redis INFO via gopher
+    "dict://127.0.0.1:6379/info",                                # redis INFO via dict
 ]
 
 
@@ -6117,6 +7341,11 @@ def phase_ssrf(settings: dict, sess: requests.Session,
     for ep in inventory[:30]:
         if _shutdown_requested:
             break
+        url_loop_method = ep["method"]
+        # Safety gate (v2.20.0): SSRF on a write method changes state — skip in
+        # production (no write-method state changes).
+        if not _destructive_allowed(url_loop_method, scan):
+            continue
         url = root + ep["path"]
         method = ep["method"]
         params = ep.get("params", [])
@@ -6136,7 +7365,7 @@ def phase_ssrf(settings: dict, sess: requests.Session,
             continue
 
         for param in url_params[:2]:
-            for payload in _SSRF_PAYLOADS[:4]:
+            for payload in _SSRF_PAYLOADS:
                 ssrf_tested += 1
                 try:
                     if method in ("GET", "HEAD"):
@@ -6556,6 +7785,10 @@ def phase_business_flows(settings: dict, sess: requests.Session,
     """Phase 9b: Business flow abuse — OWASP API6:2023."""
     output.set_phase_context(from_spec=True, is_rogue=False)
     scan     = settings["scan"]
+    if _is_production(scan):
+        con.status("business_flows", "skipped",
+                   "Skipped in production (exercises real workflows; A10)")
+        return
     base_url = scan["api_base_url"]
     timeout  = scan.get("timeout", 10)
     threads  = min(scan.get("threads", 10), 10)
@@ -8191,9 +9424,9 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
     if sslscan:
         _ss_file = output.tool_path("sslscan", f"sslscan_{host}_{port}.txt")
         try:
-            result = subprocess.run(
+            result = _run_logged(
                 [sslscan, "--no-colour", host_port],
-                capture_output=True, text=True, timeout=60,
+                output_file=_ss_file, tool_name="sslscan", text=True, timeout=60,
             )
             _ss_out = result.stdout + result.stderr
             _ss_file.write_text(_ss_out, encoding="utf-8")
@@ -8231,9 +9464,9 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
     if testssl:
         _ts_file = output.tool_path("testssl", f"testssl_{host}_{port}.txt")
         try:
-            result = subprocess.run(
+            result = _run_logged(
                 [testssl, "--fast", "--quiet", host_port],
-                capture_output=True, text=True, timeout=120,
+                output_file=_ts_file, tool_name="testssl", text=True, timeout=120,
             )
             _ts_out = result.stdout + result.stderr
             _ts_file.write_text(_ts_out, encoding="utf-8")
@@ -8727,6 +9960,312 @@ def _prompt_next_role_creds(role_num: int, total: int) -> dict:
 # ---------------------------------------------------------------------------
 # main()
 # ---------------------------------------------------------------------------
+# Phase 0c: Request chaining (ordered execution + value chaining)
+#   Executes inventory requests in declared order, captures ids/tokens/Location
+#   from responses into a chain context, applies a captured bearer token to the
+#   session, and seeds the captured values back into the inventory so later
+#   phases build requests that satisfy create→read→update preconditions.
+#   Produces no findings (state-establishment step). Production: read methods
+#   only (no state changes); non-production runs the full chain.
+# ---------------------------------------------------------------------------
+
+_CHAIN_ID_KEY_RE    = re.compile(r"(^id$|_id$|^uuid$|^guid$|^slug$)", re.I)
+_CHAIN_TOKEN_KEY_RE = re.compile(r"(token|access_token|jwt|api_?key|session)", re.I)
+_CHAIN_MAX_REQUESTS = 40
+
+
+def _chain_extract(resp, context: dict) -> None:
+    """Capture reusable values (ids, tokens, Location) from a response."""
+    if resp is None:
+        return
+    loc = ""
+    try:
+        loc = resp.headers.get("Location", "") or ""
+    except Exception:
+        loc = ""
+    if loc:
+        context["location"] = loc
+        m = re.search(r"/([^/?#]+)/?$", loc)
+        if m and m.group(1):
+            context.setdefault("id", m.group(1))
+    try:
+        body = resp.json()
+    except Exception:
+        return
+
+    def _walk(o, d):
+        if d > 2 or not isinstance(o, (dict, list)):
+            return
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if isinstance(v, (str, int)) and not isinstance(v, bool):
+                    if _CHAIN_ID_KEY_RE.search(k) or _CHAIN_TOKEN_KEY_RE.search(k):
+                        context.setdefault(k, v)
+                        if _CHAIN_ID_KEY_RE.search(k):
+                            context.setdefault("id", v)
+                _walk(v, d + 1)
+        else:
+            for it in o[:3]:
+                _walk(it, d + 1)
+    _walk(body, 0)
+
+
+def _chain_apply_auth(context: dict, sess) -> None:
+    """Apply a captured bearer-like token to the session when none is set."""
+    try:
+        if "Authorization" in sess.headers:
+            return
+    except Exception:
+        return
+    for k, v in context.items():
+        if isinstance(v, str) and _CHAIN_TOKEN_KEY_RE.search(k) and len(v) >= 16:
+            sess.headers["Authorization"] = f"Bearer {v}"
+            return
+
+
+def _chain_seed_inventory(inventory: list, context: dict) -> None:
+    """Seed captured values into the inventory as observed_values / examples so
+    later phases (_build_request / build_valid_body) use real ids/tokens."""
+    for ep in inventory or []:
+        for p in ep.get("params", []) or []:
+            name = p.get("name", "")
+            if name in context:
+                p.setdefault("observed_values", []).append(context[name])
+            elif _CHAIN_ID_KEY_RE.search(name) and "id" in context:
+                p.setdefault("observed_values", []).append(context["id"])
+        props = (ep.get("body_schema") or {}).get("properties", {})
+        if isinstance(props, dict):
+            for name, node in props.items():
+                if isinstance(node, dict) and name in context and "example" not in node:
+                    node["example"] = context[name]
+
+
+def phase_chaining(settings: dict, sess: requests.Session,
+                   auth_sess, output: OutputManager, inventory: list) -> None:
+    """Phase 0c: ordered request chaining with response-value capture."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
+    scan = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout = scan.get("timeout", 10)
+    target = _parse_target(base_url)
+    root = f"{target['scheme']}://{target['netloc']}"
+    con.status("chaining", "running", "Executing requests in order and capturing values")
+    active = auth_sess or sess
+    context: dict = {}
+    sent = 0
+    for ep in inventory or []:
+        if _shutdown_requested or sent >= _CHAIN_MAX_REQUESTS:
+            break
+        method = ep.get("method", "GET")
+        # Production: only read methods (no state changes).
+        if not _destructive_allowed(method, scan):
+            continue
+        # Per-endpoint overrides: only context keys that map to this endpoint's
+        # own params/body fields (avoid polluting bodies with unrelated values).
+        ep_names = {p.get("name", "") for p in ep.get("params", []) or []}
+        ep_names |= set(((ep.get("body_schema") or {}).get("properties", {}) or {}).keys())
+        overrides = {k: v for k, v in context.items()
+                     if k in ep_names and isinstance(v, (str, int))}
+        if "id" in context:
+            for pn in ep_names:
+                if _CHAIN_ID_KEY_RE.search(pn):
+                    overrides[pn] = context["id"]
+        try:
+            rq = _build_request(ep, root, overrides=overrides)
+            resp = _safe_request(active, rq["method"], rq["url"],
+                                 params=rq["params"] or None, json=rq["json"],
+                                 timeout=timeout)
+        except Exception:
+            continue
+        sent += 1
+        _chain_extract(resp, context)
+    _chain_apply_auth(context, active)
+    _chain_seed_inventory(inventory, context)
+    con.status("chaining", "done",
+               f"Captured {len(context)} value(s) from {sent} chained request(s)")
+
+
+# ---------------------------------------------------------------------------
+# Phase 21: Non-HTTP protocol checks — WebSocket / SSE / gRPC
+#   Detection + passive checks only (no message fuzzing / method invocation).
+#   All checks are read-only (handshake / GET stream / reflection list), so the
+#   phase runs in both production and non-production.
+# ---------------------------------------------------------------------------
+
+_WS_PATH_HINTS     = ("ws", "websocket", "socket", "cable", "graphql-ws",
+                      "stream", "live", "realtime")
+_WS_DEFAULT_PATHS  = ("/ws", "/websocket", "/socket", "/cable", "/graphql")
+_SSE_PATH_HINTS    = ("event", "stream", "sse", "subscribe", "notification")
+_SSE_DEFAULT_PATHS = ("/events", "/stream", "/sse", "/api/events", "/api/stream")
+
+
+def _ws_url_from(root: str, path: str) -> str:
+    if root.startswith("https://"):
+        b = "wss://" + root[8:]
+    elif root.startswith("http://"):
+        b = "ws://" + root[7:]
+    else:
+        b = root
+    return b.rstrip("/") + "/" + path.lstrip("/")
+
+
+def _protocol_candidates(inventory, hints, defaults, cap: int = 8) -> list:
+    paths = set(defaults)
+    for ep in inventory or []:
+        p = ep.get("path") or ""
+        if any(h in p.lower() for h in hints):
+            paths.add(p)
+    return sorted(paths)[:cap]
+
+
+def _ws_checks(inventory, root, output, timeout) -> None:
+    try:
+        import websocket as _wsc   # websocket-client
+    except Exception:
+        con.info("[protocols] websocket-client not installed — skipping WebSocket "
+                 "checks (pip install websocket-client)")
+        return
+    import ssl as _ssl
+    for path in _protocol_candidates(inventory, _WS_PATH_HINTS, _WS_DEFAULT_PATHS):
+        ws_url = _ws_url_from(root, path)
+        try:
+            conn = _wsc.create_connection(
+                ws_url, timeout=min(timeout, 8),
+                header=["Origin: https://siphon-cswsh.example.com"],
+                sslopt={"cert_reqs": _ssl.CERT_NONE},
+            )
+            conn.close()
+        except Exception:
+            continue   # not a live WebSocket endpoint
+        if ws_url.startswith("ws://"):
+            output.add_finding(
+                phase="protocols",
+                title="Insecure WebSocket Transport (Unencrypted ws://)",
+                severity="MEDIUM", url=ws_url,
+                detail="The WebSocket endpoint is served over unencrypted ws://, exposing "
+                       "messages (including any auth tokens) to network interception.",
+                evidence=f"Handshake succeeded over ws:// at {ws_url}",
+                remediation="Serve WebSockets only over wss:// (TLS).",
+                confidence="Firm",
+            )
+        output.add_finding(
+            phase="protocols",
+            title="WebSocket Handshake Accepts Arbitrary Origin (CSWSH Risk)",
+            severity="HIGH", url=ws_url,
+            detail="The WebSocket handshake succeeded with an attacker-controlled Origin header "
+                   "and without credentials, indicating the server does not validate Origin. If "
+                   "the socket authenticates via cookies, this enables Cross-Site WebSocket "
+                   "Hijacking (CSWSH).",
+            evidence="Handshake accepted with Origin: https://siphon-cswsh.example.com and no authentication.",
+            remediation="Validate the Origin header against an allowlist during the handshake and "
+                        "require a session-bound authentication token.",
+            confidence="Tentative",
+        )
+
+
+def _sse_checks(inventory, root, anon_sess, output, timeout) -> None:
+    for path in _protocol_candidates(inventory, _SSE_PATH_HINTS, _SSE_DEFAULT_PATHS):
+        url = root.rstrip("/") + "/" + path.lstrip("/")
+        try:
+            r = anon_sess.get(url, headers={"Accept": "text/event-stream"},
+                              timeout=min(timeout, 8), stream=True)
+        except Exception:
+            continue
+        ctype = (r.headers.get("Content-Type", "") or "").lower()
+        status = r.status_code
+        try:
+            r.close()
+        except Exception:
+            pass
+        if "text/event-stream" not in ctype:
+            continue
+        if status == 200:
+            output.add_finding(
+                phase="protocols",
+                title="Unauthenticated Server-Sent Events (SSE) Stream",
+                severity="MEDIUM", url=url,
+                detail="A Server-Sent Events stream (text/event-stream) was accessible without "
+                       "authentication. SSE streams frequently push user- or tenant-scoped events, "
+                       "so unauthenticated access can leak real-time data.",
+                evidence=f"Unauthenticated GET {url} returned 200 with Content-Type {ctype}",
+                remediation="Require authentication and per-subscriber authorization on event streams.",
+                confidence="Tentative",
+            )
+        if url.startswith("http://"):
+            output.add_finding(
+                phase="protocols",
+                title="Server-Sent Events Stream Over Cleartext HTTP",
+                severity="LOW", url=url,
+                detail="The SSE stream is served over cleartext http://, exposing pushed events to "
+                       "network interception.",
+                evidence=f"SSE endpoint at {url}",
+                remediation="Serve event streams over HTTPS only.",
+                confidence="Firm",
+            )
+
+
+def _grpc_checks(target, output, timeout) -> None:
+    import shutil as _sh
+    grpcurl = _sh.which("grpcurl")
+    if not grpcurl:
+        con.info("[protocols] grpcurl not installed — skipping gRPC reflection checks")
+        return
+    hostport = target["netloc"]
+    _out = output.tool_path("grpc", f"grpcurl_{target['host']}_{target['port']}.txt")
+    for mode, flags in (("TLS", []), ("plaintext", ["-plaintext"])):
+        proc = _run_logged([grpcurl] + flags + [hostport, "list"],
+                           output_file=_out, tool_name="grpcurl",
+                           timeout=min(timeout, 20), text=True)
+        svcs = [l.strip() for l in (proc.stdout or "").splitlines()
+                if l.strip() and "." in l and " " not in l.strip()]
+        if proc.returncode == 0 and svcs:
+            output.add_finding(
+                phase="protocols",
+                title="gRPC Server Reflection Exposed",
+                severity="LOW", url=f"grpc://{hostport}",
+                detail=f"The gRPC server has reflection enabled ({mode}) and enumerated "
+                       f"{len(svcs)} service(s). Reflection discloses the full service/method API "
+                       f"surface to unauthenticated clients, aiding targeted attacks.",
+                evidence="Services: " + ", ".join(svcs[:10]),
+                remediation="Disable gRPC server reflection in production builds.",
+                confidence="Firm",
+            )
+            if mode == "plaintext":
+                output.add_finding(
+                    phase="protocols",
+                    title="Insecure gRPC Transport (Plaintext / No TLS)",
+                    severity="MEDIUM", url=f"grpc://{hostport}",
+                    detail="The gRPC endpoint accepted a plaintext (non-TLS) connection, exposing "
+                           "RPC traffic (including credentials) to interception.",
+                    evidence=f"grpcurl -plaintext {hostport} list succeeded",
+                    remediation="Require TLS for all gRPC endpoints.",
+                    confidence="Firm",
+                )
+            break
+
+
+def phase_protocols(settings: dict, sess: requests.Session,
+                    auth_sess, output: OutputManager, inventory: list) -> None:
+    """Phase 21: WebSocket / SSE / gRPC detection + passive checks."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
+    scan = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout = scan.get("timeout", 10)
+    target = _parse_target(base_url)
+    root = f"{target['scheme']}://{target['netloc']}"
+    con.status("protocols", "running", "WebSocket / SSE / gRPC detection")
+    anon_sess = _make_session(settings)
+    for _label, _fn in (("WebSocket", lambda: _ws_checks(inventory, root, output, timeout)),
+                        ("SSE",       lambda: _sse_checks(inventory, root, anon_sess, output, timeout)),
+                        ("gRPC",      lambda: _grpc_checks(target, output, timeout))):
+        try:
+            _fn()
+        except Exception as e:
+            con.warn(f"[protocols] {_label} checks error: {e}")
+    con.status("protocols", "done", "Protocol checks complete")
+
+
+# ---------------------------------------------------------------------------
 
 def main() -> None:
     _install_signal_handlers()
@@ -8751,6 +10290,20 @@ def main() -> None:
     settings = _auto_unlock_phases(settings)
     settings = _apply_args(settings, args)
     scan = settings["scan"]
+
+    # ── Mandatory environment gate (v2.20.0) ─────────────────────────────────
+    # The operator MUST declare production vs non-production (no default). This
+    # governs the safety model: production = partial testing (no write-method
+    # state changes, no business-flow / mass-assignment).
+    if _environment(scan) not in _VALID_ENVIRONMENTS:
+        con.err("FATAL: 'environment' is mandatory and must be one of "
+                f"{list(_VALID_ENVIRONMENTS)}. Set it via --environment "
+                "or the settings file (scan.environment). Refusing to run.")
+        sys.exit(2)
+    con.log(f"Environment: {_environment(scan)} "
+            + ("(full testing)" if not _is_production(scan)
+               else "(production — partial testing: no write-method state "
+                    "changes, no business-flow / mass-assignment)"), "INFO")
 
     # ── Multi-role testing setup ─────────────────────────────────────────────
     # _n_roles: number of authenticated roles to test (0 = unauthenticated only)
@@ -8850,6 +10403,8 @@ def main() -> None:
 
         output = OutputManager(str(project_dir))
         output._auth_cfg = t_scan.get("auth")   # stash for api_map update
+        _set_http_evidence_dir(output.out_dir)  # §14h: per-request HTTP evidence
+        con.attach_run_dir(output.out_dir)      # §13b/§14j/§14k: run-dir audit log
         eng = settings.get("engagement", {})
         _write_project_meta(
             base_project,
@@ -9115,6 +10670,18 @@ def main() -> None:
                 output.print_summary()
                 sys.exit(0)
 
+            # Phase 0c: Request chaining (ordered execution + value capture) —
+            # runs before the testing phases so captured ids/tokens/session
+            # state make later requests reach application logic.
+            if not _skip("chaining"):
+                _run_phase("chaining", phase_chaining,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
             # Phase 1: Recon
             if not _skip("recon"):
                 _run_phase("recon", phase_recon, _ctx_s, sess, output)
@@ -9269,6 +10836,16 @@ def main() -> None:
             # Phase 19: File Upload Endpoint Detection
             if not _skip("file_upload_info"):
                 _run_phase("file_upload_info", phase_file_upload_info,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 21: Non-HTTP protocols (WebSocket / SSE / gRPC)
+            if not _skip("protocols"):
+                _run_phase("protocols", phase_protocols,
                            _ctx_s, sess, _ctx_auth, output, api_inventory)
 
             if _shutdown_requested:

@@ -1,0 +1,67 @@
+{
+  "_comment": "Optional per-type fuzz-value override for Siphon (Phase D). Edit/extend per engagement; merged over the in-code defaults by detected type or format.",
+  "integer": [
+    "1",
+    "0",
+    "-1",
+    "2147483648",
+    "9999999999",
+    "1.5",
+    "abc",
+    "null"
+  ],
+  "number": [
+    "1.5",
+    "0",
+    "-1",
+    "1e309",
+    "NaN",
+    "abc",
+    "null"
+  ],
+  "boolean": [
+    "true",
+    "false",
+    "1",
+    "0",
+    "yes",
+    "null",
+    "2"
+  ],
+  "string": [
+    "test",
+    "",
+    "AAAA...(1024)",
+    "%00",
+    "🙂",
+    "${7*7}",
+    "null"
+  ],
+  "uuid": [
+    "00000000-0000-0000-0000-000000000000",
+    "11111111-1111-1111-1111-111111111111",
+    "not-a-uuid",
+    "1"
+  ],
+  "email": [
+    "test@example.com",
+    "a@b",
+    "test@example.com%0d%0aBcc:x@y.z",
+    "not-an-email",
+    "' OR '1'='1"
+  ],
+  "date-time": [
+    "2026-01-01T00:00:00Z",
+    "1970-01-01T00:00:00Z",
+    "0000-00-00T00:00:00Z",
+    "9999-12-31T23:59:59Z",
+    "not-a-date"
+  ],
+  "uri": [
+    "https://example.com",
+    "http://127.0.0.1",
+    "file:///etc/passwd",
+    "not-a-url",
+    "javascript:alert(1)"
+  ]
+}

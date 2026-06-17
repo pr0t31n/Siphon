@@ -235,6 +235,7 @@ PIP_PACKAGES = [
     "beautifulsoup4>=4.12.0", # HTML parser for response analysis — required
     "sqlmap",                 # SQL injection testing — required
     "termcolor>=2.0.0",       # terminal colour output — required
+    "websocket-client>=1.6.0",# WebSocket handshake/passive checks (Phase 21) — optional
 ]
 
 OFFLINE_BUNDLE_URLS = {
@@ -548,6 +549,11 @@ GO_TOOLS = [
         "github.com/ffuf/ffuf/v2@latest",
         "ffuf",
         "ffuf",         # brew formula
+    ),
+    (
+        "github.com/fullstorydev/grpcurl/cmd/grpcurl@latest",
+        "grpcurl",      # gRPC reflection enumeration (Phase 21)
+        "grpcurl",      # brew formula
     ),
 ]
 
