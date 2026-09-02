@@ -162,7 +162,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.26.0"
+VERSION = "2.26.1"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping

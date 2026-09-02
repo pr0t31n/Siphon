@@ -44,7 +44,7 @@ from urllib3.util.retry import Retry
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 
 AUTH_METHODS: dict[str, str] = {
     # ── Token-based ───────────────────────────────────────────────────────────
@@ -227,7 +227,7 @@ def build_auth_session(
     configured — suitable for display to the operator.
     """
     sess = _make_session(verify_ssl, proxy)
-    method = (auth.get("method") or auth.get("auth_type") or "bearer").strip().lower()
+    method = (auth.get("method") or auth.get("auth_method") or auth.get("auth_type") or "bearer").strip().lower()
 
     # ── Bearer ────────────────────────────────────────────────────────────────
     if method == "bearer":
@@ -1137,14 +1137,14 @@ def main() -> None:
             print(json.dumps({"probe": probe_result}))
             sys.exit(0)
         _print_probe_result(probe_result)
-        if not auth.get("method"):
+        if not (auth.get("method") or auth.get("auth_method")):
             methods = probe_result.get("auth_methods", [])
             if methods:
                 suggested = methods[0]["method"]
                 auth["method"] = suggested
                 print(f"[AuthProbe] Using suggested method: {suggested}\n")
 
-    if not auth.get("method"):
+    if not (auth.get("method") or auth.get("auth_method")):
         auth["method"] = "bearer"
 
     # ── Run test ────────────────────────────────────────────────────────────
