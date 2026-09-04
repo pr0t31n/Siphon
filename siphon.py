@@ -162,7 +162,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.26.1"
+VERSION = "2.27.0"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -1336,6 +1336,7 @@ class ProgressManager:
                 data.setdefault("started", datetime.now().isoformat())
                 data.setdefault("completed_phases", [])
                 data.setdefault("phase_status", {})
+                data.setdefault("runtime_state", {})
                 return data
             except Exception:
                 pass
@@ -1344,6 +1345,7 @@ class ProgressManager:
             "started":          datetime.now().isoformat(),
             "completed_phases": [],
             "phase_status":     {},
+            "runtime_state":    {},
         }
 
     def _save(self) -> None:
@@ -1381,6 +1383,40 @@ class ProgressManager:
     def get_state(self) -> dict:
         with self._lock:
             return dict(self._state)
+
+    def save_runtime_state(self, state: dict) -> None:
+        """Persist runtime accumulators so a resume can restore full scan state."""
+        with self._lock:
+            self._state["runtime_state"] = state
+            self._state["runtime_state"]["_saved_at"] = datetime.now().isoformat()
+            self._save()
+
+    def load_runtime_state(self) -> dict:
+        with self._lock:
+            return dict(self._state.get("runtime_state", {}))
+
+    def get_interrupted_phases(self) -> list:
+        """Return phases that were 'running' when the scan was interrupted."""
+        with self._lock:
+            ps = self._state.get("phase_status", {})
+            return [k for k, v in ps.items() if v.get("status") == "running"]
+
+    def prepare_resume(self) -> list:
+        """Transition running→pending; remove from completed_phases. Returns affected phase keys."""
+        with self._lock:
+            interrupted = []
+            ps = self._state.get("phase_status", {})
+            cp = self._state.get("completed_phases", [])
+            for k, v in ps.items():
+                if v.get("status") == "running":
+                    v["status"] = "pending"
+                    v["detail"] = "Interrupted — will re-run on resume"
+                    v["updated_at"] = datetime.now().isoformat()
+                    interrupted.append(k)
+                    if k in cp:
+                        cp.remove(k)
+            self._save()
+            return interrupted
 
 
 # ---------------------------------------------------------------------------
