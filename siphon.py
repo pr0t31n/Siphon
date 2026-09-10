@@ -56,6 +56,7 @@ import copy
 import secrets
 import difflib
 import statistics
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -162,7 +163,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.27.0"
+VERSION = "2.29.2"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -680,6 +681,7 @@ class VantageConsole:
     ERR    = "__CRUCIBLE_ERR__:"
     STATUS = "__CRUCIBLE_STATUS__:"
     PROMPT = "__CRUCIBLE_PROMPT__:"
+    ACTION = "__CRUCIBLE_ACTION_ITEM__:"
 
     # Severity → color mapping
     _SEV_COLOR = {
@@ -864,6 +866,16 @@ class VantageConsole:
     def warn(self, msg: str) -> None:
         self.log(msg, "MEDIUM")
 
+    def action_item(self, entry: dict) -> None:
+        """Emit an action-item token for Crucible to pick up."""
+        if self.managed:
+            self._emit(self.ACTION, json.dumps(entry))
+        else:
+            tool = entry.get("recommended_tool", "unknown")
+            title = entry.get("title", "")
+            target = entry.get("target", "")
+            print(f"{Fore.YELLOW}[ACTION → {tool}]{Style.RESET_ALL} {title}  ({target})")
+
     def debug(self, msg: str) -> None:
         if os.environ.get("SIPHON_DEBUG"):
             self.log(msg, "DEBUG")
@@ -959,9 +971,13 @@ class OutputManager:
         # add_finding() call from that phase that doesn't pass its own
         # method/from_spec/is_rogue. Avoids editing 115+ individual call sites.
         self._phase_context: dict = {}
+        self.action_items_json = self.out_dir / "action_items.json"
+        self._action_items_lock = threading.Lock()
         self._setup_dirs()
         if not self.findings_json.exists():
             self.findings_json.write_text("[]", encoding="utf-8")
+        if not self.action_items_json.exists():
+            self.action_items_json.write_text("[]", encoding="utf-8")
 
     def set_phase_context(self, *, method: str = "",
                           from_spec: "bool | None" = None,
@@ -1272,6 +1288,57 @@ class OutputManager:
                 lines.append(f"  Fix      : {f['remediation']}")
         path.write_text("\n".join(lines))
         return path
+
+    # ---------------------------------------------------------------- action items
+    def log_action_item(self, *,
+                        item_type: str = "action_item",
+                        recommended_tool: str,
+                        target: str,
+                        title: str,
+                        description: str = "",
+                        ip: str = "",
+                        port: int = 0,
+                        hostname: str = "",
+                        source_finding: str = "",
+                        priority: str = "medium",
+                        scope: str = "",
+                        metadata: dict | None = None) -> None:
+        """Thread-safe action-item writer — dedup, atomic write, console emit."""
+        entry = {
+            "id":               str(uuid.uuid4()),
+            "type":             item_type,
+            "recommended_tool": recommended_tool,
+            "target":           target,
+            "ip":               ip,
+            "port":             port,
+            "hostname":         hostname,
+            "title":            title,
+            "description":      description,
+            "source_finding":   source_finding,
+            "priority":         priority,
+            "scope":            scope,
+            "status":           "pending",
+            "datetime":         datetime.now(timezone.utc).isoformat(),
+            "metadata":         metadata or {},
+        }
+        with self._action_items_lock:
+            try:
+                items = json.loads(self.action_items_json.read_text(encoding="utf-8"))
+            except Exception:
+                items = []
+            # Dedup key: (tool, target, title)
+            key = (recommended_tool.lower(), target.lower(), title.strip().lower())
+            for existing in items:
+                ekey = (existing.get("recommended_tool", "").lower(),
+                        existing.get("target", "").lower(),
+                        existing.get("title", "").strip().lower())
+                if ekey == key:
+                    return   # already logged
+            items.append(entry)
+            tmp = self.action_items_json.with_suffix(".tmp")
+            tmp.write_text(json.dumps(items, indent=2), encoding="utf-8")
+            tmp.replace(self.action_items_json)
+        con.action_item(entry)
 
     def save_inventory(self, inventory: list, filename: str = "api_inventory.json") -> Path:
         path = self.out_dir / filename
@@ -4299,6 +4366,7 @@ def phase_discovery(settings: dict, sess: requests.Session,
     # ------------------------------------------------------------------ #
     # 3. Auto-probe well-known paths if no spec loaded yet                #
     # ------------------------------------------------------------------ #
+    _ai_web_ui_seen: set = set()   # dedup web-UI action items by base URL
     if not spec_was_provided:
         for probe_path in _DISCOVERY_PATHS:
             probe_url = target_root + probe_path
@@ -4321,6 +4389,31 @@ def phase_discovery(settings: dict, sess: requests.Session,
                         )
                         inventory.extend(ep_list)
                         break
+                # Action Item: HTML at a spec-probe path → web UI (Swagger UI,
+                # ReDoc, GraphiQL, etc.) that Fracture should test.
+                elif "text/html" in content_type.lower():
+                    _peek = resp.text[:1500].lower()
+                    _ui_sigs = ("swagger", "redoc", "graphiql", "playground",
+                                "api docs", "api-docs", "<!doctype", "<html")
+                    if any(s in _peek for s in _ui_sigs) and target_root not in _ai_web_ui_seen:
+                        _ai_web_ui_seen.add(target_root)
+                        _parsed_tr = urlparse(target_root)
+                        output.log_action_item(
+                            item_type="web_app",
+                            recommended_tool="fracture",
+                            target=target_root,
+                            title="API documentation web UI detected",
+                            description=(
+                                f"A web-based API documentation interface was found at "
+                                f"{probe_url} (Swagger UI, ReDoc, GraphiQL, or similar). "
+                                f"The web application should be tested with Fracture."
+                            ),
+                            ip=_parsed_tr.hostname or "",
+                            port=_parsed_tr.port or (443 if _parsed_tr.scheme == "https" else 80),
+                            hostname=_parsed_tr.hostname or "",
+                            source_finding="discovery",
+                            priority="medium",
+                        )
 
     # ------------------------------------------------------------------ #
     # 4. Fallback minimal inventory when nothing was found                #
@@ -4564,6 +4657,33 @@ def phase_recon(settings: dict, sess: requests.Session,
     _hdr_lines = [f"GET {base_url}", f"HTTP {resp.status_code}", ""]
     _hdr_lines += [f"{k}: {v}" for k, v in resp.headers.items()]
     _hdr_file.write_text("\n".join(_hdr_lines), encoding="utf-8")
+
+    # ── Action Item: detect web UI at API base (→ Fracture) ──────────
+    _base_ct = resp.headers.get("Content-Type", "")
+    if "text/html" in _base_ct.lower():
+        _body_peek = resp.text[:2000].lower()
+        # Confirm it's actually a rendered page, not an API error in HTML
+        _html_signals = ("<!doctype", "<html", "<form", "<body", "<div",
+                         "<head", "<link", "<script", "<nav", "<header")
+        if any(sig in _body_peek for sig in _html_signals):
+            _parsed_base = urlparse(base_url)
+            output.log_action_item(
+                item_type="web_app",
+                recommended_tool="fracture",
+                target=base_url,
+                title="Web UI detected at API base URL",
+                description=(
+                    f"The API base URL serves an HTML web interface "
+                    f"(Content-Type: {_base_ct.split(';')[0].strip()}). "
+                    f"This web application should be tested with Fracture "
+                    f"for OWASP Web Top 10 vulnerabilities."
+                ),
+                ip=_parsed_base.hostname or "",
+                port=_parsed_base.port or (443 if _parsed_base.scheme == "https" else 80),
+                hostname=_parsed_base.hostname or "",
+                source_finding="recon",
+                priority="high",
+            )
 
     # Header Data Leakage — server/technology disclosure headers
     server = resp.headers.get("Server", "")
@@ -6086,6 +6206,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                         remediation="Replace all dynamic SQL string construction with parameterised queries or prepared statements and suppress database error output in production responses.",
                         confidence="Firm" if _confirmed else "Tentative",
                     )
+                    output.log_action_item(
+                        item_type="vulnerability",
+                        recommended_tool="Manual Verification",
+                        target=url, ip=target["host"], port=target["port"],
+                        hostname=target["host"],
+                        title=f"Manual Exploit Verification — SQL Injection (Error-Based)",
+                        description="SQL injection confirmed via error-based detection. Manual exploitation recommended to determine full impact (data exfiltration, privilege escalation, RCE via stacked queries).",
+                        source_finding="SQL Injection (Error-Based)",
+                        priority="CRITICAL", scope="api",
+                        metadata={"vuln_type": "sqli", "param": param, "confidence": "Firm" if _confirmed else "Tentative"},
+                    )
                     sqli_hit = _confirmed
                     if _confirmed:
                         break
@@ -6108,6 +6239,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                             remediation="Replace dynamic SQL construction with parameterised queries / prepared statements; do not build queries by string concatenation of user input.",
                             confidence="Firm",
                         )
+                        output.log_action_item(
+                            item_type="vulnerability",
+                            recommended_tool="Manual Verification",
+                            target=url, ip=target["host"], port=target["port"],
+                            hostname=target["host"],
+                            title="Manual Exploit Verification — Blind SQL Injection (Boolean-Based)",
+                            description="Boolean-based blind SQL injection confirmed. Manual exploitation recommended to extract data via conditional responses.",
+                            source_finding="Blind SQL Injection (Boolean-Based)",
+                            priority="CRITICAL", scope="api",
+                            metadata={"vuln_type": "sqli_blind_boolean", "param": param},
+                        )
                         sqli_hit = True
 
             # Time-based blind SQLi — at most once per endpoint (expensive on a
@@ -6127,6 +6269,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                         evidence=_tb,
                         remediation="Replace dynamic SQL construction with parameterised queries / prepared statements; do not build queries by string concatenation of user input.",
                         confidence="Firm",
+                    )
+                    output.log_action_item(
+                        item_type="vulnerability",
+                        recommended_tool="Manual Verification",
+                        target=url, ip=target["host"], port=target["port"],
+                        hostname=target["host"],
+                        title="Manual Exploit Verification — Blind SQL Injection (Time-Based)",
+                        description="Time-based blind SQL injection confirmed. Manual exploitation recommended to extract data via timing side-channels.",
+                        source_finding="Blind SQL Injection (Time-Based)",
+                        priority="CRITICAL", scope="api",
+                        metadata={"vuln_type": "sqli_blind_time", "param": param},
                     )
                     sqli_hit = True
 
@@ -6155,6 +6308,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                             evidence=f"Response snippet: {resp.text[:300]}",
                             output_file=f"{_rq},{_rp}",
                             remediation="Use parameterised query APIs or ODM/ORM frameworks that reject user-supplied operator tokens; enforce strict type validation on all inputs used in query construction.",
+                        )
+                        output.log_action_item(
+                            item_type="vulnerability",
+                            recommended_tool="Manual Verification",
+                            target=url, ip=target["host"], port=target["port"],
+                            hostname=target["host"],
+                            title="Manual Exploit Verification — NoSQL Injection",
+                            description="NoSQL injection detected. Manual exploitation recommended to confirm auth bypass or data exfiltration via operator injection.",
+                            source_finding="NoSQL Injection",
+                            priority="CRITICAL", scope="api",
+                            metadata={"vuln_type": "nosqli", "param": param},
                         )
                         break
                 except Exception:
@@ -6191,6 +6355,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                     output_file=f"{_rq},{_rp}",
                     remediation="Never pass user input directly to template rendering functions; treat user data as context variables only and use sandboxed or logic-less template engines where user-controlled content must appear in templates.",
                     confidence="Firm",
+                )
+                output.log_action_item(
+                    item_type="vulnerability",
+                    recommended_tool="Manual Verification",
+                    target=url, ip=target["host"], port=target["port"],
+                    hostname=target["host"],
+                    title="Manual Exploit Verification — SSTI (RCE Potential)",
+                    description="Server-side template injection confirmed. Manual exploitation recommended — SSTI typically escalates to remote code execution via template engine sandbox escape.",
+                    source_finding="Server-Side Template Injection (SSTI)",
+                    priority="CRITICAL", scope="api",
+                    metadata={"vuln_type": "ssti", "param": param, "template": _tmpl},
                 )
                 break
 
@@ -6251,6 +6426,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                     output_file=f"{_rq},{_rp}",
                     remediation="Disable external entity processing in XML parsers.",
                     confidence="Firm",
+                )
+                output.log_action_item(
+                    item_type="vulnerability",
+                    recommended_tool="Manual Verification",
+                    target=url, ip=target["host"], port=target["port"],
+                    hostname=target["host"],
+                    title="Manual Exploit Verification — XXE Injection",
+                    description="XXE injection confirmed (file read via /etc/passwd). Manual exploitation recommended to determine full impact (SSRF, port scanning, DoS via entity expansion).",
+                    source_finding="XML External Entity (XXE) Injection",
+                    priority="CRITICAL", scope="api",
+                    metadata={"vuln_type": "xxe"},
                 )
         except Exception:
             pass
@@ -6315,6 +6501,17 @@ def phase_injection(settings: dict, sess: requests.Session,
                         output_file=f"{_rq},{_rp}",
                         remediation="Eliminate shell calls that incorporate user input; use language-native library functions instead; where shell invocation is unavoidable, apply strict allowlist validation on all input values.",
                         confidence="Firm",
+                    )
+                    output.log_action_item(
+                        item_type="vulnerability",
+                        recommended_tool="Manual Verification",
+                        target=url, ip=target["host"], port=target["port"],
+                        hostname=target["host"],
+                        title="Manual Exploit Verification — OS Command Injection (RCE)",
+                        description="OS command injection confirmed. Manual exploitation recommended — this is a direct remote code execution vector.",
+                        source_finding="OS Command Injection",
+                        priority="CRITICAL", scope="api",
+                        metadata={"vuln_type": "cmdi", "param": param},
                     )
                     break
 
@@ -6765,6 +6962,17 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                     evidence=f"none-alg token accepted, HTTP {resp.status_code}",
                     remediation="Enforce a strict server-side algorithm allowlist; reject any token where the alg header is none, empty, or not in the permitted set; never rely on the token header to select the verification algorithm.",
                 )
+                output.log_action_item(
+                    item_type="vulnerability",
+                    recommended_tool="Manual Verification",
+                    target=url, ip=target["host"], port=target["port"],
+                    hostname=target["host"],
+                    title="Manual Exploit Verification — JWT None Algorithm Bypass",
+                    description="JWT none-algorithm bypass confirmed. Manual exploitation recommended to forge admin tokens, escalate privileges, and access all API resources.",
+                    source_finding="JWT None Algorithm Authentication Bypass",
+                    priority="CRITICAL", scope="api",
+                    metadata={"vuln_type": "jwt_none_alg"},
+                )
                 break
 
     # 3. Weak HMAC secret brute force
@@ -6836,6 +7044,17 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                                 "Reject non-string values for username and password fields. "
                                 "Use a typed schema validator (e.g. Pydantic, marshmallow)."
                             ),
+                        )
+                        output.log_action_item(
+                            item_type="vulnerability",
+                            recommended_tool="Manual Verification",
+                            target=login_url_jt, ip=target["host"], port=target["port"],
+                            hostname=target["host"],
+                            title="Manual Exploit Verification — Type Juggling Auth Bypass",
+                            description="Type confusion authentication bypass detected. Manual verification recommended to confirm full auth bypass and token/session acquisition.",
+                            source_finding="Type Juggling / JSON Type Confusion Authentication Bypass",
+                            priority="HIGH", scope="api",
+                            metadata={"vuln_type": "type_juggling", "payload": str(jt_payload)},
                         )
                         break
             except Exception:
@@ -7230,6 +7449,17 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
                         evidence=f"Response keys: {list(leaked)}",
                         remediation="Define and enforce an explicit allowlist of bindable properties using DTOs or input validation schemas; reject or ignore any request field not explicitly permitted for the given operation.",
                     )
+                    output.log_action_item(
+                        item_type="vulnerability",
+                        recommended_tool="Manual Verification",
+                        target=url, ip=target["host"], port=target["port"],
+                        hostname=target["host"],
+                        title="Manual Exploit Verification — Mass Assignment (Privilege Escalation)",
+                        description=f"Mass assignment confirmed — privileged fields ({', '.join(leaked)}) accepted. Manual exploitation recommended to escalate privileges.",
+                        source_finding="Mass Assignment / Privilege Escalation via Parameter Binding",
+                        priority="HIGH", scope="api",
+                        metadata={"vuln_type": "mass_assignment", "leaked_fields": list(leaked)},
+                    )
                 elif (baseline and
                       attack_resp.text != baseline.text and
                       len(attack_resp.text) > len(normal_body.__str__())):
@@ -7426,6 +7656,17 @@ def phase_ssrf(settings: dict, sess: requests.Session,
                                     "Validate and allowlist URLs; "
                                     "block internal IP ranges; use SSRF-safe HTTP clients."
                                 ),
+                            )
+                            output.log_action_item(
+                                item_type="vulnerability",
+                                recommended_tool="Manual Verification",
+                                target=url, ip=target["host"], port=target["port"],
+                                hostname=target["host"],
+                                title="Manual Exploit Verification — SSRF",
+                                description=f"SSRF confirmed via parameter '{param}'. Manual exploitation recommended to probe internal services, cloud metadata, and pivot into internal networks.",
+                                source_finding="SSRF via API Parameter",
+                                priority=sev, scope="api",
+                                metadata={"vuln_type": "ssrf", "param": param, "payload": payload},
                             )
                             break
                         elif resp.status_code in (200, 201) and resp.elapsed.total_seconds() > 3:
