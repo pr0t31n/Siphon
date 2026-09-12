@@ -163,7 +163,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.29.2"
+VERSION = "2.29.3"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -10610,6 +10610,15 @@ def main() -> None:
             _auth0["password"] = _collected_roles[0]["password"]
         con.info(
             f"[multi-role] {_n_roles} role(s) loaded from project settings — skipping prompt"
+        )
+    elif _MANAGED:
+        # Managed mode with no auth_matrix — run unauthenticated only.
+        # Do NOT prompt; the operator is in Crucible/Vantage and cannot
+        # interact with Siphon's stdin.
+        _n_roles = 0
+        con.info(
+            "[multi-role] No auth_matrix in project settings — running "
+            "unauthenticated only (managed mode, no prompt)"
         )
     else:
         _n_roles = _prompt_multi_role_setup(scan.get("auth", {}))
