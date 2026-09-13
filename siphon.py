@@ -163,7 +163,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.29.4"
+VERSION = "2.29.5"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -4750,6 +4750,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail="API does not set the Strict-Transport-Security header on HTTPS responses.",
             evidence="Strict-Transport-Security: (absent)",
             remediation="Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' to all HTTPS responses.",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     if not hdrs.get("Content-Security-Policy"):
@@ -4761,6 +4762,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail="API does not set a Content-Security-Policy header.",
             evidence="Content-Security-Policy: (absent)",
             remediation="Define a Content-Security-Policy that restricts inline scripts and unsafe sources.",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     if not hdrs.get("X-Frame-Options"):
@@ -4772,6 +4774,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail="API does not set X-Frame-Options.",
             evidence="X-Frame-Options: (absent)",
             remediation="Add 'X-Frame-Options: DENY' or use CSP frame-ancestors 'none'.",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     if not hdrs.get("X-Content-Type-Options"):
@@ -4783,6 +4786,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail="API does not set X-Content-Type-Options: nosniff.",
             evidence="X-Content-Type-Options: (absent)",
             remediation="Add 'X-Content-Type-Options: nosniff' to all responses.",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     if not hdrs.get("Referrer-Policy"):
@@ -4794,6 +4798,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail="API does not set a Referrer-Policy header. URL parameters may leak to third parties via the Referer header.",
             evidence="Referrer-Policy: (absent)",
             remediation="Add 'Referrer-Policy: strict-origin-when-cross-origin' to all responses.",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     if not hdrs.get("Cache-Control"):
@@ -4826,6 +4831,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                 ),
                 evidence=f"Content-Security-Policy: {_csp_val[:300]}",
                 remediation="Remove 'unsafe-inline' and 'unsafe-eval'. Use nonces or hashes for inline scripts.",
+                output_file=str(_hdr_file),
                 extra={"command": _hdr_cmd},
             )
     _hsts_val = hdrs.get("Strict-Transport-Security", "")
@@ -4844,6 +4850,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                 ),
                 evidence=f"Strict-Transport-Security: {_hsts_val}",
                 remediation="Set Strict-Transport-Security: max-age=31536000; includeSubDomains; preload",
+                output_file=str(_hdr_file),
                 extra={"command": _hdr_cmd},
             )
     _xfo_val = hdrs.get("X-Frame-Options", "")
@@ -4856,6 +4863,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail=f"X-Frame-Options is set to a permissive value: '{_xfo_val}'. Only DENY or SAMEORIGIN provide clickjacking protection.",
             evidence=f"X-Frame-Options: {_xfo_val}",
             remediation="Set X-Frame-Options: DENY (or SAMEORIGIN if same-origin embedding is required).",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     _xcto_val = hdrs.get("X-Content-Type-Options", "")
@@ -4868,6 +4876,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail=f"X-Content-Type-Options is not set to 'nosniff': '{_xcto_val}'.",
             evidence=f"X-Content-Type-Options: {_xcto_val}",
             remediation="Set X-Content-Type-Options: nosniff",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     _rp_val = hdrs.get("Referrer-Policy", "")
@@ -4880,6 +4889,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail=f"Referrer-Policy is set to '{_rp_val}', which sends the full URL as referrer to third parties.",
             evidence=f"Referrer-Policy: {_rp_val}",
             remediation="Set Referrer-Policy: strict-origin-when-cross-origin or no-referrer.",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
     _cc_val = hdrs.get("Cache-Control", "")
@@ -4892,6 +4902,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             detail=f"Cache-Control allows public caching ('{_cc_val}') without 'no-store'. Sensitive responses may be cached by intermediary proxies.",
             evidence=f"Cache-Control: {_cc_val}",
             remediation="Add 'Cache-Control: no-store, no-cache' to sensitive endpoint responses.",
+            output_file=str(_hdr_file),
             extra={"command": _hdr_cmd},
         )
 
@@ -6852,6 +6863,16 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                 )
                 _body_lower = resp.text[:8000].lower()
                 _path_lower = ep["path"].lower()
+                # HTML responses (login pages, error pages) contain form-label
+                # strings like "username", "email", "password" that trigger
+                # the user-record / PII marker checks.  These are field NAMES
+                # in the UI, not actual data exposure.  Only JSON (API) bodies
+                # can leak real user records.
+                _ct = (resp.headers.get("Content-Type") or "").lower()
+                _is_html = ("text/html" in _ct
+                            or _body_lower.lstrip()[:15].startswith(("<!doctype", "<html", "<head", "<body")))
+                if _is_html:
+                    continue
                 _has_pii  = any(m in _body_lower for m in _PII_MARKERS)
                 _has_user = sum(1 for m in _USER_MARKERS if m in _body_lower) >= 2
                 _anon_ok  = any(p in _path_lower for p in _ANON_OK_PATH)
@@ -7174,6 +7195,20 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
         auth_endpoints = inventory[:1] if inventory else []
 
     test_url = (root + auth_endpoints[0]["path"]) if auth_endpoints else base_url
+
+    # Pre-flight: verify the target endpoint is actually an API endpoint,
+    # not an HTML login page.  Catch-all servers (WSO2 Carbon, etc.) return
+    # the same HTML page for every path — rate-limit testing is meaningless
+    # because no authentication processing occurs.
+    _pf = _safe_get(sess, test_url, timeout=timeout)
+    if _pf:
+        _pf_ct = (_pf.headers.get("Content-Type") or "").lower()
+        _pf_body = (_pf.text or "")[:200].lstrip().lower()
+        if ("text/html" in _pf_ct
+                or _pf_body.startswith(("<!doctype", "<html", "<head", "<body"))):
+            con.status("rate_limiting", "done",
+                       "Skipped — target returns HTML (not an API endpoint)")
+            return
 
     # Rapid fire test — track status codes for evidence
     got_429 = False
@@ -7736,7 +7771,15 @@ def phase_data_exposure(settings: dict, sess: requests.Session,
         try:
             data = resp.json()
         except Exception:
-            # Check raw text for sensitive patterns
+            # Non-JSON response.  HTML pages (login forms, error pages)
+            # contain field names like "password", "token" as form labels /
+            # input names — those are not real data exposure.  Only probe
+            # non-HTML text responses (e.g. YAML, XML config, plain-text).
+            _de_ct = (resp.headers.get("Content-Type") or "").lower()
+            _de_body = resp.text[:200].lstrip().lower()
+            if ("text/html" in _de_ct
+                    or _de_body.startswith(("<!doctype", "<html", "<head", "<body"))):
+                continue
             matches = _SENSITIVE_FIELD_RE.findall(resp.text)
             if matches:
                 unique_matches = list(set(m.lower() for m in matches))
@@ -9530,6 +9573,18 @@ def phase_file_upload_info(settings: dict, sess: requests.Session,
         try:
             r = test_sess.options(cup_url, timeout=timeout, allow_redirects=False)
             if r is not None and r.status_code not in (404, 405, 501):
+                # Catch-all / wildcard servers return 200 for every path with
+                # the same HTML login page — those are not real upload endpoints.
+                # Require either an Allow header that includes POST/PUT or a
+                # non-HTML response body to classify this as a real endpoint.
+                _up_ct = (r.headers.get("Content-Type") or "").lower()
+                _up_allow = (r.headers.get("Allow") or "").upper()
+                _up_body = (r.text or "")[:200].lstrip().lower()
+                _up_is_html = ("text/html" in _up_ct
+                               or _up_body.startswith(("<!doctype", "<html", "<head", "<body")))
+                _up_has_upload_method = ("POST" in _up_allow or "PUT" in _up_allow)
+                if _up_is_html and not _up_has_upload_method:
+                    continue
                 output.add_finding(
                     phase="file_upload_info",
                     title="Potential Undocumented Upload Endpoint Discovered",
