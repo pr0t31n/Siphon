@@ -163,7 +163,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.29.3"
+VERSION = "2.29.4"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -5187,9 +5187,16 @@ def phase_recon(settings: dict, sess: requests.Session,
         if ar is None or ar.status_code not in (200, 206):
             continue
         body = ar.text[:1000]
-        # For /metrics and /prometheus check for Prometheus format; for others just 200 is enough
+        # For /metrics and /prometheus check for Prometheus format
         if "metrics" in act_path or "prometheus" in act_path:
             if not _prom_re.search(body):
+                continue
+        # For actuator endpoints, validate the response is actually JSON.
+        # Many servers (WSO2, SSO portals, etc.) return a catch-all HTML
+        # page for all paths with HTTP 200, causing false positives.
+        if "actuator" in act_path:
+            _stripped = body.lstrip()
+            if not _stripped or _stripped[0] not in ('{', '['):
                 continue
         output.add_finding(
             phase="recon",
