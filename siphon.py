@@ -163,7 +163,7 @@ _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VERSION = "2.29.5"
+VERSION = "2.29.6"
 
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
@@ -9563,6 +9563,7 @@ def phase_file_upload_info(settings: dict, sess: requests.Session,
         "/api/media", "/api/images", "/api/import",
     ]
     known_paths = {ep.get("path", "") for ep in inventory}
+    _undoc_entries: list[tuple] = []  # (path, status, allow_hdr)
     for cup in _common_upload_paths:
         if _shutdown_requested:
             break
@@ -9585,25 +9586,38 @@ def phase_file_upload_info(settings: dict, sess: requests.Session,
                 _up_has_upload_method = ("POST" in _up_allow or "PUT" in _up_allow)
                 if _up_is_html and not _up_has_upload_method:
                     continue
-                output.add_finding(
-                    phase="file_upload_info",
-                    title="Potential Undocumented Upload Endpoint Discovered",
-                    severity="INFO",
-                    url=cup_url,
-                    detail=(
-                        f"OPTIONS {cup} returned HTTP {r.status_code} — the endpoint may exist "
-                        "but is not documented in the API spec/inventory. Undocumented upload "
-                        "endpoints bypass normal security review."
-                    ),
-                    evidence=f"OPTIONS {cup_url} → HTTP {r.status_code}; Allow: {r.headers.get('Allow', 'N/A')}",
-                    remediation=(
-                        "Document all upload endpoints in the API spec. "
-                        "Disable or remove upload endpoints that are not required."
-                    ),
-                    extra={"owasp": "API9:2023 Improper Inventory Management", "nist": "CM-7"},
-                )
+                _undoc_entries.append((cup, r.status_code, r.headers.get("Allow", "N/A")))
         except Exception:
             pass
+
+    # Emit one grouped finding for all undocumented upload endpoints
+    if _undoc_entries:
+        _undoc_affected = "\n".join(p for p, _, _ in _undoc_entries)
+        _undoc_evidence = "\n".join(
+            f"OPTIONS {root}{p} → HTTP {sc}; Allow: {al}"
+            for p, sc, al in _undoc_entries
+        )
+        output.add_finding(
+            phase="file_upload_info",
+            title="Potential Undocumented Upload Endpoint Discovered",
+            severity="INFO",
+            url=base_url,
+            detail=(
+                f"{len(_undoc_entries)} endpoint(s) returned non-404 responses to OPTIONS "
+                "probes but are not documented in the API spec/inventory. "
+                "Undocumented upload endpoints bypass normal security review."
+            ),
+            evidence=_undoc_evidence,
+            remediation=(
+                "Document all upload endpoints in the API spec. "
+                "Disable or remove upload endpoints that are not required."
+            ),
+            extra={
+                "owasp": "API9:2023 Improper Inventory Management",
+                "nist": "CM-7",
+                "affected": _undoc_affected,
+            },
+        )
 
     con.status("file_upload_info", "done",
                f"Found {len(upload_endpoints_found)} upload endpoint(s)")
