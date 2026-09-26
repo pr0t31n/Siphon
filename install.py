@@ -18,7 +18,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.2.0"
+VERSION = Path(__file__).resolve().parent.joinpath("VERSION").read_text().strip()
 
 # ---------------------------------------------------------------------------
 # ANSI colours (same convention as Fracture)
