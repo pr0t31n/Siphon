@@ -10696,10 +10696,9 @@ def main() -> None:
         print()
         sys.exit(0)
 
-    if not _MANAGED:
-        con.banner(BANNER)
-        print(f"  Siphon — API Penetration Testing Orchestrator v{VERSION}")
-        print(f"  OWASP API Security Top 10 2023\n")
+    con.banner(BANNER)
+    print(f"  Siphon — API Penetration Testing Orchestrator v{VERSION}")
+    print(f"  OWASP API Security Top 10 2023\n")
 
     # Load and merge settings
     settings = _load_settings(args.settings)
