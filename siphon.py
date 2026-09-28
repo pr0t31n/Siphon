@@ -161,6 +161,68 @@ def _start_concurrency_monitor(sem, interval=10):
 _hw_cpu, _hw_ram    = _hw_detect()
 _SCAN_CONCURRENCY   = _calc_initial_concurrency(_hw_cpu, _hw_ram)
 _SCAN_SEM           = _AdaptiveSemaphore(_SCAN_CONCURRENCY)
+
+# ── Per-subprocess memory limit ──────────────────────────────────────────────
+_SUBPROCESS_MEM_LIMIT_BYTES = int(2 * 1024 ** 3)  # 2 GB per child process
+
+def _mem_limit_preexec():
+    """preexec_fn: cap each child's virtual address space to prevent OOM."""
+    if sys.platform == "win32":
+        return
+    try:
+        import resource as _rlim
+        _rlim.setrlimit(_rlim.RLIMIT_AS,
+                        (_SUBPROCESS_MEM_LIMIT_BYTES, _SUBPROCESS_MEM_LIMIT_BYTES))
+    except (AttributeError, ValueError, OSError):
+        pass
+
+# ── OOM watchdog ─────────────────────────────────────────────────────────────
+_tracked_procs: list = []
+_tracked_procs_lock = threading.Lock()
+
+def _track_proc(proc):
+    with _tracked_procs_lock:
+        _tracked_procs.append(proc)
+
+def _start_oom_watchdog(threshold_pct=90, interval=15):
+    """Kill the largest tracked subprocess when system memory exceeds threshold."""
+    try:
+        import psutil as _psw
+    except ImportError:
+        return None
+
+    def _watchdog():
+        while True:
+            try:
+                time.sleep(interval)
+                mem = _psw.virtual_memory()
+                if mem.percent < threshold_pct:
+                    continue
+                with _tracked_procs_lock:
+                    _tracked_procs[:] = [p for p in _tracked_procs if p.poll() is None]
+                    live = list(_tracked_procs)
+                if not live:
+                    continue
+                biggest, biggest_rss = None, 0
+                for p in live:
+                    try:
+                        pi = _psw.Process(p.pid)
+                        rss = pi.memory_info().rss
+                        if rss > biggest_rss:
+                            biggest, biggest_rss = p, rss
+                    except (_psw.NoSuchProcess, _psw.AccessDenied, OSError):
+                        pass
+                if biggest and biggest_rss > 100 * 1024 * 1024:
+                    try:
+                        biggest.kill()
+                    except OSError:
+                        pass
+            except Exception:
+                pass
+
+    _t = threading.Thread(target=_watchdog, daemon=True, name="si-oom-watchdog")
+    _t.start()
+    return _t
 # ─────────────────────────────────────────────────────────────────────────────
 
 VERSION = Path(__file__).resolve().parent.joinpath("VERSION").read_text().strip()
@@ -10623,6 +10685,7 @@ def phase_protocols(settings: dict, sess: requests.Session,
 def main() -> None:
     _install_signal_handlers()
     _start_concurrency_monitor(_SCAN_SEM)
+    _start_oom_watchdog()
 
     args = _parse_args()
 
