@@ -828,6 +828,7 @@ class VantageConsole:
         "fuzzing":        "Fuzzing",
         "injection":      "Injection",
         "auth_bypass":    "Auth Bypass",
+        "user_enum":      "User Enumeration",
         "rate_limiting":  "Rate Limiting",
         "mass_assignment":"Mass Assignment",
         "ssrf":           "SSRF",
@@ -843,6 +844,7 @@ class VantageConsole:
         "tls":                "TLS",
         "unsafe_consumption": "Unsafe Consumption",
         "protocols":          "Protocols (WS/SSE/gRPC)",
+        "verb_tampering": "Verb Tampering",
     }
 
     def status(self, phase: str, state: str, detail: str = "") -> None:
@@ -2617,6 +2619,163 @@ _SSRF_INTERNAL_RE = re.compile(
     r'ami-id|instance-id|meta-data|localhost)',
     re.IGNORECASE
 )
+
+# ── Exception / stack-trace disclosure patterns (#5, #12) ──────────────
+_EXCEPTION_PATTERNS = re.compile(
+    r'Traceback \(most recent call last\)|'
+    r'File ".*", line \d+|'
+    r'at (?:com|org|net|io|java|javax|sun|kotlin)\.\S+\([\w.]+:\d+\)|'
+    r'System\.(?:NullReferenceException|ArgumentException|InvalidOperationException|Exception)|'
+    r'NullPointerException|ClassCastException|ArrayIndexOutOfBoundsException|'
+    r'StackOverflowError|OutOfMemoryError|'
+    r'TypeError:|ValueError:|KeyError:|AttributeError:|ImportError:|'
+    r'RuntimeError:|NameError:|IndexError:|'
+    r'<b>Fatal error</b>|'
+    r'Uncaught (?:Error|Exception|TypeError|ReferenceError)|'
+    r'PHP (?:Fatal|Parse|Warning) error:|'
+    r'Notice: Undefined|'
+    r'Django Debug|You\'re seeing this error because|'
+    r'Whitelabel Error Page|'
+    r'Internal Server Error.*stack|'
+    r'(?:express|koa|fastify).*Error:',
+    re.IGNORECASE
+)
+
+_EXCEPTION_JSON_KEYS = frozenset({
+    "stack", "stacktrace", "stack_trace", "stackTrace",
+    "trace", "traceback", "exception", "error_detail",
+    "errorDetail", "debug", "debugInfo", "debug_info",
+    "internalError", "internal_error",
+})
+
+_SQL_EXCEPTION_RE = re.compile(
+    r'SQLSTATE\[|ORA-\d{4,5}|PG::|mysql.*syntax|'
+    r'You have an error in your SQL syntax|'
+    r'Incorrect syntax near|Unclosed quotation mark|'
+    r'Microsoft OLE DB|ODBC SQL Server Driver',
+    re.IGNORECASE
+)
+
+# ── Internal hostname exposure patterns (#8) ───────────────────────────
+_INTERNAL_HOSTNAME_RE = re.compile(
+    r'\b([a-zA-Z][a-zA-Z0-9_-]{1,62}\.(?:local|internal|corp|lan|intranet|'
+    r'localdomain|home|private|test|dev|staging|uat|preprod|'
+    r'prod\.internal|svc\.cluster\.local))\b',
+    re.IGNORECASE
+)
+
+_HOSTNAME_HEADERS = (
+    "server", "x-powered-by", "via", "x-backend-server",
+    "x-served-by", "x-upstream", "x-forwarded-server",
+    "x-real-server", "x-host", "x-amz-id-2",
+)
+
+
+def _check_exception_disclosure(resp, url: str, phase: str,
+                                output: "OutputManager") -> bool:
+    """Scan response body for exception/stack-trace disclosure.
+    Returns True if a finding was emitted."""
+    if resp is None:
+        return False
+    body = resp.text[:8000] if hasattr(resp, 'text') else ""
+    if not body:
+        return False
+
+    matched: list[str] = []
+
+    if _EXCEPTION_PATTERNS.search(body):
+        matched.append("stack trace / exception class")
+    if _SQL_EXCEPTION_RE.search(body):
+        matched.append("SQL error message")
+
+    try:
+        jdata = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else None
+    except Exception:
+        jdata = None
+
+    if isinstance(jdata, dict):
+        for key in _EXCEPTION_JSON_KEYS:
+            if key in jdata and jdata[key]:
+                matched.append(f"JSON field '{key}'")
+                break
+
+    if not matched:
+        return False
+
+    is_500 = resp.status_code >= 500
+    title = ("Unhandled Application Exception" if is_500
+             else "Exception Disclosure in API Response")
+    sev = "MEDIUM" if is_500 else "LOW"
+
+    output.add_finding(
+        phase=phase,
+        title=title,
+        severity=sev,
+        url=url,
+        detail=(
+            f"API response (HTTP {resp.status_code}) contains {', '.join(matched)}. "
+            "This leaks internal implementation details (framework, file paths, "
+            "database schema) that assist attackers in crafting targeted exploits."
+        ),
+        evidence=body[:500],
+        remediation=(
+            "Implement a global exception handler that returns a generic error "
+            "message to clients. Log full stack traces server-side only. "
+            "Disable debug mode and detailed error pages in production."
+        ),
+        extra={"owasp": "API8:2023 Security Misconfiguration"},
+    )
+    return True
+
+
+def _check_internal_hostnames(resp, url: str, phase: str,
+                              output: "OutputManager",
+                              target_hostname: str = "") -> bool:
+    """Scan response headers and body for internal hostname exposure.
+    Returns True if a finding was emitted."""
+    if resp is None:
+        return False
+
+    found_hostnames: set[str] = set()
+    exclude = {target_hostname.lower()} if target_hostname else set()
+
+    for hdr_name in _HOSTNAME_HEADERS:
+        hval = resp.headers.get(hdr_name, "")
+        if hval:
+            for m in _INTERNAL_HOSTNAME_RE.finditer(hval):
+                hn = m.group(1).lower()
+                if hn not in exclude:
+                    found_hostnames.add(hn)
+
+    body = resp.text[:16000] if hasattr(resp, 'text') else ""
+    for m in _INTERNAL_HOSTNAME_RE.finditer(body):
+        hn = m.group(1).lower()
+        if hn not in exclude:
+            found_hostnames.add(hn)
+
+    if not found_hostnames:
+        return False
+
+    hn_list = ", ".join(sorted(found_hostnames))
+    output.add_finding(
+        phase=phase,
+        title="Internal Hostname Disclosed in API Response",
+        severity="LOW",
+        url=url,
+        detail=(
+            f"API response exposes internal hostname(s): {hn_list}. "
+            "Internal hostnames reveal network topology and naming conventions, "
+            "enabling targeted SSRF, DNS rebinding, or internal service enumeration."
+        ),
+        evidence=f"Internal hostnames found: {hn_list}",
+        remediation=(
+            "Strip internal hostnames from response headers and error messages. "
+            "Use a reverse proxy that rewrites backend identifiers. "
+            "Configure application frameworks to suppress internal names in production."
+        ),
+        extra={"owasp": "API8:2023 Security Misconfiguration"},
+    )
+    return True
 
 
 def _extract_json_keys(obj, prefix="") -> list:
@@ -5164,6 +5323,13 @@ def phase_recon(settings: dict, sess: requests.Session,
             remediation="Remove version-revealing headers and error messages to reduce fingerprint surface.",
         )
 
+    # ── #8: Internal hostname exposure in recon response ────────────────
+    target_hn = target.get("hostname", "")
+    _check_internal_hostnames(resp, base_url, "recon", output, target_hn)
+
+    # ── #12: Exception disclosure in recon response ──────────────────────
+    _check_exception_disclosure(resp, base_url, "recon", output)
+
     # Debug mode / verbose error detection
     con.status("recon", "running", "Debug mode and verbose error detection")
     _debug_paths = ["/debug", "/_debug", "/api/debug", "/console", "/api/console",
@@ -5494,6 +5660,32 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
             resp = _safe_request(sess, method, url, timeout=timeout)
             if not resp:
                 continue
+            # #5: Flag 500-series responses with error detail as input validation failure
+            if resp.status_code >= 500:
+                _body_snippet = resp.text[:500] if hasattr(resp, 'text') else ""
+                output.add_finding(
+                    phase="fuzzing",
+                    title="Improper Input Validation Results in Server Error",
+                    severity="MEDIUM",
+                    url=url,
+                    detail=(
+                        f"Sending HTTP {method} to {path} triggered a {resp.status_code} "
+                        "server error. This indicates insufficient input validation — "
+                        "the server crashes or throws an unhandled exception instead of "
+                        "returning a well-formed error response."
+                    ),
+                    evidence=f"{method} {url} → HTTP {resp.status_code}\nBody: {_body_snippet}",
+                    remediation=(
+                        "Validate all inputs before processing. Return 400/422 with a "
+                        "structured error response instead of allowing unhandled exceptions. "
+                        "Implement a global exception handler."
+                    ),
+                    extra={"owasp": "API8:2023 Security Misconfiguration"},
+                )
+            # #12: Exception disclosure check on every response
+            _check_exception_disclosure(resp, url, "fuzzing", output)
+            # #8: Internal hostname exposure check
+            _check_internal_hostnames(resp, url, "fuzzing", output, target.get("hostname", ""))
             if resp.status_code not in (405, 404, 400, 501, 403):
                 output.add_finding(
                     phase="fuzzing",
@@ -6791,6 +6983,59 @@ def phase_injection(settings: dict, sess: requests.Session,
         con.warn(f"[injection] Production: skipped active injection on "
                  f"{_inj_skipped_destructive} write-method endpoint(s) "
                  f"(no state changes in production).")
+
+    # ── #5/#12: Post-injection pass — send a few invalid payloads to each endpoint
+    # to trigger 500 errors / exception disclosure, catching APIs that only error
+    # on specific input shapes.
+    con.status("injection", "running", "Scanning for server error / exception disclosure")
+    _err_payloads = [
+        "{{7*7}}", "None", "undefined", "{}", "[]",
+        "\x00", "9" * 9999, "-1", "true", "null",
+    ]
+    _500_seen: set[str] = set()
+    for ep in test_endpoints[:10]:
+        if _shutdown_requested:
+            break
+        url = root + ep["path"]
+        params = ep.get("params", []) or []
+        test_params = [p["name"] for p in params][:2]
+        if not test_params:
+            test_params = ["id"]
+        for param in test_params:
+            for _ep_payload in _err_payloads:
+                resp = _test_injection(sess, url, ep["method"], param,
+                                       _ep_payload, timeout, ep)
+                if not resp:
+                    continue
+                _ep_key = (url, resp.status_code)
+                if resp.status_code >= 500 and _ep_key not in _500_seen:
+                    _500_seen.add(_ep_key)
+                    output.add_finding(
+                        phase="injection",
+                        title="Improper Input Validation Results in Server Error",
+                        severity="MEDIUM",
+                        url=url,
+                        detail=(
+                            f"Sending {ep['method']} {ep['path']} with parameter "
+                            f"'{param}={_ep_payload[:30]}' triggered HTTP {resp.status_code}. "
+                            "The server fails to validate input before processing, resulting "
+                            "in an unhandled error."
+                        ),
+                        evidence=(
+                            f"{ep['method']} {url} ?{param}={_ep_payload[:50]} → "
+                            f"HTTP {resp.status_code}\nBody: {resp.text[:300]}"
+                        ),
+                        remediation=(
+                            "Validate all inputs before processing. Return 400/422 with "
+                            "a structured error response instead of allowing unhandled "
+                            "exceptions. Implement a global exception handler."
+                        ),
+                        extra={"owasp": "API8:2023 Security Misconfiguration"},
+                    )
+                _check_exception_disclosure(resp, url, "injection", output)
+                _check_internal_hostnames(resp, url, "injection", output,
+                                          target.get("hostname", ""))
+
     con.status("injection", "done", "Injection tests complete")
 
 
@@ -7230,6 +7475,191 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                 break
 
     con.status("auth_bypass", "done", "Auth bypass testing complete")
+
+
+# ---------------------------------------------------------------------------
+# Phase 4b: User Enumeration via Response Differential (#1)
+# ---------------------------------------------------------------------------
+
+def phase_user_enum(settings: dict, sess: requests.Session,
+                    auth_sess, output: OutputManager,
+                    inventory: list) -> None:
+    """Phase 4b: Detect user enumeration via response differential analysis."""
+    output.set_phase_context(from_spec=True, is_rogue=False)
+    scan = settings["scan"]
+    base_url = scan["api_base_url"]
+    timeout = scan.get("timeout", 10)
+    target = _parse_target(base_url)
+    root = f"{target['scheme']}://{target['netloc']}"
+
+    auth_cfg = scan.get("auth", {})
+    if not auth_cfg.get("enabled") or not auth_cfg.get("login_url"):
+        con.status("user_enum", "skip",
+                   "Login URL required for user enumeration testing")
+        return
+
+    con.status("user_enum", "running", "Testing for user enumeration via response differential")
+
+    login_url = auth_cfg["login_url"]
+    if not login_url.startswith("http"):
+        login_url = root + login_url
+    valid_username = auth_cfg.get("username", "")
+    if not valid_username:
+        con.status("user_enum", "skip", "No valid username configured")
+        return
+
+    nonexistent_users = [
+        f"siphon_enum_test_{int(time.time())}",
+        f"nonexistent_{os.urandom(4).hex()}",
+        "zzzzz_does_not_exist_99999",
+    ]
+
+    # Detect form content type
+    is_json = True
+    try:
+        probe = _safe_request(sess, "POST", login_url,
+                              json={"username": "probe", "password": "probe"},
+                              timeout=timeout)
+        if probe and probe.status_code in (415, 406):
+            is_json = False
+    except Exception:
+        pass
+
+    def _send_login(username: str, password: str):
+        payload = {"username": username, "password": password}
+        if is_json:
+            return _safe_request(sess, "POST", login_url,
+                                 json=payload, timeout=timeout)
+        return _safe_request(sess, "POST", login_url,
+                             data=payload, timeout=timeout)
+
+    wrong_pw = f"WrongP@ss_{os.urandom(3).hex()}"
+
+    # Phase 1: Status code differential
+    valid_resp = _send_login(valid_username, wrong_pw)
+    if not valid_resp:
+        con.status("user_enum", "skip", "Login endpoint unreachable")
+        return
+
+    for fake_user in nonexistent_users:
+        invalid_resp = _send_login(fake_user, wrong_pw)
+        if not invalid_resp:
+            continue
+
+        diffs: list[str] = []
+
+        # Check status code difference
+        if valid_resp.status_code != invalid_resp.status_code:
+            diffs.append(
+                f"Status code: valid user → {valid_resp.status_code}, "
+                f"invalid user → {invalid_resp.status_code}"
+            )
+
+        # Check body difference (for 200-always APIs)
+        if valid_resp.status_code == invalid_resp.status_code:
+            vbody = valid_resp.text[:4000]
+            ibody = invalid_resp.text[:4000]
+            if vbody != ibody:
+                # Check JSON error message fields specifically
+                try:
+                    vjson = valid_resp.json()
+                    ijson = invalid_resp.json()
+                    for key in ("message", "error", "msg", "detail", "reason",
+                                "error_message", "errorMessage"):
+                        vmsg = str(vjson.get(key, ""))
+                        imsg = str(ijson.get(key, ""))
+                        if vmsg and imsg and vmsg != imsg:
+                            diffs.append(
+                                f"Error message differs: valid user → '{vmsg[:100]}', "
+                                f"invalid user → '{imsg[:100]}'"
+                            )
+                            break
+                except Exception:
+                    if abs(len(vbody) - len(ibody)) > 20:
+                        diffs.append(
+                            f"Response body size differs: valid user → {len(vbody)} chars, "
+                            f"invalid user → {len(ibody)} chars"
+                        )
+
+            # Check response headers difference
+            for hdr in ("x-request-id", "set-cookie", "www-authenticate"):
+                vh = valid_resp.headers.get(hdr, "")
+                ih = invalid_resp.headers.get(hdr, "")
+                if bool(vh) != bool(ih):
+                    diffs.append(f"Header '{hdr}' present only for {'valid' if vh else 'invalid'} user")
+
+        if diffs:
+            output.add_finding(
+                phase="user_enum",
+                title="Application Responses Identify Valid Accounts",
+                severity="MEDIUM",
+                url=login_url,
+                detail=(
+                    "The login endpoint returns distinguishable responses for valid vs. "
+                    "invalid usernames, enabling username enumeration. Differences found: "
+                    + "; ".join(diffs)
+                ),
+                evidence=(
+                    f"Valid username '{valid_username}' + wrong password → "
+                    f"HTTP {valid_resp.status_code}, body[0:200]: {valid_resp.text[:200]}\n"
+                    f"Invalid username '{fake_user}' + wrong password → "
+                    f"HTTP {invalid_resp.status_code}, body[0:200]: {invalid_resp.text[:200]}"
+                ),
+                remediation=(
+                    "Return identical responses (status code, body, headers, timing) for "
+                    "valid and invalid usernames. Use generic error messages like "
+                    "'Invalid credentials' instead of 'User not found' or 'Wrong password'."
+                ),
+                extra={"owasp": "API2:2023 Broken Authentication"},
+            )
+            break
+
+    # Phase 2: Timing differential (runs even if Phase 1 found nothing)
+    timing_samples = 5
+    valid_times: list[float] = []
+    invalid_times: list[float] = []
+
+    for _ in range(timing_samples):
+        t0 = time.time()
+        _send_login(valid_username, wrong_pw)
+        valid_times.append(time.time() - t0)
+
+        t0 = time.time()
+        _send_login(nonexistent_users[0], wrong_pw)
+        invalid_times.append(time.time() - t0)
+
+    if valid_times and invalid_times:
+        avg_valid = sum(valid_times) / len(valid_times)
+        avg_invalid = sum(invalid_times) / len(invalid_times)
+        delta_ms = abs(avg_valid - avg_invalid) * 1000
+
+        if delta_ms > 150:
+            slower_for = "valid" if avg_valid > avg_invalid else "invalid"
+            output.add_finding(
+                phase="user_enum",
+                title="Timing-Based Username Enumeration",
+                severity="LOW",
+                url=login_url,
+                detail=(
+                    f"Login endpoint shows a {delta_ms:.0f}ms average response time "
+                    f"difference between valid and invalid usernames ({slower_for} "
+                    f"username is consistently slower). This timing oracle can be "
+                    f"exploited for username enumeration."
+                ),
+                evidence=(
+                    f"Avg response time (valid user): {avg_valid*1000:.0f}ms\n"
+                    f"Avg response time (invalid user): {avg_invalid*1000:.0f}ms\n"
+                    f"Delta: {delta_ms:.0f}ms over {timing_samples} samples"
+                ),
+                remediation=(
+                    "Use constant-time comparison for credential checks. "
+                    "Introduce artificial jitter to normalize response times. "
+                    "Hash credentials before comparison regardless of user existence."
+                ),
+                extra={"owasp": "API2:2023 Broken Authentication"},
+            )
+
+    con.status("user_enum", "done", "User enumeration testing complete")
 
 
 # ---------------------------------------------------------------------------
@@ -8879,8 +9309,11 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
                     remediation="Consider RS256 asymmetric signing for better key management.",
                 )
 
-    # Check logout + replay
-    logout_paths = ["/logout", "/api/logout", "/auth/logout", "/signout", "/api/signout"]
+    # Check logout + replay (JWT bearer tokens)
+    logout_paths = ["/logout", "/api/logout", "/auth/logout", "/signout",
+                    "/api/signout", "/api/auth/logout", "/api/session",
+                    "/api/v1/logout", "/api/v1/auth/logout",
+                    "/oauth/revoke", "/api/token/revoke"]
     logout_url = None
     for lp in logout_paths:
         url = root + lp
@@ -8888,6 +9321,12 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
         if resp and resp.status_code in (200, 204):
             logout_url = url
             break
+        # Also try DELETE for REST-style session endpoints
+        if lp in ("/api/session", "/api/v1/session"):
+            resp = _safe_request(auth_sess, "DELETE", url, timeout=timeout)
+            if resp and resp.status_code in (200, 204):
+                logout_url = url
+                break
 
     if logout_url:
         # Try to use the token after logout
@@ -8896,19 +9335,143 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
             url = root + ep["path"]
             replay_resp = _safe_get(auth_sess, url, timeout=timeout)
             if replay_resp and replay_resp.status_code == 200:
-                output.add_finding(
-                    phase="session",
-                    title="JWT Token Not Invalidated After Logout",
-                    severity="HIGH",
-                    url=url,
-                    detail="Token remains valid after logout endpoint was called.",
-                    evidence=f"POST {logout_url} -> 200, then GET {url} -> 200",
-                    remediation=(
-                        "Maintain a token denylist or use short-lived tokens with "
-                        "refresh token rotation; invalidate tokens server-side on logout."
-                    ),
-                )
+                # Verify it's real data, not just a generic 200 page
+                body = replay_resp.text[:2000]
+                if (len(body) > 50 and not re.search(
+                    r'login|sign.?in|unauthorized|forbidden|<!DOCTYPE html>.*<form',
+                    body, re.I | re.S
+                )):
+                    output.add_finding(
+                        phase="session",
+                        title="JWT Token Not Invalidated After Logout",
+                        severity="HIGH",
+                        url=url,
+                        detail="Token remains valid after logout endpoint was called.",
+                        evidence=f"POST {logout_url} -> 200, then GET {url} -> 200",
+                        remediation=(
+                            "Maintain a token denylist or use short-lived tokens with "
+                            "refresh token rotation; invalidate tokens server-side on logout."
+                        ),
+                    )
+                    break
+
+    # ── #11: Cookie/bearer session token replay after logout ──────────────
+    # This covers non-JWT cookie-based sessions
+    if auth_sess and auth_sess.cookies:
+        con.status("session", "running", "Testing cookie session invalidation after logout")
+        saved_cookies = dict(auth_sess.cookies)
+
+        # Find a protected endpoint that returns data with current session
+        baseline_url = None
+        baseline_body = ""
+        test_endpoints = [ep for ep in inventory if ep["method"] == "GET"][:5]
+        for ep in test_endpoints:
+            ep_url = root + ep["path"]
+            pre_resp = _safe_get(auth_sess, ep_url, timeout=timeout)
+            if pre_resp and pre_resp.status_code == 200 and len(pre_resp.text) > 50:
+                baseline_url = ep_url
+                baseline_body = pre_resp.text[:1000]
                 break
+
+        if baseline_url:
+            # Try to log out
+            cookie_logout_url = None
+            for lp in logout_paths:
+                url = root + lp
+                resp = _safe_request(auth_sess, "POST", url, timeout=timeout)
+                if resp and resp.status_code in (200, 204, 302, 303):
+                    cookie_logout_url = url
+                    break
+
+            if cookie_logout_url:
+                # Replay with saved cookies
+                replay_sess = _make_session(settings)
+                for cname, cval in saved_cookies.items():
+                    replay_sess.cookies.set(cname, cval)
+                replay_resp = _safe_get(replay_sess, baseline_url, timeout=timeout)
+                if (replay_resp and replay_resp.status_code == 200
+                        and len(replay_resp.text) > 50):
+                    # Check if response is similar to pre-logout baseline
+                    body = replay_resp.text[:1000]
+                    if (not re.search(
+                        r'login|sign.?in|unauthorized|forbidden|session.*expired',
+                        body, re.I
+                    ) and abs(len(body) - len(baseline_body)) < len(baseline_body) * 0.5):
+                        output.add_finding(
+                            phase="session",
+                            title="Session Tokens Remain Valid After Logout",
+                            severity="MEDIUM",
+                            url=baseline_url,
+                            detail=(
+                                "Cookie-based session tokens remain valid after the "
+                                f"logout endpoint ({cookie_logout_url}) was called. "
+                                "An attacker who captures session cookies can continue "
+                                "accessing the application after the user logs out."
+                            ),
+                            evidence=(
+                                f"Logout: POST {cookie_logout_url} → {resp.status_code}\n"
+                                f"Replay with saved cookies: GET {baseline_url} → "
+                                f"{replay_resp.status_code} (body size: {len(replay_resp.text)})"
+                            ),
+                            remediation=(
+                                "Invalidate server-side session records on logout. "
+                                "Clear session cookies and rotate session IDs. "
+                                "Implement session binding to prevent token reuse."
+                            ),
+                            extra={"owasp": "API2:2023 Broken Authentication"},
+                        )
+
+    # ── #10: Session timeout background probe ────────────────────────────
+    # Schedule a delayed check to verify session tokens expire. We use a
+    # background thread so it doesn't block the scan.
+    _timeout_mins = scan.get("session_timeout_check_mins", 30)
+    if _timeout_mins > 0 and token and token.startswith("Bearer "):
+        _st_token = token
+        _st_base = base_url
+        _st_probe_url = None
+        for ep in inventory:
+            if ep["method"] == "GET":
+                _st_probe_url = root + ep["path"]
+                break
+        if _st_probe_url:
+            def _session_timeout_check():
+                try:
+                    _check_sess = _make_session(settings)
+                    _check_sess.headers["Authorization"] = _st_token
+                    _check_resp = _safe_get(_check_sess, _st_probe_url, timeout=15)
+                    if _check_resp and _check_resp.status_code == 200:
+                        body = _check_resp.text[:1000]
+                        if not re.search(
+                            r'login|sign.?in|unauthorized|forbidden|expired',
+                            body, re.I
+                        ):
+                            output.add_finding(
+                                phase="session",
+                                title="Excessive API Session Timeout",
+                                severity="LOW",
+                                url=_st_probe_url,
+                                detail=(
+                                    f"API bearer token remained valid after {_timeout_mins} "
+                                    "minutes of inactivity. Excessive session timeouts "
+                                    "increase the window for token theft exploitation."
+                                ),
+                                evidence=(
+                                    f"Token replayed after {_timeout_mins}min idle: "
+                                    f"GET {_st_probe_url} → {_check_resp.status_code}"
+                                ),
+                                remediation=(
+                                    "Set token expiration to 15-30 minutes for sensitive APIs. "
+                                    "Use refresh token rotation for longer-lived sessions. "
+                                    "Implement idle timeout detection server-side."
+                                ),
+                                extra={"owasp": "API2:2023 Broken Authentication"},
+                            )
+                except Exception:
+                    pass
+            timer = threading.Timer(_timeout_mins * 60, _session_timeout_check)
+            timer.daemon = True
+            timer.start()
+            con.info(f"Session timeout check scheduled for {_timeout_mins} minutes")
 
     con.status("session", "done", "Session analysis complete")
 
@@ -9063,6 +9626,90 @@ def phase_jwt(settings: dict, auth_sess, output: OutputManager,
                 )
         except Exception:
             pass
+
+    # 5. JWT scope manipulation (#9)
+    _SCOPE_CLAIMS = ("scope", "scp", "scopes", "permissions", "roles",
+                     "role", "aud", "audience", "groups", "authorities")
+    _ESCALATION_VALUES = {
+        "scope": ["admin", "write", "read write admin", "openid profile admin",
+                   "*", "full_access"],
+        "scp": ["admin", "write", "read write admin"],
+        "scopes": ["admin", "write", "full_access"],
+        "permissions": ["admin:all", "manage:all", "superadmin"],
+        "roles": ["admin", "superadmin", "root"],
+        "role": ["admin", "superadmin", "root"],
+        "aud": [],  # Will try the current value + admin audience
+        "audience": [],
+        "groups": ["admin", "administrators", "superusers"],
+        "authorities": ["ROLE_ADMIN", "ROLE_SUPERADMIN"],
+    }
+
+    con.status("jwt", "running", "Testing JWT scope/claim manipulation")
+    for claim_name in _SCOPE_CLAIMS:
+        if claim_name not in payload:
+            continue
+        original_value = payload[claim_name]
+
+        escalation_attempts = _ESCALATION_VALUES.get(claim_name, ["admin"])
+        if not escalation_attempts:
+            if isinstance(original_value, str):
+                escalation_attempts = [original_value + " admin"]
+            elif isinstance(original_value, list):
+                escalation_attempts = [original_value + ["admin"]]
+            else:
+                continue
+
+        for esc_val in escalation_attempts:
+            try:
+                mod_payload = dict(payload)
+                if isinstance(original_value, list) and isinstance(esc_val, str):
+                    mod_payload[claim_name] = list(original_value) + [esc_val]
+                else:
+                    mod_payload[claim_name] = esc_val
+
+                h = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
+                p = _b64url_encode(json.dumps(mod_payload, separators=(",", ":")).encode())
+
+                if cracked_secret:
+                    sig = hmac.new(cracked_secret.encode(),
+                                  f"{h}.{p}".encode(), hashlib.sha256).digest()
+                    forged_token = f"{h}.{p}.{_b64url_encode(sig)}"
+                else:
+                    forged_token = f"{h}.{p}."
+
+                test_sess = _make_session(settings)
+                test_sess.headers["Authorization"] = f"Bearer {forged_token}"
+                resp = _safe_get(test_sess, probe_url, timeout=timeout)
+                if resp and resp.status_code in (200, 201):
+                    output.add_finding(
+                        phase="jwt",
+                        title="JWT Scope/Claim Manipulation Accepted",
+                        severity="HIGH",
+                        url=probe_url,
+                        detail=(
+                            f"Server accepted a JWT with modified '{claim_name}' claim. "
+                            f"Original: {json.dumps(original_value)[:100]}, "
+                            f"Modified: {json.dumps(esc_val)[:100]}. "
+                            "This indicates insufficient claim validation, allowing "
+                            "privilege escalation via token manipulation."
+                        ),
+                        evidence=(
+                            f"Claim '{claim_name}' changed from {json.dumps(original_value)[:80]} "
+                            f"to {json.dumps(esc_val)[:80]} → HTTP {resp.status_code}"
+                        ),
+                        remediation=(
+                            "Validate all JWT claims server-side against the authorization "
+                            "database. Never trust client-provided scope/role claims without "
+                            "verification. Use signed, opaque tokens or verify claim integrity."
+                        ),
+                        extra={"owasp": "API1:2023 Broken Object Level Authorization"},
+                    )
+                    break
+            except Exception:
+                continue
+        else:
+            continue
+        break
 
     con.status("jwt", "done", "JWT advanced testing complete")
 
@@ -11160,6 +11807,16 @@ def main() -> None:
             # Phase 4: Auth Bypass
             if not _skip("auth_bypass"):
                 _run_phase("auth_bypass", phase_auth_bypass,
+                           _ctx_s, sess, _ctx_auth, output, api_inventory)
+
+            if _shutdown_requested:
+                output.save_all(api_inventory)
+                output.print_summary()
+                sys.exit(0)
+
+            # Phase 4b: User Enumeration (#1)
+            if not _skip("user_enum"):
+                _run_phase("user_enum", phase_user_enum,
                            _ctx_s, sess, _ctx_auth, output, api_inventory)
 
             if _shutdown_requested:
