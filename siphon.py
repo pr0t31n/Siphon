@@ -1176,7 +1176,7 @@ class OutputManager:
         fr_entry = {
             "title":           title,
             "datetime":        ts,
-            "ip":              url,
+            "ip": _strip_scheme(url),
             "port":            int(port) if port else 0,
             "hostname":        hostname,
             "risk":            sev_upper,
@@ -1302,6 +1302,18 @@ class OutputManager:
         tmp.replace(self.out_dir / "summary.json")
 
     def save_json(self, filename: str = "siphon_output.json") -> Path:
+
+        # -- Siphon patch: inject scope into findings before save --
+        _scope_val = None
+        if hasattr(self, 'settings') and isinstance(self.settings, dict):
+            _scope_val = self.settings.get('scope') or self.settings.get('origin_scope')
+        if not _scope_val and hasattr(self, 'scan') and isinstance(self.scan, dict):
+            _scope_val = self.scan.get('scope') or self.scan.get('origin_scope')
+        if _scope_val:
+            for _f in (self.findings if hasattr(self, 'findings') else []):
+                if not _f.get('scope'):
+                    _f['scope'] = _scope_val
+
         path = self.out_dir / filename
         data = {
             "tool": "siphon",
@@ -1371,7 +1383,7 @@ class OutputManager:
             "type":             item_type,
             "recommended_tool": recommended_tool,
             "target":           target,
-            "ip":               ip,
+            "ip":               _strip_scheme(ip),
             "port":             port,
             "hostname":         hostname,
             "title":            title,
@@ -10621,6 +10633,18 @@ def _sse_checks(inventory, root, anon_sess, output, timeout) -> None:
 
 def _grpc_checks(target, output, timeout) -> None:
     import shutil as _sh
+
+def _strip_scheme(url_or_ip):
+    """Strip http(s):// prefix and port suffix from a URL to get bare IP/hostname."""
+    if not url_or_ip:
+        return url_or_ip or ""
+    import re as _re
+    cleaned = _re.sub(r'^https?://', '', str(url_or_ip)).rstrip('/')
+    cleaned = _re.sub(r':\d+$', '', cleaned)
+    cleaned = _re.sub(r'(https?|ftp)$', '', cleaned)
+    return cleaned.strip()
+
+
     grpcurl = _sh.which("grpcurl")
     if not grpcurl:
         con.info("[protocols] grpcurl not installed — skipping gRPC reflection checks")
