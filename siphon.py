@@ -2999,6 +2999,28 @@ def _safe_request(sess: requests.Session, method: str, url: str, timeout: int = 
     return resp
 
 
+def _log_timeout_action(output, tool_name, ip, port, hostname, timeout_s, cmd=""):
+    """Emit an action item when a tool times out — lost coverage needs re-scan."""
+    output.log_action_item(
+        item_type="scan_timeout",
+        recommended_tool=tool_name,
+        target=f"{ip}:{port}" if port else ip,
+        title=f"{tool_name} Timed Out — Re-Scan Required",
+        description=(
+            f"{tool_name} timed out after {timeout_s}s on "
+            f"{ip}:{port if port else 'N/A'}"
+            f"{f' ({hostname})' if hostname else ''}. "
+            f"Re-run manually with adjusted timeout or reduced scope."
+            f"{f' Command: {cmd[:200]}' if cmd else ''}"
+        ),
+        ip=ip,
+        port=int(port) if port else 0,
+        hostname=hostname,
+        source_finding=f"{tool_name} timeout",
+        priority="MEDIUM",
+    )
+
+
 def _run_logged(cmd, *, output_file=None, tool_name="", timeout=None, text=True, **kw):
     """subprocess.run wrapper that emits a §14 `.log` sibling next to the
     primary output_file via the shared pr0t31n_tool_runner. Returns a
@@ -4371,6 +4393,9 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
         con.info(f"Kiterunner: {len(results)} route(s) found")
     except subprocess.TimeoutExpired:
         con.info("Kiterunner: scan timed out")
+        _log_timeout_action(output, "Kiterunner", target["host"],
+                            target.get("port", 0), target["host"],
+                            scan.get("max_tool_time", 120))
     except Exception as exc:
         con.info(f"Kiterunner: error — {exc}")
     finally:
@@ -4450,6 +4475,9 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
         con.info(f"FFUF: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
         con.info("FFUF: scan timed out")
+        _log_timeout_action(output, "FFUF", target["host"],
+                            target.get("port", 0), target["host"],
+                            scan.get("max_tool_time", 120))
     except Exception as exc:
         con.info(f"FFUF: error — {exc}")
     finally:
@@ -4530,6 +4558,9 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
         con.info(f"Feroxbuster: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
         con.info("Feroxbuster: scan timed out")
+        _log_timeout_action(output, "Feroxbuster", target["host"],
+                            target.get("port", 0), target["host"],
+                            scan.get("max_tool_time", 120))
     except Exception as exc:
         con.info(f"Feroxbuster: error — {exc}")
     finally:
@@ -4607,6 +4638,9 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
         con.info(f"dirsearch: {len(results)} path(s) found")
     except subprocess.TimeoutExpired:
         con.info("dirsearch: scan timed out")
+        _log_timeout_action(output, "dirsearch", target["host"],
+                            target.get("port", 0), target["host"],
+                            scan.get("max_tool_time", 120))
     except Exception as exc:
         con.info(f"dirsearch: error — {exc}")
     return results
@@ -7379,6 +7413,22 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                         evidence=f"POST {login_path} with default creds → HTTP {resp.status_code}: {resp.text[:200]}",
                         remediation="Replace all default credentials with strong, unique secrets and enforce a password policy prior to any deployment.",
                     )
+                    output.log_action_item(
+                        item_type="cross_tool_credential",
+                        recommended_tool="isotope",
+                        target=root,
+                        title="API Credential Reuse — Default Creds Confirmed",
+                        description=(
+                            f"Siphon confirmed default credentials accepted at "
+                            f"{login_url}. Run Isotope to test credential reuse "
+                            f"across other API endpoints and services, and "
+                            f"validate password policy enforcement."),
+                        ip=settings.get("target_ip", ""),
+                        port=int(settings.get("target_port", 0)),
+                        hostname=settings.get("hostname", ""),
+                        source_finding="api_default_credentials",
+                        priority="HIGH", scope="api",
+                    )
                     break
             except Exception:
                 pass
@@ -7562,6 +7612,20 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                     priority="CRITICAL", scope="api",
                     metadata={"vuln_type": "jwt_none_alg"},
                 )
+                output.log_action_item(
+                    item_type="cross_tool_credential",
+                    recommended_tool="isotope",
+                    target=url, ip=target["host"], port=target["port"],
+                    hostname=target["host"],
+                    title="JWT None-Alg — Cross-Service Token Forging",
+                    description=(
+                        f"Siphon confirmed JWT alg:none bypass at {url}. "
+                        f"Run Isotope to forge tokens for admin/elevated "
+                        f"roles, test token acceptance across all API "
+                        f"endpoints, and validate JWT implementation."),
+                    source_finding="JWT None Algorithm Authentication Bypass",
+                    priority="CRITICAL", scope="api",
+                )
                 break
 
     # 3. Weak HMAC secret brute force
@@ -7583,6 +7647,20 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                     detail=f"JWT was re-signed with weak secret '{secret}' and accepted.",
                     evidence=f"Secret '{secret}' produced valid JWT; HTTP {resp.status_code}",
                     remediation="Use a long, random, cryptographically secure JWT secret.",
+                )
+                output.log_action_item(
+                    item_type="cross_tool_credential",
+                    recommended_tool="isotope",
+                    target=url, ip=target["host"], port=target["port"],
+                    hostname=target["host"],
+                    title="Weak JWT Secret — Cross-Service Credential Test",
+                    description=(
+                        f"Siphon recovered weak JWT secret ('{secret}') at "
+                        f"{url}. Run Isotope to test if this secret is "
+                        f"reused across other services, forge elevated "
+                        f"tokens, and enumerate protected API resources."),
+                    source_finding="Weak JWT Secret",
+                    priority="HIGH", scope="api",
                 )
                 break
 
