@@ -2778,6 +2778,174 @@ def _check_internal_hostnames(resp, url: str, phase: str,
     return True
 
 
+# ── JWT PII claim detection (GAP-08: SI-155) ─────────────────────────
+_JWT_PII_CLAIM_KEYS = frozenset({
+    "email", "phone", "phone_number", "ssn", "social_security",
+    "dob", "date_of_birth", "birthdate", "address", "street",
+    "credit_card", "cc_number", "card_number", "passport",
+    "driver_license", "national_id", "tax_id", "tin",
+    "first_name", "last_name", "full_name", "given_name", "family_name",
+    "zip", "zipcode", "postal_code", "city", "state", "country",
+})
+
+_JWT_PII_PREFIXES = ("addr", "phone_", "user_email", "personal_")
+
+
+_JWT_PII_EMAIL_RE = re.compile(
+    r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z]{2,}')
+_JWT_PII_PHONE_RE = re.compile(
+    r'\+?\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}')
+_JWT_PII_SSN_RE = re.compile(r'\b\d{3}-\d{2}-\d{4}\b')
+_JWT_PII_CC_RE = re.compile(r'\b(?:\d[ -]*?){13,19}\b')
+_JWT_PII_RFC1918_RE = re.compile(
+    r'\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|'
+    r'172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|'
+    r'192\.168\.\d{1,3}\.\d{1,3})\b')
+
+
+def _check_jwt_pii(payload: dict, url: str, output: "OutputManager") -> bool:
+    """Scan JWT payload claims for PII fields and PII patterns in values.
+    Returns True if finding emitted."""
+    if not isinstance(payload, dict):
+        return False
+    pii_found: list[str] = []
+
+    # ── Pass 1: key-name check ───────────────────────────────────────
+    for key in payload:
+        key_lower = key.lower()
+        if key_lower in _JWT_PII_CLAIM_KEYS:
+            pii_found.append(f"{key}={str(payload[key])[:30]}")
+        elif any(key_lower.startswith(p) for p in _JWT_PII_PREFIXES):
+            pii_found.append(f"{key}={str(payload[key])[:30]}")
+
+    # ── Pass 2: regex value scanning (email, phone, SSN, CC, RFC 1918) ──
+    _value_pii: list[str] = []
+    for key, val in payload.items():
+        if key in ("iss", "aud", "sub", "iat", "exp", "nbf", "jti", "typ"):
+            continue  # skip standard non-PII claims
+        sval = str(val) if not isinstance(val, str) else val
+        if _JWT_PII_EMAIL_RE.search(sval):
+            _value_pii.append(f"email in '{key}'")
+        if _JWT_PII_PHONE_RE.search(sval) and len(sval) < 30:
+            _value_pii.append(f"phone number in '{key}'")
+        if _JWT_PII_SSN_RE.search(sval):
+            _value_pii.append(f"SSN pattern in '{key}'")
+        if _JWT_PII_CC_RE.search(sval):
+            _value_pii.append(f"credit card pattern in '{key}'")
+        if _JWT_PII_RFC1918_RE.search(sval):
+            _value_pii.append(f"internal IP in '{key}'")
+
+    all_pii = pii_found + _value_pii
+    if not all_pii:
+        return False
+    output.add_finding(
+        phase="session",
+        title="JWT Token Contains Personally Identifiable Information",
+        severity="MEDIUM",
+        url=url,
+        detail=(
+            f"The JWT access token payload contains {len(all_pii)} PII indicator(s): "
+            f"{', '.join(k.split('=')[0] if '=' in k else k for k in all_pii)}. "
+            "JWTs are only base64-encoded, not encrypted — anyone who intercepts "
+            "or extracts the token can read this personal data. Tokens appear in "
+            "browser storage, server logs, and Referer headers."
+        ),
+        evidence=f"PII indicators: {'; '.join(all_pii[:10])}",
+        remediation=(
+            "Remove PII from JWT payloads. Use opaque tokens or encrypted JWTs (JWE) "
+            "if personal data must travel with the token. Keep JWTs minimal — "
+            "store user details server-side and look them up by subject claim."
+        ),
+        extra={"owasp": "API2:2023 Broken Authentication"},
+    )
+    return True
+
+
+# ── Token-in-URL detection (GAP-09/10: SI-156/SI-157) ────────────────
+_TOKEN_IN_URL_RE = re.compile(
+    r'[?&](access_token|bearer|auth_token|jwt|id_token|refresh_token)=([^&]{8,})',
+    re.IGNORECASE,
+)
+
+_APIKEY_IN_URL_RE = re.compile(
+    r'[?&](api_key|apiKey|apikey|app_key|appKey|client_secret|secret_key|'
+    r'x-api-key|subscription-key)=([^&]{8,})',
+    re.IGNORECASE,
+)
+
+
+def _check_token_in_url(url: str, phase: str, output: "OutputManager",
+                        _seen: set | None = None) -> bool:
+    """Check if authentication tokens or API keys appear in URL query parameters.
+    Returns True if any finding was emitted."""
+    if _seen is None:
+        _seen = set()
+    emitted = False
+
+    m = _TOKEN_IN_URL_RE.search(url)
+    if m:
+        param_name = m.group(1)
+        key = ("token_url", param_name.lower())
+        if key not in _seen:
+            _seen.add(key)
+            output.add_finding(
+                phase=phase,
+                title="Bearer Token Transmitted in URL Query Parameter",
+                severity="HIGH",
+                url=url.split("?")[0],
+                detail=(
+                    f"The authentication token parameter '{param_name}' is transmitted "
+                    "in the URL query string. Tokens in URLs leak via Referer headers, "
+                    "server access logs, browser history, proxy logs, and shared URLs. "
+                    "An attacker who obtains the URL can hijack the session."
+                ),
+                evidence=f"URL contains ?{param_name}=<redacted>",
+                remediation=(
+                    "Transmit authentication tokens in the Authorization header or "
+                    "as HttpOnly cookies. Never pass tokens in URL query parameters."
+                ),
+                extra={"owasp": "API2:2023 Broken Authentication"},
+            )
+            emitted = True
+
+    m = _APIKEY_IN_URL_RE.search(url)
+    if m:
+        param_name = m.group(1)
+        key = ("apikey_url", param_name.lower())
+        if key not in _seen:
+            _seen.add(key)
+            output.add_finding(
+                phase=phase,
+                title="API Key Exposed in URL Query Parameter",
+                severity="HIGH",
+                url=url.split("?")[0],
+                detail=(
+                    f"The API key parameter '{param_name}' is transmitted in the URL "
+                    "query string. API keys in URLs leak via Referer headers, server "
+                    "access logs, proxy logs, and browser history. Exposed keys grant "
+                    "the attacker the same API access level as the legitimate client."
+                ),
+                evidence=f"URL contains ?{param_name}=<redacted>",
+                remediation=(
+                    "Transmit API keys in a custom header (e.g. X-API-Key) or "
+                    "the Authorization header. Avoid URL query parameters for secrets."
+                ),
+                extra={"owasp": "API8:2023 Security Misconfiguration"},
+            )
+            emitted = True
+
+    return emitted
+
+
+# ── Session fixation constants (GAP-12: SI-158) ──────────────────────
+_SESSION_COOKIE_NAMES = frozenset({
+    "phpsessid", "jsessionid", "asp.net_sessionid", "aspsessionid",
+    "connect.sid", "session", "sid", "sess", "session_id", "sessionid",
+    "laravel_session", "ci_session", "rack.session", "_session_id",
+    "express:sess", "express.sid",
+})
+
+
 def _extract_json_keys(obj, prefix="") -> list:
     keys = []
     if isinstance(obj, dict):
@@ -5272,6 +5440,36 @@ def phase_recon(settings: dict, sess: requests.Session,
                     remediation="Maintain an explicit allowlist of trusted origins; never combine Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true; and reject unexpected Origin headers.",
                 )
 
+    # ── CORS null origin test (GAP-19: SI-159) ────────────────────────
+    _null_resp = _safe_get(sess, base_url, timeout=timeout,
+                           headers={"Origin": "null"})
+    if _null_resp:
+        _null_acao = _null_resp.headers.get("Access-Control-Allow-Origin", "")
+        _null_acac = _null_resp.headers.get("Access-Control-Allow-Credentials", "")
+        if _null_acao.lower() == "null":
+            _null_sev = "HIGH" if _null_acac.lower() == "true" else "MEDIUM"
+            output.add_finding(
+                phase="recon",
+                title="CORS Allows Null Origin",
+                severity=_null_sev,
+                url=base_url,
+                detail=(
+                    "The API reflects 'null' as an allowed CORS origin. The null "
+                    "origin is sent by sandboxed iframes, data: URIs, and local "
+                    "files — an attacker can craft a page that sends credentialed "
+                    "requests with Origin: null and read the response."
+                ),
+                evidence=(
+                    f"Origin: null → Access-Control-Allow-Origin: {_null_acao}; "
+                    f"Access-Control-Allow-Credentials: {_null_acac}"
+                ),
+                remediation=(
+                    "Never whitelist 'null' as an allowed origin. Use an explicit "
+                    "allowlist of trusted origins for CORS."
+                ),
+                extra={"owasp": "API8:2023 Security Misconfiguration"},
+            )
+
     # Wildcard / catch-all detection
     _recon_wc = _detect_wildcard(base_url, sess, timeout)
     if _recon_wc is not None:
@@ -5329,6 +5527,9 @@ def phase_recon(settings: dict, sess: requests.Session,
 
     # ── #12: Exception disclosure in recon response ──────────────────────
     _check_exception_disclosure(resp, base_url, "recon", output)
+
+    # ── GAP-09/10: Token / API key in URL (recon) ──────────────────────
+    _check_token_in_url(base_url, "recon", output)
 
     # Debug mode / verbose error detection
     con.status("recon", "running", "Debug mode and verbose error detection")
@@ -5488,6 +5689,40 @@ def phase_recon(settings: dict, sess: requests.Session,
             ),
         )
 
+    # ── Rate limit header leakage (GAP-38: SI-165) ─────────────────────
+    _rl_headers_found: list[str] = []
+    _rl_header_names = [
+        "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset",
+        "X-Rate-Limit-Limit", "X-Rate-Limit-Remaining", "X-Rate-Limit-Reset",
+        "RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset",
+        "Retry-After", "X-Retry-After",
+    ]
+    if resp:
+        for _rlh in _rl_header_names:
+            _rlv = resp.headers.get(_rlh, "")
+            if _rlv:
+                _rl_headers_found.append(f"{_rlh}: {_rlv}")
+    if _rl_headers_found:
+        output.add_finding(
+            phase="recon",
+            title="Rate Limit Headers Expose Throttling Configuration",
+            severity="INFO",
+            url=base_url,
+            detail=(
+                f"The API response exposes {len(_rl_headers_found)} rate-limiting "
+                "header(s). While useful for legitimate clients, these headers reveal "
+                "the exact rate limit thresholds, remaining quota, and reset windows — "
+                "an attacker can use this to precisely calibrate brute-force attacks "
+                "to stay just under the limit."
+            ),
+            evidence="; ".join(_rl_headers_found),
+            remediation=(
+                "Consider whether rate limit headers are necessary in production. "
+                "If kept, combine with exponential backoff enforcement and account lockout."
+            ),
+            extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+        )
+
     con.status("recon", "done", f"Server: {server or 'unknown'}")
 
 
@@ -5641,6 +5876,13 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
     con.status("fuzzing", "running", f"Fuzzing {len(inventory)} endpoints")
 
     endpoints_to_fuzz = inventory[:30]  # Cap to avoid excessive requests
+
+    # ── GAP-09/10: Token / API key in URL (fuzzing) ────────────────────
+    _fuzz_token_seen: set = set()
+    for ep in endpoints_to_fuzz:
+        ep_url = ep.get("url", "")
+        if ep_url:
+            _check_token_in_url(ep_url, "fuzzing", output, _fuzz_token_seen)
 
     for ep in endpoints_to_fuzz:
         if _shutdown_requested:
@@ -8593,6 +8835,106 @@ def phase_graphql(settings: dict, sess: requests.Session,
         except Exception:
             pass
 
+    # ── Field suggestion leakage (GAP-20: SI-160) ────────────────────
+    _suggest_query = {"query": "{ user { userna } }"}
+    _suggest_resp = _safe_request(active_sess, "POST", gql_found,
+                                  json=_suggest_query, timeout=timeout)
+    if _suggest_resp and _suggest_resp.status_code in (200, 400):
+        try:
+            _sg_data = _suggest_resp.json()
+            _sg_err_text = json.dumps(_sg_data.get("errors", []))
+            if re.search(r'[Dd]id you mean|[Ss]uggestion|[Ss]imilar', _sg_err_text):
+                output.add_finding(
+                    phase="graphql",
+                    title="GraphQL Field Name Suggestions Enabled",
+                    severity="LOW",
+                    url=gql_found,
+                    detail=(
+                        "The GraphQL server returns 'Did you mean …?' suggestions in "
+                        "error responses for misspelled field names. Attackers can use "
+                        "automated tools (e.g. Clairvoyance) to reconstruct the full "
+                        "schema even when introspection is disabled."
+                    ),
+                    evidence=f"Query {{ user {{ userna }} }} → {_sg_err_text[:300]}",
+                    remediation=(
+                        "Disable field suggestions in production. In Apollo Server: "
+                        "set validationRules to NoSchemaIntrospectionCustomRule and "
+                        "disable suggestions."
+                    ),
+                    extra={"owasp": "API8:2023 Security Misconfiguration"},
+                )
+        except Exception:
+            pass
+
+    # ── GraphQL batching (GAP-21: SI-161) ─────────────────────────────
+    _batch_payload = [
+        {"query": "{ __typename }"},
+        {"query": "{ __typename }"},
+        {"query": "{ __typename }"},
+    ]
+    _batch_resp = _safe_request(active_sess, "POST", gql_found,
+                                json=_batch_payload, timeout=timeout)
+    if _batch_resp and _batch_resp.status_code == 200:
+        try:
+            _b_data = _batch_resp.json()
+            if isinstance(_b_data, list) and len(_b_data) >= 2:
+                output.add_finding(
+                    phase="graphql",
+                    title="GraphQL Batching Enabled Without Limit",
+                    severity="MEDIUM",
+                    url=gql_found,
+                    detail=(
+                        f"The GraphQL endpoint accepted a batch of {len(_batch_payload)} "
+                        f"queries in a single request and returned {len(_b_data)} results. "
+                        "Unbounded batching allows attackers to bypass per-request rate "
+                        "limits and brute-force mutations in a single HTTP request."
+                    ),
+                    evidence=f"Sent {len(_batch_payload)} queries → received {len(_b_data)} results",
+                    remediation=(
+                        "Disable batching or enforce a maximum batch size (e.g. 5). "
+                        "Count each batched query against the per-user rate limit."
+                    ),
+                    extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+                )
+        except Exception:
+            pass
+
+    # ── GraphQL alias rate-limit bypass (GAP-22: SI-162) ──────────────
+    _alias_query = {
+        "query": (
+            "{ a1: __typename a2: __typename a3: __typename "
+            "a4: __typename a5: __typename a6: __typename "
+            "a7: __typename a8: __typename a9: __typename a10: __typename }"
+        )
+    }
+    _alias_resp = _safe_request(active_sess, "POST", gql_found,
+                                json=_alias_query, timeout=timeout)
+    if _alias_resp and _alias_resp.status_code == 200:
+        try:
+            _a_data = _alias_resp.json()
+            _a_keys = list((_a_data.get("data") or {}).keys())
+            if len(_a_keys) >= 5:
+                output.add_finding(
+                    phase="graphql",
+                    title="GraphQL Alias-Based Rate Limit Bypass",
+                    severity="MEDIUM",
+                    url=gql_found,
+                    detail=(
+                        f"The GraphQL endpoint resolved {len(_a_keys)} aliased copies "
+                        "of the same field in a single request. Aliases let an attacker "
+                        "multiply resolver executions (e.g. 100 login mutations) in one "
+                        "HTTP request, bypassing IP-based rate limits."
+                    ),
+                    evidence=f"10-alias query returned keys: {_a_keys[:10]}",
+                    remediation=(
+                        "Count each alias as a separate operation for rate-limiting. "
+                        "Implement query complexity scoring that accounts for aliases."
+                    ),
+                    extra={"owasp": "API4:2023 Unrestricted Resource Consumption"},
+                )
+        except Exception:
+            pass
+
     con.status("graphql", "done", f"GraphQL testing complete at {gql_found}")
 
 
@@ -9308,6 +9650,133 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
                     evidence=f"JWT alg: {alg}",
                     remediation="Consider RS256 asymmetric signing for better key management.",
                 )
+
+            # ── JWT PII scanning (GAP-08: SI-155) ────────────────────
+            _check_jwt_pii(payload, base_url, output)
+
+    # ── Bearer token in URL check (GAP-09: SI-156) ───────────────────
+    _token_url_seen: set = set()
+    for ep in inventory[:50]:
+        ep_url = ep.get("url", "")
+        if ep_url:
+            _check_token_in_url(ep_url, "session", output, _token_url_seen)
+
+    # ── Session fixation check (GAP-12: SI-158) ──────────────────────
+    try:
+        _pre_resp = _safe_get(auth_sess, base_url, timeout=timeout)
+        if _pre_resp:
+            _pre_cookies = {}
+            for ck_name, ck_val in _pre_resp.cookies.items():
+                if ck_name.lower() in _SESSION_COOKIE_NAMES:
+                    _pre_cookies[ck_name] = ck_val
+            if _pre_cookies:
+                _anon_sess = requests.Session()
+                _anon_sess.headers.update({"User-Agent": auth_sess.headers.get("User-Agent", "Siphon")})
+                _anon_resp = _safe_get(_anon_sess, base_url, timeout=timeout)
+                if _anon_resp:
+                    for ck_name, ck_val in _anon_resp.cookies.items():
+                        if ck_name.lower() in _SESSION_COOKIE_NAMES and ck_val:
+                            if ck_name in _pre_cookies and _pre_cookies[ck_name] == ck_val:
+                                output.add_finding(
+                                    phase="session",
+                                    title="Session Token Not Rotated After Authentication",
+                                    severity="HIGH",
+                                    url=base_url,
+                                    detail=(
+                                        f"The session cookie '{ck_name}' retains the same value before "
+                                        "and after authentication. An attacker who sets a pre-authentication "
+                                        "session cookie (via XSS, URL injection, or subdomain cookie) can "
+                                        "hijack the victim's authenticated session."
+                                    ),
+                                    evidence=f"Cookie '{ck_name}' same in both anonymous and authenticated responses",
+                                    remediation=(
+                                        "Regenerate the session ID on every privilege-level change "
+                                        "(login, logout, role escalation). Invalidate the old session."
+                                    ),
+                                    extra={"owasp": "API2:2023 Broken Authentication"},
+                                )
+                                break
+    except Exception:
+        pass
+
+    # ── OAuth token info endpoint probe (GAP-11: SI-163) ────────────
+    _oauth_info_paths = [
+        "/oauth/tokeninfo", "/oauth/token_info", "/oauth2/tokeninfo",
+        "/.well-known/openid-configuration", "/userinfo",
+        "/oauth/check_token", "/oauth2/introspect", "/oauth/introspect",
+        "/api/oauth/tokeninfo", "/connect/tokeninfo",
+    ]
+    for _oip in _oauth_info_paths:
+        _oip_url = root + _oip
+        _oip_resp = _safe_get(auth_sess, _oip_url, timeout=timeout)
+        if _oip_resp and _oip_resp.status_code == 200:
+            try:
+                _oip_data = _oip_resp.json()
+                _oip_keys = list(_oip_data.keys()) if isinstance(_oip_data, dict) else []
+                _sensitive_keys = [k for k in _oip_keys if k.lower() in (
+                    "email", "sub", "scope", "client_id", "username",
+                    "active", "exp", "iat", "aud", "iss", "name",
+                )]
+                if _sensitive_keys:
+                    output.add_finding(
+                        phase="session",
+                        title="OAuth Token Info Endpoint Exposes Token Details",
+                        severity="MEDIUM",
+                        url=_oip_url,
+                        detail=(
+                            f"The OAuth token info endpoint at {_oip} returns token metadata "
+                            f"including: {', '.join(_sensitive_keys[:8])}. An attacker with a "
+                            "leaked or stolen token can query this endpoint to discover the "
+                            "token's scope, audience, and associated user identity."
+                        ),
+                        evidence=f"GET {_oip} → {json.dumps(_oip_data)[:400]}",
+                        remediation=(
+                            "Restrict token info endpoints to authenticated clients only. "
+                            "Require client_id + client_secret for introspection requests."
+                        ),
+                        extra={"owasp": "API2:2023 Broken Authentication"},
+                    )
+                    break
+            except Exception:
+                pass
+
+    # ── API version header manipulation (GAP-40: SI-166) ─────────────
+    _ver_headers = [
+        ("Accept", "application/vnd.api.v1+json"),
+        ("X-API-Version", "1"),
+        ("Api-Version", "0"),
+        ("Accept-Version", "~0"),
+        ("X-Api-Version", "0.1"),
+    ]
+    _base_resp = _safe_get(auth_sess, base_url, timeout=timeout)
+    _base_body = _base_resp.text[:2000] if _base_resp else ""
+    for _vh_name, _vh_val in _ver_headers:
+        if _shutdown_requested:
+            break
+        _vh_resp = _safe_get(auth_sess, base_url, timeout=timeout,
+                             headers={_vh_name: _vh_val})
+        if _vh_resp and _vh_resp.status_code == 200:
+            _vh_body = _vh_resp.text[:2000]
+            if _vh_body and _vh_body != _base_body and len(_vh_body) > 20:
+                output.add_finding(
+                    phase="session",
+                    title="API Version Header Manipulation Yields Different Response",
+                    severity="LOW",
+                    url=base_url,
+                    detail=(
+                        f"Sending header '{_vh_name}: {_vh_val}' returns a different "
+                        "response body than the default request. This indicates the API "
+                        "accepts version negotiation headers, which may expose deprecated "
+                        "or beta API versions with weaker security controls."
+                    ),
+                    evidence=f"{_vh_name}: {_vh_val} → different response body ({len(_vh_body)} bytes)",
+                    remediation=(
+                        "Restrict API version negotiation. Disable access to deprecated "
+                        "API versions in production. Return 400 for unrecognized version headers."
+                    ),
+                    extra={"owasp": "API8:2023 Security Misconfiguration"},
+                )
+                break
 
     # Check logout + replay (JWT bearer tokens)
     logout_paths = ["/logout", "/api/logout", "/auth/logout", "/signout",
@@ -10393,6 +10862,14 @@ _API_SENSITIVE_FILES = [
     ("/Gemfile",                "LOW",      "Gemfile exposed — Ruby dependency versions for CVE research."),
     ("/pom.xml",                "LOW",      "pom.xml exposed — Java/Maven dependency versions for CVE research."),
     ("/.DS_Store",              "LOW",      ".DS_Store exposed — macOS directory structure metadata."),
+    # GAP-25 (SI-164): Postman collection exposure
+    ("/postman_collection.json",  "MEDIUM",   "Postman collection exposed — full API endpoint inventory with example requests."),
+    ("/collection.json",          "MEDIUM",   "Postman collection exposed — full API endpoint inventory with example requests."),
+    ("/.postman/collection.json", "MEDIUM",   "Postman collection exposed in .postman directory."),
+    ("/api.postman_collection.json", "MEDIUM", "Postman API collection exposed — endpoint inventory and auth examples."),
+    ("/docs/postman_collection.json", "MEDIUM", "Postman collection in docs — API endpoint inventory."),
+    ("/postman_environment.json", "HIGH",     "Postman environment exposed — may contain API keys, tokens, and secrets."),
+    ("/.postman/environment.json", "HIGH",    "Postman environment in .postman directory — likely contains secrets."),
 ]
 
 

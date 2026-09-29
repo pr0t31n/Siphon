@@ -8410,6 +8410,601 @@
       "remediation_category": "Configuration",
       "remediation_effort": "Easy",
       "validation_tools": []
+    },
+    {
+      "id": "SI-155",
+      "title": "JWT Token Contains Personally Identifiable Information",
+      "aliases": [
+        "PII in JWT",
+        "JWT Payload PII Disclosure"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "MEDIUM",
+      "description": "JWT access token payload contains personally identifiable information (PII) such as email, phone number, or address. JWTs are base64-encoded (not encrypted), so any party that intercepts or extracts the token can read PII directly.",
+      "impact": "An attacker who obtains the JWT (from browser storage, server logs, Referer headers, or MITM) gains access to the user's personal data without needing to call any additional API endpoint. This violates data minimization principles (GDPR Art. 5).",
+      "cwe": [
+        "CWE-200",
+        "CWE-359"
+      ],
+      "cve_examples": [
+        "CVE-2018-0114"
+      ],
+      "cvss_v3_base": 5.3,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API2:2023 Broken Authentication",
+      "nist_csf2": [
+        "PR.DS-1"
+      ],
+      "nist_800_53": [
+        "SC-8",
+        "SC-28"
+      ],
+      "nist_800_171": [],
+      "pci_dss_4": [
+        "3.4.1"
+      ],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [
+        "Art. 5(1)(c)",
+        "Art. 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1528",
+          "tactic": "Credential Access",
+          "name": "Steal Application Access Token"
+        }
+      ],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Remove PII from JWT payloads. Use opaque tokens or encrypted JWTs (JWE) when personal data must travel with the token. Store user details server-side and look them up by subject claim.",
+      "remediation_component": "Authentication",
+      "remediation_category": "Token Management",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        "jwt.io",
+        "burpsuite"
+      ]
+    },
+    {
+      "id": "SI-156",
+      "title": "Bearer Token Transmitted in URL Query Parameter",
+      "aliases": [
+        "Bearer Token in URL",
+        "Token Leakage via URL"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "HIGH",
+      "description": "Authentication tokens (access_token, bearer, jwt) are transmitted in URL query parameters rather than in headers or cookies.",
+      "impact": "Tokens in URLs leak via HTTP Referer headers to third-party sites, appear in server access logs, proxy logs, browser history, and any URL-sharing mechanism. An attacker accessing any of these can hijack the user's session.",
+      "cwe": [
+        "CWE-598"
+      ],
+      "cve_examples": [
+        "CVE-2019-4656",
+        "CVE-2021-22145"
+      ],
+      "cvss_v3_base": 7.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "A07:2025 Identity and Authentication Failures",
+      "owasp_api": "API2:2023 Broken Authentication",
+      "nist_csf2": [
+        "PR.DS-2"
+      ],
+      "nist_800_53": [
+        "SC-8"
+      ],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [
+        {
+          "technique": "T1528",
+          "tactic": "Credential Access",
+          "name": "Steal Application Access Token"
+        }
+      ],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Transmit authentication tokens in the Authorization header or as HttpOnly cookies. Never pass tokens in URL query parameters.",
+      "remediation_component": "Authentication",
+      "remediation_category": "Token Management",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "burpsuite",
+        "zap"
+      ]
+    },
+    {
+      "id": "SI-157",
+      "title": "API Key Exposed in URL Query Parameter",
+      "aliases": [
+        "API Key in URL",
+        "API Key Leakage via URL"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "HIGH",
+      "description": "API keys are transmitted in URL query parameters (api_key, apiKey, client_secret, etc.) rather than in headers.",
+      "impact": "API keys in URLs leak via Referer headers, server access logs, proxy logs, and browser history. An attacker with a leaked API key gains the same API access level as the legitimate client.",
+      "cwe": [
+        "CWE-598"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 7.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API8:2023 Security Misconfiguration",
+      "nist_csf2": [],
+      "nist_800_53": [
+        "SC-8"
+      ],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Transmit API keys in a custom header (e.g. X-API-Key) or the Authorization header. Avoid URL query parameters for secrets.",
+      "remediation_component": "Authentication",
+      "remediation_category": "Token Management",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "burpsuite"
+      ]
+    },
+    {
+      "id": "SI-158",
+      "title": "Session Token Not Rotated After Authentication",
+      "aliases": [
+        "Session Fixation",
+        "Pre-Authentication Session Reuse"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "HIGH",
+      "description": "The session cookie retains the same value before and after authentication. An attacker who sets a pre-authentication session cookie can hijack the victim's authenticated session.",
+      "impact": "An attacker can set a known session token in the victim's browser (via XSS, subdomain cookie injection, or URL parameter) before the victim logs in. After login, the session token remains the same, giving the attacker a fully authenticated session.",
+      "cwe": [
+        "CWE-384"
+      ],
+      "cve_examples": [
+        "CVE-2023-24998",
+        "CVE-2021-21290"
+      ],
+      "cvss_v3_base": 7.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "A07:2025 Identity and Authentication Failures",
+      "owasp_api": "API2:2023 Broken Authentication",
+      "nist_csf2": [
+        "PR.AC-7"
+      ],
+      "nist_800_53": [
+        "AC-12",
+        "SC-23"
+      ],
+      "nist_800_171": [],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [
+        {
+          "technique": "T1563",
+          "tactic": "Lateral Movement",
+          "name": "Remote Service Session Hijacking"
+        }
+      ],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Regenerate the session ID on every privilege-level change (login, logout, role escalation). Invalidate the old session immediately.",
+      "remediation_component": "Authentication",
+      "remediation_category": "Session Management",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "burpsuite",
+        "zap"
+      ]
+    },
+    {
+      "id": "SI-159",
+      "title": "CORS Allows Null Origin",
+      "aliases": [
+        "CORS Null Origin",
+        "Null Origin CORS Bypass"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "MEDIUM",
+      "description": "The API reflects 'null' as an allowed CORS origin. Sandboxed iframes, data: URIs, and local files send Origin: null, allowing an attacker to craft pages that read cross-origin API responses.",
+      "impact": "An attacker can create a sandboxed iframe that sends Origin: null, which the server accepts. If credentials are allowed, the attacker can read authenticated API responses, extracting user data and tokens.",
+      "cwe": [
+        "CWE-942",
+        "CWE-346"
+      ],
+      "cve_examples": [
+        "CVE-2019-3778"
+      ],
+      "cvss_v3_base": 5.4,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API8:2023 Security Misconfiguration",
+      "nist_csf2": [],
+      "nist_800_53": [
+        "AC-4"
+      ],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Never whitelist 'null' as an allowed origin. Use an explicit allowlist of trusted origins for CORS.",
+      "remediation_component": "Application",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "burpsuite",
+        "curl"
+      ]
+    },
+    {
+      "id": "SI-160",
+      "title": "GraphQL Field Name Suggestions Enabled",
+      "aliases": [
+        "GraphQL Did You Mean",
+        "GraphQL Schema Enumeration via Suggestions"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "LOW",
+      "description": "The GraphQL server returns 'Did you mean ...?' suggestions in error responses for misspelled field names, enabling schema reconstruction even when introspection is disabled.",
+      "impact": "Attackers can use automated tools (Clairvoyance, graphql-cop) to systematically reconstruct the full schema from error-message suggestions, bypassing introspection restrictions.",
+      "cwe": [
+        "CWE-200"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 3.7,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API8:2023 Security Misconfiguration",
+      "nist_csf2": [],
+      "nist_800_53": [],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Disable field suggestions in production. In Apollo Server: set validationRules to NoSchemaIntrospectionCustomRule and disable suggestions.",
+      "remediation_component": "Application",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "graphql-cop",
+        "clairvoyance"
+      ]
+    },
+    {
+      "id": "SI-161",
+      "title": "GraphQL Batching Enabled Without Limit",
+      "aliases": [
+        "GraphQL Batch Query",
+        "GraphQL Query Batching Abuse"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "MEDIUM",
+      "description": "The GraphQL endpoint accepts batched queries (array of operations) in a single request without enforcing a batch size limit.",
+      "impact": "Attackers can bypass per-request rate limits by batching hundreds of queries (e.g., login mutations for credential stuffing) into a single HTTP request, evading IP-based throttling.",
+      "cwe": [
+        "CWE-770"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 5.3,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+      "nist_csf2": [],
+      "nist_800_53": [],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Disable batching or enforce a maximum batch size (e.g. 5). Count each batched query against the per-user rate limit.",
+      "remediation_component": "Application",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "graphql-cop",
+        "burpsuite"
+      ]
+    },
+    {
+      "id": "SI-162",
+      "title": "GraphQL Alias-Based Rate Limit Bypass",
+      "aliases": [
+        "GraphQL Alias Abuse",
+        "GraphQL Alias DoS"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "MEDIUM",
+      "description": "The GraphQL endpoint resolves multiple aliased copies of the same field in a single request, allowing attackers to multiply resolver executions and bypass per-request rate limits.",
+      "impact": "An attacker can send a single HTTP request with 100+ aliased resolver calls (e.g., 100 login mutations with different credentials), bypassing IP-based rate limits that count HTTP requests, not GraphQL operations.",
+      "cwe": [
+        "CWE-770"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 5.3,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+      "nist_csf2": [],
+      "nist_800_53": [],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Count each alias as a separate operation for rate-limiting. Implement query complexity scoring that accounts for aliases.",
+      "remediation_component": "Application",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        "graphql-cop",
+        "burpsuite"
+      ]
+    },
+    {
+      "id": "SI-163",
+      "title": "OAuth Token Info Endpoint Exposes Token Details",
+      "aliases": [
+        "OAuth Tokeninfo Exposure",
+        "Token Introspection Endpoint"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "MEDIUM",
+      "description": "The OAuth token info/introspection endpoint returns token metadata (scope, audience, user identity) to any bearer of the token without requiring client authentication.",
+      "impact": "An attacker with a leaked or stolen token can query the token info endpoint to discover the token's scope, audience, and associated user identity, enabling targeted privilege escalation.",
+      "cwe": [
+        "CWE-200"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 5.3,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API2:2023 Broken Authentication",
+      "nist_csf2": [],
+      "nist_800_53": [
+        "AC-3"
+      ],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Restrict token info endpoints to authenticated clients only. Require client_id + client_secret for introspection requests per RFC 7662.",
+      "remediation_component": "Authentication",
+      "remediation_category": "Token Management",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        "burpsuite",
+        "curl"
+      ]
+    },
+    {
+      "id": "SI-164",
+      "title": "Postman Collection or Environment File Exposed",
+      "aliases": [
+        "Postman Collection Exposure",
+        "Postman Environment Leak"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "MEDIUM",
+      "description": "Postman collection or environment files are publicly accessible. Collections expose full API endpoint inventory with example requests; environment files may contain API keys, tokens, and secrets.",
+      "impact": "An attacker gains a complete API endpoint map with example requests, parameters, and potentially authentication tokens from the Postman environment file, enabling targeted API attacks.",
+      "cwe": [
+        "CWE-538"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 5.3,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API8:2023 Security Misconfiguration",
+      "nist_csf2": [],
+      "nist_800_53": [],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Remove Postman collection and environment files from public web paths. Never deploy development/testing files to production servers.",
+      "remediation_component": "Application",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "curl",
+        "nuclei"
+      ]
+    },
+    {
+      "id": "SI-165",
+      "title": "Rate Limit Headers Expose Throttling Configuration",
+      "aliases": [
+        "Rate Limit Header Disclosure",
+        "X-RateLimit Headers"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "INFO",
+      "description": "API responses include rate-limiting headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset) that reveal exact throttling thresholds.",
+      "impact": "An attacker can read the rate limit, remaining quota, and reset window to precisely calibrate brute-force attacks to stay just under the limit, making detection harder.",
+      "cwe": [
+        "CWE-200"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 0.0,
+      "cvss_vector": "",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API4:2023 Unrestricted Resource Consumption",
+      "nist_csf2": [],
+      "nist_800_53": [],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Evaluate whether rate limit headers are necessary in production. If kept, combine with exponential backoff enforcement and account lockout.",
+      "remediation_component": "Application",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "curl"
+      ]
+    },
+    {
+      "id": "SI-166",
+      "title": "API Version Header Manipulation Yields Different Response",
+      "aliases": [
+        "API Version Negotiation",
+        "Version Header Bypass"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "LOW",
+      "description": "The API accepts version negotiation headers (X-API-Version, Accept-Version, Api-Version) and returns different responses for different version values, indicating deprecated or beta versions may be accessible.",
+      "impact": "An attacker can access deprecated API versions that may have weaker security controls, missing authentication checks, or known vulnerabilities that were fixed in newer versions.",
+      "cwe": [
+        "CWE-200"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 3.7,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API8:2023 Security Misconfiguration",
+      "nist_csf2": [],
+      "nist_800_53": [],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Restrict API version negotiation. Disable access to deprecated API versions in production. Return 400 for unrecognized version headers.",
+      "remediation_component": "Application",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Easy",
+      "validation_tools": [
+        "burpsuite",
+        "curl"
+      ]
     }
   ]
 }
