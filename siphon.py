@@ -5074,6 +5074,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     scan = settings["scan"]
     base_url = scan["api_base_url"]
     timeout = scan.get("timeout", 10)
+    target = _parse_target(base_url)
 
     con.status("recon", "running", "Fingerprinting API server")
 
@@ -5453,6 +5454,8 @@ def phase_recon(settings: dict, sess: requests.Session,
             if acao == "*":
                 _acac_str = test_resp.headers.get("Access-Control-Allow-Credentials", "")
                 _cred_note = " with credentials allowed" if _acac_str.lower() == "true" else ""
+                _cors_wc_req, _cors_wc_resp = _save_http_evidence(
+                    output, "recon", "cors_wildcard", test_resp)
                 output.add_finding(
                     phase="recon",
                     title="Security Misconfiguration / CORS Wildcard with Credentials",
@@ -5461,9 +5464,12 @@ def phase_recon(settings: dict, sess: requests.Session,
                     detail=f"API sets Access-Control-Allow-Origin: *{_cred_note}. Wildcard CORS allows any origin to read API responses.",
                     evidence=f"Access-Control-Allow-Origin: {acao}; Access-Control-Allow-Credentials: {_acac_str}",
                     remediation="Restrict CORS to an explicit allowlist of trusted origins; never combine wildcard with credentials.",
+                    output_file=_cors_wc_resp,
                 )
             elif acao == "https://evil.com":
                 sev = "HIGH" if acac.lower() == "true" else "MEDIUM"
+                _cors_mc_req, _cors_mc_resp = _save_http_evidence(
+                    output, "recon", "cors_misconfig", test_resp)
                 output.add_finding(
                     phase="recon",
                     title="CORS Misconfiguration Allowing Credential Leakage",
@@ -5472,6 +5478,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                     detail="The CORS policy reflects arbitrary origins or uses a wildcard origin combined with credentials-allowed, permitting malicious third-party sites to make credentialed cross-origin requests and read responses.",
                     evidence=f"Origin: https://evil.com → Access-Control-Allow-Origin: {acao}; Access-Control-Allow-Credentials: {acac}",
                     remediation="Maintain an explicit allowlist of trusted origins; never combine Access-Control-Allow-Origin: * with Access-Control-Allow-Credentials: true; and reject unexpected Origin headers.",
+                    output_file=_cors_mc_resp,
                 )
 
     # ── CORS null origin test (GAP-19: SI-159) ────────────────────────
@@ -5482,6 +5489,8 @@ def phase_recon(settings: dict, sess: requests.Session,
         _null_acac = _null_resp.headers.get("Access-Control-Allow-Credentials", "")
         if _null_acao.lower() == "null":
             _null_sev = "HIGH" if _null_acac.lower() == "true" else "MEDIUM"
+            _cors_null_req, _cors_null_resp = _save_http_evidence(
+                output, "recon", "cors_null_origin", _null_resp)
             output.add_finding(
                 phase="recon",
                 title="CORS Allows Null Origin",
@@ -5501,6 +5510,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                     "Never whitelist 'null' as an allowed origin. Use an explicit "
                     "allowlist of trusted origins for CORS."
                 ),
+                output_file=_cors_null_resp,
                 extra={"owasp": "API8:2023 Security Misconfiguration"},
             )
 
@@ -5556,7 +5566,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         )
 
     # ── #8: Internal hostname exposure in recon response ────────────────
-    target_hn = target.get("hostname", "")
+    target_hn = target.get("host", "")
     _check_internal_hostnames(resp, base_url, "recon", output, target_hn)
 
     # ── #12: Exception disclosure in recon response ──────────────────────
@@ -10865,6 +10875,18 @@ def phase_file_upload_info(settings: dict, sess: requests.Session,
             f"OPTIONS {root}{p} → HTTP {sc}; Allow: {al}"
             for p, sc, al in _undoc_entries
         )
+        _undoc_ev_path = output.output_path(
+            "file_upload_info", "undocumented_upload_endpoints")
+        _undoc_ev_path.write_text(
+            f"# Undocumented Upload Endpoint OPTIONS Probes\n"
+            f"# Target: {base_url}\n\n{_undoc_evidence}\n\n"
+            f"# Affected paths:\n{_undoc_affected}\n",
+            encoding="utf-8",
+        )
+        try:
+            _undoc_ev_rel = str(_undoc_ev_path.relative_to(output.out_dir))
+        except Exception:
+            _undoc_ev_rel = str(_undoc_ev_path)
         output.add_finding(
             phase="file_upload_info",
             title="Potential Undocumented Upload Endpoint Discovered",
@@ -10880,6 +10902,7 @@ def phase_file_upload_info(settings: dict, sess: requests.Session,
                 "Document all upload endpoints in the API spec. "
                 "Disable or remove upload endpoints that are not required."
             ),
+            output_file=_undoc_ev_rel,
             extra={
                 "owasp": "API9:2023 Improper Inventory Management",
                 "nist": "CM-7",
