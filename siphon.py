@@ -2357,6 +2357,7 @@ DEFAULT_SETTINGS: dict = {
             "ffuf":         True,
             "feroxbuster":  True,
             "dirsearch":    True,
+            "katana":       True,
         },
         "wordlist":            "",
         "max_tool_time":       120,
@@ -4646,6 +4647,81 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
     return results
 
 
+def _run_katana(base_url: str, target: dict, scan: dict,
+                output: OutputManager) -> list:
+    """Run Katana JS-aware web crawler for endpoint discovery. Returns list of (method, path, status) tuples."""
+    katana_bin = _find_discovery_tool("katana",
+                                     [os.path.expanduser("~/go/bin/katana"),
+                                      "/usr/local/bin/katana"])
+    if not katana_bin:
+        con.info("Katana not found — skipping. Install: go install github.com/projectdiscovery/katana/cmd/katana@latest")
+        return []
+
+    con.info("Katana: JS-aware crawl for API endpoint discovery …")
+    out_file = output.tool_path("katana", f"katana_{target['host']}.jsonl")
+    excludes = "ico,png,jpg,gif,svg,woff,ttf,otf,eot,css,mp4,mp3,zip,gz,tar"
+
+    cmd = [
+        katana_bin,
+        "-u", base_url,
+        "-d", "3",
+        "-jc",
+        "-kf",
+        "-ct", "30",
+        "-c", "10",
+        "-rl", "50",
+        "-ef", excludes,
+        "-jsonl",
+        "-o", str(out_file),
+        "-silent",
+    ]
+    if scan.get("proxy"):
+        cmd += ["-proxy", scan["proxy"]]
+
+    results: list = []
+    try:
+        _run_logged(
+            cmd, output_file=out_file, tool_name="katana",
+            timeout=scan.get("max_tool_time", 120) * 3,
+        )
+        if out_file.exists():
+            for line in out_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                req  = entry.get("request", {})
+                resp = entry.get("response", {})
+                url    = req.get("endpoint", "") or entry.get("endpoint", "")
+                method = req.get("method", "GET") or "GET"
+                status = resp.get("status_code", 0) or 0
+                if not url:
+                    continue
+                path = urlparse(url).path or "/"
+                if status and status not in (404, 400, 405, 501):
+                    results.append((method, path, status))
+                    _emit_discovery_finding(
+                        output, source="Katana",
+                        url=url, status=status, path=path,
+                        detail=f"Katana JS-aware crawler discovered {method} {path} — HTTP {status}",
+                        evidence=f"{method} {path} → {status}",
+                        out_file=out_file,
+                        method=method,
+                    )
+        con.info(f"Katana: {len(results)} endpoint(s) found")
+    except subprocess.TimeoutExpired:
+        con.info("Katana: crawl timed out")
+        _log_timeout_action(output, "Katana", target["host"],
+                            target.get("port", 0), target["host"],
+                            scan.get("max_tool_time", 120) * 3)
+    except Exception as exc:
+        con.info(f"Katana: error — {exc}")
+    return results
+
+
 def _run_ffuf_params(endpoint_url: str, phase: str, scan: dict,
                      output: OutputManager, sess: requests.Session) -> None:
     """Run FFUF to fuzz query parameters and POST fields on a single endpoint."""
@@ -4938,6 +5014,10 @@ def phase_discovery(settings: dict, sess: requests.Session,
 
         if tools_cfg.get("dirsearch", True):
             _add_tool_paths(_run_dirsearch(target_root, target, scan, output))
+
+    # Katana: JS-aware crawler — runs regardless of wildcard
+    if tools_cfg.get("katana", True):
+        _add_tool_paths(_run_katana(target_root, target, scan, output))
 
     # ------------------------------------------------------------------ #
     # 7b. Emit INFO findings for endpoints not in scope file              #
@@ -12068,7 +12148,7 @@ def main() -> None:
         # Per-URL output sub-directory when scanning multiple targets
         base_project = Path(scan["project"]).resolve()
         if len(base_urls) > 1:
-            safe_host = re.sub(r'[^\w._-]', '_', target["host"])
+            safe_host = re.sub(r'[^\w._-]', '_', f"{target['host']}_{target['port']}")
             project_dir = base_project / safe_host
         else:
             project_dir = base_project

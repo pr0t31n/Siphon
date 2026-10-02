@@ -555,6 +555,11 @@ GO_TOOLS = [
         "grpcurl",      # gRPC reflection enumeration (Phase 21)
         "grpcurl",      # brew formula
     ),
+    (
+        "github.com/projectdiscovery/katana/cmd/katana@latest",
+        "katana",       # JS-aware web crawler for endpoint discovery
+        "katana",       # brew formula
+    ),
 ]
 
 

@@ -2,7 +2,7 @@
   "version": "1.6.0",
   "tool": "siphon",
   "generated": "(complete: upgraded existing + scaffolded missing)",
-  "total": 134,
+  "total": 167,
   "from_existing": 115,
   "newly_scaffolded": 19,
   "findings": [
@@ -9002,6 +9002,62 @@
       "remediation_category": "Configuration",
       "remediation_effort": "Easy",
       "validation_tools": [
+        "burpsuite",
+        "curl"
+      ]
+    },
+    {
+      "id": "SI-167",
+      "title": "Web Endpoint Discovered (Katana)",
+      "aliases": [
+        "Katana Endpoint Discovery",
+        "Web Path Discovered"
+      ],
+      "source_tools": [
+        "siphon"
+      ],
+      "risk": "INFO",
+      "description": "Katana web crawler discovered accessible web paths, JavaScript-referenced endpoints, and linked resources on the target application. Katana performs headless or passive crawling to enumerate the full reachable surface of a web application, including dynamically generated links.",
+      "impact": "Discovered endpoints expand the known attack surface for further API and web security testing. Hidden or undocumented paths may expose administrative interfaces, debug endpoints, or sensitive functionality not intended for public access.",
+      "cwe": [
+        "CWE-200"
+      ],
+      "cve_examples": [],
+      "cvss_v3_base": 0.0,
+      "cvss_vector": "N/A",
+      "nessus_plugin_ids": [],
+      "qualys_qids": [],
+      "owasp_web": "",
+      "owasp_api": "API9:2023 Improper Inventory Management",
+      "nist_csf2": [
+        "ID.AM-2"
+      ],
+      "nist_800_53": [
+        "CM-8"
+      ],
+      "nist_800_171": [],
+      "pci_dss_4": [],
+      "iso_27001": [],
+      "iso_27002": [],
+      "soc2": [],
+      "hitrust": [],
+      "gdpr": [],
+      "mitre_attack": [
+        {
+          "technique": "T1595.002",
+          "tactic": "Reconnaissance",
+          "name": "Active Scanning: Vulnerability Scanning"
+        }
+      ],
+      "searchsploit_terms": [],
+      "metasploit_modules": [],
+      "kev": false,
+      "remediation_brief": "Review all discovered endpoints for unintended exposure. Remove or restrict access to administrative, debug, and development endpoints in production. Implement proper access controls on all discovered paths.",
+      "remediation_component": "Application",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        "katana",
         "burpsuite",
         "curl"
       ]
