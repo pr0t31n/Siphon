@@ -233,7 +233,6 @@ PIP_PACKAGES = [
     "colorama>=0.4.6",       # ANSI colour output — required
     "pyyaml>=6.0.0",         # YAML parser for OpenAPI/Swagger spec ingestion — required
     "beautifulsoup4>=4.12.0", # HTML parser for response analysis — required
-    "sqlmap",                 # SQL injection testing — required
     "termcolor>=2.0.0",       # terminal colour output — required
     "websocket-client>=1.6.0",# WebSocket handshake/passive checks (Phase 21) — optional
 ]
@@ -241,7 +240,6 @@ PIP_PACKAGES = [
 OFFLINE_BUNDLE_URLS = {
     "beautifulsoup4": "https://raw.githubusercontent.com/pr0t31n/OfflineInstallers/main/beautifulsoup4_offline_kali.tar.gz",
     "selenium":       "https://raw.githubusercontent.com/pr0t31n/OfflineInstallers/main/selenium_offline_kali.tar.gz",
-    "sqlmap":         "https://raw.githubusercontent.com/pr0t31n/OfflineInstallers/main/sqlmap_offline_kali.tar.gz",
 }
 
 _OFFLINE_REPO_DIR = "/opt/OfflineInstallers"
@@ -541,11 +539,6 @@ def install_selenium() -> None:
 
 GO_TOOLS = [
     (
-        "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
-        "nuclei",
-        "nuclei",       # brew formula
-    ),
-    (
         "github.com/ffuf/ffuf/v2@latest",
         "ffuf",
         "ffuf",         # brew formula
@@ -629,27 +622,6 @@ def install_git() -> None:
         symlink_force(testssl_bin, "/usr/local/bin/testssl.sh")
         info("testssl.sh symlinked to /usr/local/bin/testssl.sh")
 
-    # jwt_tool — JWT testing utility (complements Siphon's JWT phases)
-    git_clone_or_update("https://github.com/ticarpi/jwt_tool.git", "/opt/jwt_tool")
-    jwt_bin = "/opt/jwt_tool/jwt_tool.py"
-    if os.path.isfile(jwt_bin):
-        os.chmod(jwt_bin, 0o755)
-        symlink_force(jwt_bin, "/usr/local/bin/jwt_tool")
-        info("jwt_tool symlinked to /usr/local/bin/jwt_tool")
-        req = "/opt/jwt_tool/requirements.txt"
-        if os.path.isfile(req):
-            run(
-                [sys.executable, "-m", "pip", "install",
-                 "--break-system-packages", "-r", req],
-                check=False,
-            )
-
-    # nuclei-templates
-    git_clone_or_update(
-        "https://github.com/projectdiscovery/nuclei-templates.git",
-        "/opt/nuclei-templates",
-    )
-
     # dirsearch — Python web path scanner
     git_clone_or_update("https://github.com/maurosoria/dirsearch.git", "/opt/dirsearch")
     ds_req = "/opt/dirsearch/requirements.txt"
@@ -713,8 +685,6 @@ VERIFY_PYTHON = ["requests", "colorama", "yaml", "selenium"]
 VERIFY_CLI = [
     ("sslscan",     "TLS scanner"),
     ("testssl.sh",  "TLS scanner (testssl)"),
-    ("jwt_tool",    "JWT testing utility"),
-    ("nuclei",      "Vulnerability scanner"),
     ("kr",          "Kiterunner API route brute-forcer"),
     ("ffuf",        "Fast web fuzzer (FFUF)"),
     ("feroxbuster", "Recursive web content discovery"),
@@ -725,8 +695,6 @@ VERIFY_CLI = [
 
 VERIFY_GIT = [
     ("/opt/testssl.sh",       "testssl.sh"),
-    ("/opt/jwt_tool",         "jwt_tool"),
-    ("/opt/nuclei-templates", "nuclei-templates"),
     ("/opt/dirsearch",        "dirsearch"),
     ("/opt/kiterunner",       "kiterunner"),
 ]
@@ -783,8 +751,6 @@ def print_summary(skips: set) -> None:
     print()
     info("Run: siphon --help")
     warn("testssl.sh    installed from git (/opt/testssl.sh).")
-    warn("jwt_tool      installed from git (/opt/jwt_tool).")
-    warn("nuclei-templates cloned to /opt/nuclei-templates.")
     warn("dirsearch     installed from git (/opt/dirsearch) — available as /usr/local/bin/dirsearch.")
     warn("kiterunner    installed from git (/opt/kiterunner) — available as /usr/local/bin/kr.")
     warn("ffuf          installed via go/brew — available as /usr/local/bin/ffuf.")
