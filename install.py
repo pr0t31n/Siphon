@@ -638,9 +638,10 @@ def install_git() -> None:
         info("dirsearch symlinked to /usr/local/bin/dirsearch")
 
     # Kiterunner — API route brute-forcer (requires Go to build)
+    _kr_existed = os.path.isdir("/opt/kiterunner")
     git_clone_or_update("https://github.com/assetnote/kiterunner.git", "/opt/kiterunner")
     kr_dist = "/opt/kiterunner/dist/kr"
-    if not os.path.isfile(kr_dist):
+    if not os.path.isfile(kr_dist) or _kr_existed:
         go_bin = find_go()
         if go_bin:
             info("Building kiterunner (make build) ...")
