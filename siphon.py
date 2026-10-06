@@ -2760,7 +2760,7 @@ def _check_internal_hostnames(resp, url: str, phase: str,
     hn_list = ", ".join(sorted(found_hostnames))
     output.add_finding(
         phase=phase,
-        title="Internal Hostname Disclosed in API Response",
+        title="Information Disclosure: Internal Hostname in API Response",
         severity="LOW",
         url=url,
         detail=(
@@ -2917,7 +2917,7 @@ def _check_token_in_url(url: str, phase: str, output: "OutputManager",
             _seen.add(key)
             output.add_finding(
                 phase=phase,
-                title="API Key Exposed in URL Query Parameter",
+                title="Information Disclosure: API Key in URL Query Parameter",
                 severity="HIGH",
                 url=url.split("?")[0],
                 detail=(
@@ -5201,7 +5201,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                 priority="high",
             )
 
-    # Header Data Leakage — server/technology disclosure headers
+    # Information Disclosure — server/technology disclosure headers
     server = resp.headers.get("Server", "")
     x_powered = resp.headers.get("X-Powered-By", "")
     x_generator = resp.headers.get("X-Generator", "")
@@ -5209,7 +5209,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     if server:
         output.add_finding(
             phase="recon",
-            title="Header Data Leakage: Server",
+            title="Information Disclosure: Server Header",
             severity="LOW",
             url=base_url,
             detail=f"Server header discloses web server software and potentially its version: '{server}'. Assists attackers in fingerprinting known vulnerabilities.",
@@ -5221,7 +5221,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     if x_powered:
         output.add_finding(
             phase="recon",
-            title="Header Data Leakage: X-Powered-By",
+            title="Information Disclosure: X-Powered-By Header",
             severity="LOW",
             url=base_url,
             detail="The X-Powered-By response header discloses the application framework, language, or runtime version, reducing the attacker's effort needed to identify version-specific vulnerabilities.",
@@ -5233,7 +5233,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     if _aspnet:
         output.add_finding(
             phase="recon",
-            title="Header Data Leakage: X-AspNet-Version",
+            title="Information Disclosure: X-AspNet-Version Header",
             severity="LOW",
             url=base_url,
             detail="The X-AspNet-Version response header reveals the exact ASP.NET framework version, aiding an attacker in identifying applicable CVEs or version-specific attack techniques.",
@@ -5245,7 +5245,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     if _via:
         output.add_finding(
             phase="recon",
-            title="Header Data Leakage: Via",
+            title="Information Disclosure: Via Header",
             severity="LOW",
             url=base_url,
             detail=f"Via header discloses intermediate proxy or CDN infrastructure: '{_via}'. Reveals internal routing topology and proxy software versions.",
@@ -7873,7 +7873,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
             if _cred_param_url_re.search(f"?{pname}=test"):
                 output.add_finding(
                     phase="auth_bypass",
-                    title="Sensitive Credentials Transmitted in URL Query Parameters",
+                    title="Information Disclosure: Credentials in URL Query Parameters",
                     severity="HIGH",
                     url=ep_url,
                     detail=(f"Endpoint {ep['method']} {ep['path']} has parameter '{pname}' in its "
@@ -9888,7 +9888,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
                 if _sensitive_keys:
                     output.add_finding(
                         phase="session",
-                        title="OAuth Token Info Endpoint Exposes Token Details",
+                        title="Information Disclosure: OAuth Token via Endpoint",
                         severity="MEDIUM",
                         url=_oip_url,
                         detail=(
@@ -11142,6 +11142,7 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
         "TLS Vulnerability: LUCKY13":                          (re.compile(r'lucky13', re.I),                                    "MEDIUM"),
         "Self-Signed Certificate":                             (re.compile(r'self.?signed|Self signed', re.I),                   "HIGH"),
         "Expired SSL Certificate":                             (re.compile(r'certif.*expir|expir.*certif|expired', re.I),        "MEDIUM"),
+        "SSL/TLS Forward Secrecy: Not Supported":              (re.compile(r'(?:Forward Secrecy|FS)\s+(?:is\s+)?NOT\s+(?:offered|supported)|No\s+FS\s+cipher|no.*forward.secrecy', re.I), "MEDIUM"),
     }
 
     _tls_remediation = (
@@ -11222,7 +11223,9 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
             )
             _ts_filtered = "\n".join(
                 ln for ln in _ts_out.splitlines()
-                if "(OK)" not in ln and not _TESTSSL_NOISE.search(ln)
+                if "(OK)" not in ln
+                and (not _TESTSSL_NOISE.search(ln)
+                     or "forward secrecy" in ln.lower())
             )
             for _title, (pat, severity) in _TLS_VULN_PATTERNS.items():
                 if pat.search(_ts_filtered):
