@@ -7836,7 +7836,7 @@
     },
     {
       "id": "SI-111",
-      "title": "TRACE Method Enabled (Cross-Site Tracing / XST)",
+      "title": "HTTP Methods: Unsafe Methods Enabled",
       "aliases": [
         "TRACE Method XST Attack",
         "Cross-Site Tracing (XST)",
@@ -7846,7 +7846,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "LOW",
+      "risk": "MEDIUM",
       "cwe": [
         "CWE-16"
       ],

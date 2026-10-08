@@ -5692,7 +5692,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         if _trace_resp is not None and _trace_resp.status_code in (200, 204):
             output.add_finding(
                 phase="recon",
-                title="TRACE Method Enabled (Cross-Site Tracing / XST)",
+                title="HTTP Methods: Unsafe Methods Enabled",
                 severity="MEDIUM",
                 url=base_url,
                 detail=(
