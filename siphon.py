@@ -67,8 +67,17 @@ try:
     if "/opt/pr0t31n/shared" not in sys.path:
         sys.path.insert(0, "/opt/pr0t31n/shared")
     import pr0t31n_event_log as _el
+    import pr0t31n_pause as _pp
 except Exception:
     _el = None
+    _pp = None
+
+_pause_mgr: "_pp.PauseManager | None" = None  # type: ignore[name-defined]
+
+
+def _check_pause():
+    if _pause_mgr is not None and _pause_mgr.check_and_pause():
+        sys.exit(_pp.EXIT_PAUSED)
 
 # ── Adaptive concurrency ──────────────────────────────────────────────────────
 def _hw_detect():
@@ -1573,6 +1582,11 @@ def _install_signal_handlers() -> None:
     def _handler(sig, frame):
         global _shutdown_requested
         _shutdown_requested = True
+        _action = "killed_user" if sig == signal.SIGINT else "killed_crucible"
+        _reason = "KeyboardInterrupt" if sig == signal.SIGINT else "SIGTERM"
+        if _pause_mgr is not None:
+            _pause_mgr.write_stop_reason(_action, _reason,
+                                         initiated_by="user" if sig == signal.SIGINT else "external")
         con.err("\n[siphon] Interrupted — saving partial results …")
     signal.signal(signal.SIGINT, _handler)
     if hasattr(signal, "SIGTERM"):
@@ -12134,10 +12148,21 @@ def main() -> None:
     if _spec_files:
         con.info(f"Spec file(s): {', '.join(_spec_files)}")
 
+    # ── Pause/resume (Crucible integration) ──────────────────────────────
+    global _pause_mgr
+    _si_proj_root = Path(scan["project"]).resolve()
+    _si_proj_root.mkdir(parents=True, exist_ok=True)
+    if _pp is not None:
+        _pause_mgr = _pp.PauseManager(_si_proj_root, "siphon")
+        _pause_mgr.start_watcher(grace_period=60)
+        _pause_mgr.log_run_type(
+            (_si_proj_root / "checkpoint.json").exists())
+
     # ------------------------------------------------------------------ #
     # Per-target loop (mirrors Fracture multi-URL pattern)                #
     # ------------------------------------------------------------------ #
     for raw_url in base_urls:
+        _check_pause()
         if not raw_url:
             continue
 
@@ -12716,6 +12741,9 @@ def main() -> None:
         output.save_all(api_inventory)
         output.print_summary()
         con.info(f"Reports saved to: {t_scan['project']}/")
+
+    if _pause_mgr is not None:
+        _pause_mgr.write_stop_reason("completed", "all_phases_done")
 
 if __name__ == "__main__":
     main()
