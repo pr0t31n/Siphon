@@ -3843,7 +3843,7 @@ def _probe_undocumented_endpoints(
             found_undoc += 1
             output.add_finding(
                 phase="discovery",
-                title="Undocumented API Endpoint Detected",
+                title="Enumeration: Undocumented API Endpoint Detected",
                 severity="MEDIUM",
                 url=target_root.rstrip("/") + probe_path,
                 detail=(f"API endpoint '{probe_path}' returned HTTP {status_code} "
@@ -8001,7 +8001,7 @@ def phase_user_enum(settings: dict, sess: requests.Session,
         if diffs:
             output.add_finding(
                 phase="user_enum",
-                title="Application Responses Identify Valid Accounts",
+                title="Enumeration: Application Responses Identify Valid Accounts",
                 severity="MEDIUM",
                 url=login_url,
                 detail=(
@@ -8047,7 +8047,7 @@ def phase_user_enum(settings: dict, sess: requests.Session,
             slower_for = "valid" if avg_valid > avg_invalid else "invalid"
             output.add_finding(
                 phase="user_enum",
-                title="Timing-Based Username Enumeration",
+                title="Enumeration: Timing-Based Username Enumeration",
                 severity="LOW",
                 url=login_url,
                 detail=(
@@ -9529,7 +9529,7 @@ def phase_bola(settings: dict, auth_sess, output: OutputManager,
                         if resp_id and str(resp_id) != test_id:
                             output.add_finding(
                                 phase="bola",
-                                title="BOLA — Object Enumeration Possible",
+                                title="Enumeration: BOLA Object Enumeration Possible",
                                 severity="HIGH",
                                 url=url,
                                 detail=(f"Endpoint returns object with different ID than requested. "
@@ -10520,7 +10520,7 @@ def phase_soap(settings: dict, sess: requests.Session,
             operations = _op_re.findall(wsdl_body)
             output.add_finding(
                 phase="soap",
-                title="WSDL Enumeration — Service Definition Exposed",
+                title="Enumeration: WSDL Service Definition Exposed",
                 severity="MEDIUM",
                 url=wurl,
                 detail=(
