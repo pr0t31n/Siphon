@@ -113,6 +113,25 @@ def run(cmd, check: bool = True, capture: bool = False,
 
 
 # ---------------------------------------------------------------------------
+# pip pre-check
+# ---------------------------------------------------------------------------
+
+def _pip_installed(pkg_spec: str) -> bool:
+    """Check whether a pip package is already importable."""
+    import importlib.util
+    name = pkg_spec.split(">=")[0].split("==")[0].split("[")[0].split("<")[0].strip()
+    _IMPORT_MAP = {
+        "beautifulsoup4": "bs4", "pyyaml": "yaml",
+        "websocket-client": "websocket", "webdriver-manager": "webdriver_manager",
+    }
+    mod = _IMPORT_MAP.get(name, name.replace("-", "_"))
+    try:
+        return importlib.util.find_spec(mod) is not None
+    except (ModuleNotFoundError, ValueError):
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Homebrew helper — never run as root
 # ---------------------------------------------------------------------------
 
@@ -393,6 +412,10 @@ def _install_from_bundle(pkg_name: str, url: str) -> bool:
 def install_pip() -> None:
     banner("Phase: pip packages")
     for _pkg in PIP_PACKAGES:
+        if _pip_installed(_pkg):
+            info(f"  ✓ {_pkg} already installed")
+            continue
+        info(f"pip install {_pkg} ...")
         _r = subprocess.run(
             [sys.executable, "-m", "pip", "install", "--break-system-packages", _pkg],
             check=False,
@@ -626,11 +649,19 @@ def install_git() -> None:
     git_clone_or_update("https://github.com/maurosoria/dirsearch.git", "/opt/dirsearch")
     ds_req = "/opt/dirsearch/requirements.txt"
     if os.path.isfile(ds_req):
-        run(
-            [sys.executable, "-m", "pip", "install",
-             "--break-system-packages", "-r", ds_req],
-            check=False,
-        )
+        with open(ds_req) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#") or _line.startswith("-"):
+                    continue
+                if _pip_installed(_line):
+                    info(f"  ✓ {_line} already installed")
+                    continue
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install",
+                     "--break-system-packages", _line],
+                    check=False,
+                )
     ds_bin = "/opt/dirsearch/dirsearch.py"
     if os.path.isfile(ds_bin):
         os.chmod(ds_bin, 0o755)
