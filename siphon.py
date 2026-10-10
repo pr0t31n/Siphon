@@ -11982,7 +11982,7 @@ def _strip_scheme(url_or_ip):
         if proc.returncode == 0 and svcs:
             output.add_finding(
                 phase="protocols",
-                title="gRPC Server Reflection Exposed",
+                title="gRPC: Server Reflection Exposed",
                 severity="LOW", url=f"grpc://{hostport}",
                 detail=f"The gRPC server has reflection enabled ({mode}) and enumerated "
                        f"{len(svcs)} service(s). Reflection discloses the full service/method API "
@@ -11994,7 +11994,7 @@ def _strip_scheme(url_or_ip):
             if mode == "plaintext":
                 output.add_finding(
                     phase="protocols",
-                    title="Insecure gRPC Transport (Plaintext / No TLS)",
+                    title="gRPC: Insecure Transport (No TLS)",
                     severity="MEDIUM", url=f"grpc://{hostport}",
                     detail="The gRPC endpoint accepted a plaintext (non-TLS) connection, exposing "
                            "RPC traffic (including credentials) to interception.",
