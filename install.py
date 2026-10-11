@@ -34,6 +34,7 @@ W = "\033[0m"
 def banner(msg):  print(f"\n{B}{'='*60}{W}\n{C}  {msg}{W}\n{B}{'='*60}{W}")
 def info(msg):    print(f"{G}[+]{W} {msg}")
 def warn(msg):    print(f"{Y}[!]{W} {msg}")
+def note(msg):    print(f"{Y}[i]{W} {msg}")
 def error(msg):   print(f"{R}[x]{W} {msg}")
 def step(msg):    print(f"{B}[>]{W} {msg}")
 
@@ -90,7 +91,7 @@ def require_root() -> None:
             warn("Could not verify Windows admin status — continuing.")
         return
     if not is_root():
-        warn("Installer requires root privileges. Re-running with sudo ...")
+        note("Installer requires root privileges. Re-running with sudo ...")
         os.execvp("sudo", ["sudo", sys.executable] + sys.argv)
 
 
@@ -143,13 +144,13 @@ def brew_install(pkg: str) -> bool:
                 brew_path = p
                 break
     if not brew_path:
-        warn(f"brew not found — skipping {pkg}")
+        note(f"brew not found — skipping {pkg}")
         return False
     cmd = [brew_path, "install", pkg]
     if is_root():
         sudo_user = get_sudo_user()
         if not sudo_user:
-            warn(f"Running as root without SUDO_USER — cannot run brew safely. Skipping {pkg}.")
+            note(f"Running as root without SUDO_USER — cannot run brew safely. Skipping {pkg}.")
             return False
         cmd = ["sudo", "-u", sudo_user] + cmd
     try:
@@ -240,7 +241,7 @@ def install_system() -> None:
     elif OS == "windows":
         warn("Windows: install sslscan, curl, jq, ffuf manually.")
     else:
-        warn(f"Unknown OS '{OS}' — skipping system packages.")
+        note(f"Unknown OS '{OS}' — skipping system packages.")
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +487,7 @@ def install_selenium() -> None:
                     info("selenium installed from GitHub source")
             shutil.rmtree(_clone_dir, ignore_errors=True)
         else:
-            warn("git not found — skipping GitHub source install")
+            note("git not found — skipping GitHub source install")
 
         # 2. pip (PyPI)
         if not _installed:
@@ -593,8 +594,8 @@ def install_go() -> None:
     banner("Phase: Go tools")
     go_bin = find_go()
     if not go_bin:
-        warn("go not found in PATH — skipping Go tool installation.")
-        warn("Install Go from https://go.dev/dl/ and re-run with --skip-go")
+        note("go not found in PATH — skipping Go tool installation.")
+        note("Install Go from https://go.dev/dl/ and re-run with --skip-go")
         return
     env = os.environ.copy()
     env["GOBIN"] = "/usr/local/bin"
@@ -629,7 +630,7 @@ def symlink_force(src: str, dest: str) -> None:
         os.symlink(src, dest)
         info(f"Symlink: {dest} -> {src}")
     except PermissionError:
-        warn(f"Cannot create symlink {dest} — not root.")
+        note(f"Cannot create symlink {dest} — not root.")
     except Exception as e:
         warn(f"Symlink {dest} failed: {e}")
 
@@ -678,7 +679,7 @@ def install_git() -> None:
             info("Building kiterunner (make build) ...")
             run(["make", "build"], check=False, cwd="/opt/kiterunner")
         else:
-            warn("Go not found — cannot build kiterunner. Install Go then run: cd /opt/kiterunner && make build")
+            note("Go not found — cannot build kiterunner. Install Go then run: cd /opt/kiterunner && make build")
     if os.path.isfile(kr_dist):
         os.chmod(kr_dist, 0o755)
         symlink_force(kr_dist, "/usr/local/bin/kr")
@@ -782,10 +783,10 @@ def print_summary(skips: set) -> None:
         print(f"  {p:10s} {status}")
     print()
     info("Run: siphon --help")
-    warn("testssl.sh    installed from git (/opt/testssl.sh).")
-    warn("dirsearch     installed from git (/opt/dirsearch) — available as /usr/local/bin/dirsearch.")
-    warn("kiterunner    installed from git (/opt/kiterunner) — available as /usr/local/bin/kr.")
-    warn("ffuf          installed via go/brew — available as /usr/local/bin/ffuf.")
+    note("testssl.sh    installed from git (/opt/testssl.sh).")
+    note("dirsearch     installed from git (/opt/dirsearch) — available as /usr/local/bin/dirsearch.")
+    note("kiterunner    installed from git (/opt/kiterunner) — available as /usr/local/bin/kr.")
+    note("ffuf          installed via go/brew — available as /usr/local/bin/ffuf.")
     warn("feroxbuster   installed via apt/brew — available as feroxbuster.")
 
 
@@ -824,13 +825,13 @@ def main() -> None:
         install_system()
     else:
         skips.add("system")
-        warn("Skipping system packages.")
+        note("Skipping system packages.")
 
     if not args.skip_pip:
         install_pip()
     else:
         skips.add("pip")
-        warn("Skipping pip packages.")
+        note("Skipping pip packages.")
 
     install_selenium()
 
@@ -838,13 +839,13 @@ def main() -> None:
         install_go()
     else:
         skips.add("go")
-        warn("Skipping Go tools.")
+        note("Skipping Go tools.")
 
     if not args.skip_git:
         install_git()
     else:
         skips.add("git")
-        warn("Skipping git tools.")
+        note("Skipping git tools.")
 
     install_symlinks()
     run_check()
