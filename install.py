@@ -787,7 +787,7 @@ def print_summary(skips: set) -> None:
     note("dirsearch     installed from git (/opt/dirsearch) — available as /usr/local/bin/dirsearch.")
     note("kiterunner    installed from git (/opt/kiterunner) — available as /usr/local/bin/kr.")
     note("ffuf          installed via go/brew — available as /usr/local/bin/ffuf.")
-    warn("feroxbuster   installed via apt/brew — available as feroxbuster.")
+    info("feroxbuster   installed via apt/brew — available as feroxbuster.")
 
 
 # ---------------------------------------------------------------------------
