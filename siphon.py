@@ -3843,6 +3843,7 @@ def _probe_undocumented_endpoints(
     with ThreadPoolExecutor(max_workers=threads) as pool:
         futures = {pool.submit(_probe, p): p for p in _API_PROBE_PATHS}
         for future in as_completed(futures):
+            _check_pause()
             result = future.result()
             if not result:
                 continue
@@ -5097,6 +5098,7 @@ def phase_discovery(settings: dict, sess: requests.Session,
         with ThreadPoolExecutor(max_workers=threads) as pool:
             futures = {pool.submit(_probe_methods, p): p for p in _method_probe_paths}
             for fut in as_completed(futures):
+                _check_pause()
                 path = futures[fut]
                 try:
                     method_results = fut.result() or []
@@ -6023,6 +6025,7 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
             _check_token_in_url(ep_url, "fuzzing", output, _fuzz_token_seen)
 
     for ep in endpoints_to_fuzz:
+        _check_pause()
         if _shutdown_requested:
             break
         path = ep["path"]
@@ -6817,6 +6820,7 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     _inj_skipped_destructive = 0
     for ep in test_endpoints:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7053,6 +7057,7 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     # XXE test — for endpoints that might accept XML
     for ep in _gated[:5]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7107,6 +7112,7 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     # XSS — reflected XSS via query/body parameters
     for ep in _gated[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7135,6 +7141,7 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     # Command Injection
     for ep in _gated[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7181,6 +7188,7 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     # CRLF Injection
     for ep in _gated[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7209,6 +7217,7 @@ def phase_injection(settings: dict, sess: requests.Session,
 
     # Path Traversal / LFI
     for ep in _gated[:15]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7244,6 +7253,7 @@ def phase_injection(settings: dict, sess: requests.Session,
         "@SUM(1+1)*cmd|'/C echo siphon_csv'!A0",
     ]
     for ep in _gated[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7274,6 +7284,7 @@ def phase_injection(settings: dict, sess: requests.Session,
     # Log injection via request parameters
     _log_inject_payload = "%0asiphon_log_inject_SUCCESS%0a"
     for ep in _gated[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -7325,6 +7336,7 @@ def phase_injection(settings: dict, sess: requests.Session,
     ]
     _probe_sess = auth_sess if auth_sess else sess
     for _dsuf, _dct, _dpayload, _dtitle, _ddesc in _deser_probes:
+        _check_pause()
         if _shutdown_requested:
             break
         # Safety gate: deserialization probes POST RCE payloads — non-production only.
@@ -7374,6 +7386,7 @@ def phase_injection(settings: dict, sess: requests.Session,
     ]
     _500_seen: set[str] = set()
     for ep in test_endpoints[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -8277,6 +8290,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
                                   for kw in ("password", "reset", "register", "signup",
                                              "email", "verify", "otp", "2fa", "mfa"))]
     for ep in sensitive_endpoints[:5]:
+        _check_pause()
         if _shutdown_requested:
             break
         ep_url = root + re.sub(r'\{[^}]+\}|:\w+', '1', ep["path"])
@@ -8367,6 +8381,7 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
         combined_payload[field] = True
 
     for ep in write_endpoints[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -8469,6 +8484,7 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
     ]
 
     for ep in inventory[:15]:
+        _check_pause()
         if _shutdown_requested:
             break
         if ep["method"].upper() not in ("POST", "PUT", "PATCH"):
@@ -8575,6 +8591,7 @@ def phase_ssrf(settings: dict, sess: requests.Session,
 
     ssrf_tested = 0
     for ep in inventory[:30]:
+        _check_pause()
         if _shutdown_requested:
             break
         url_loop_method = ep["method"]
@@ -8688,6 +8705,7 @@ def phase_data_exposure(settings: dict, sess: requests.Session,
     get_endpoints = [ep for ep in inventory if ep["method"] == "GET"]
 
     for ep in get_endpoints[:20]:
+        _check_pause()
         if _shutdown_requested:
             break
         url = root + ep["path"]
@@ -9168,6 +9186,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
     skip_sess.verify = False
 
     for ep in workflow_eps[:20]:
+        _check_pause()
         if _shutdown_requested:
             break
         if ep["method"].upper() not in ("GET", "HEAD"):
@@ -9204,6 +9223,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
     # ── 2. Race condition — concurrent duplicate submission ──────────────────
     con.status("business_flows", "running", "Race condition testing")
     for ep in workflow_eps[:5]:
+        _check_pause()
         if _shutdown_requested:
             break
         method = ep["method"].upper()
@@ -9260,6 +9280,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
     con.status("business_flows", "running", "Negative value injection")
     ep_sess = auth_sess if auth_sess else sess
     for ep in inventory[:40]:
+        _check_pause()
         if _shutdown_requested:
             break
         method = ep["method"].upper()
@@ -9315,6 +9336,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
                 if any(k in ep.get("path", "").lower() for k in
                        ("bulk", "batch", "mass", "multi", "all", "export", "import"))]
     for ep in bulk_eps[:10]:
+        _check_pause()
         if _shutdown_requested:
             break
         path       = ep["path"]
@@ -9521,6 +9543,7 @@ def phase_bola(settings: dict, auth_sess, output: OutputManager,
 
     # Test ID enumeration on discovered ID endpoints
     for ep, param_ids in id_endpoints[:5]:
+        _check_pause()
         if _shutdown_requested:
             break
         path_template = ep["path"]
@@ -9839,6 +9862,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
     # ── Bearer token in URL check (GAP-09: SI-156) ───────────────────
     _token_url_seen: set = set()
     for ep in inventory[:50]:
+        _check_pause()
         ep_url = ep.get("url", "")
         if ep_url:
             _check_token_in_url(ep_url, "session", output, _token_url_seen)
@@ -10398,6 +10422,7 @@ def phase_verb_tampering(settings: dict, sess: requests.Session,
         get_endpoints = [{"path": "/api/v1", "method": "GET", "params": [], "body_fields": []}]
 
     for ep in get_endpoints:
+        _check_pause()
         if _shutdown_requested:
             break
         path       = ep["path"]
@@ -10578,6 +10603,7 @@ def phase_soap(settings: dict, sess: requests.Session,
     )
 
     for sep in _soap_endpoints[:3]:
+        _check_pause()
         if _shutdown_requested:
             break
         for spoof_action in _soap_spoof_actions[:3]:
@@ -10638,6 +10664,7 @@ def phase_soap(settings: dict, sess: requests.Session,
         '</soapenv:Envelope>'
     )
     for sep in _soap_endpoints[:2]:
+        _check_pause()
         if _shutdown_requested:
             break
         try:
@@ -12152,9 +12179,13 @@ def main() -> None:
     global _pause_mgr
     _si_proj_root = Path(scan["project"]).resolve()
     _si_proj_root.mkdir(parents=True, exist_ok=True)
+    _si_active_pm = [None]  # mutable container for checkpoint callback
     if _pp is not None:
         _pause_mgr = _pp.PauseManager(_si_proj_root, "siphon")
-        _pause_mgr.start_watcher(grace_period=30)
+        _pause_mgr.start_watcher(
+            checkpoint_callback=lambda: _si_active_pm[0]._save() if _si_active_pm[0] else None,
+            grace_period=30,
+        )
         _pause_mgr.log_run_type(
             (_si_proj_root / "checkpoint.json").exists())
 
@@ -12205,6 +12236,7 @@ def main() -> None:
         )
 
         pm = ProgressManager(project_dir / "checkpoint.json")
+        _si_active_pm[0] = pm
         if pm.get_state()["completed_phases"]:
             con.info(f"Checkpoint found — resuming ({len(pm.get_state()['completed_phases'])} phases already done)")
 
@@ -12318,6 +12350,7 @@ def main() -> None:
         # TLS is server-side — run once before the credential loop (no role tag on pre-loop findings)
         output.set_auth_context([])
 
+        _check_pause()
         if phases_cfg.get("tls", True) and not pm.is_phase_complete("tls"):
             con.section(f"Siphon — {raw_url} [tls]")
             pm.set_phase_status("tls", "running", VantageConsole._PHASE_LABELS.get("tls", "tls"))
@@ -12337,6 +12370,7 @@ def main() -> None:
 
         # ── Per-credential context loop ──────────────────────────────────
         for _ctx in _cred_contexts:
+            _check_pause()
             _ctx_label = _ctx["label"]
             _ctx_auth  = _ctx["auth_sess"]
             _ctx_s     = _ctx["settings"]
@@ -12413,6 +12447,7 @@ def main() -> None:
                 return False
 
             def _run_phase(phase: str, fn, *args, _lbl: str = _ctx_label) -> None:
+                _check_pause()
                 pm.set_phase_status(f"{phase}#{_lbl}", "running",
                                     VantageConsole._PHASE_LABELS.get(phase, phase))
                 try:
@@ -12422,8 +12457,10 @@ def main() -> None:
                 except Exception as exc:
                     con.err(f"Phase {phase} [{_lbl}] error: {exc}")
                     pm.set_phase_status(f"{phase}#{_lbl}", "error", detail=str(exc))
+                _check_pause()
 
             def _run_phase_ret(phase: str, fn, *args, _lbl: str = _ctx_label):
+                _check_pause()
                 pm.set_phase_status(f"{phase}#{_lbl}", "running",
                                     VantageConsole._PHASE_LABELS.get(phase, phase))
                 try:
@@ -12435,6 +12472,8 @@ def main() -> None:
                     con.err(f"Phase {phase} [{_lbl}] error: {exc}")
                     pm.set_phase_status(f"{phase}#{_lbl}", "error", detail=str(exc))
                     return None
+                finally:
+                    _check_pause()
 
             # Phase 0: Discovery — accumulate endpoints across contexts
             if not _skip("discovery"):
