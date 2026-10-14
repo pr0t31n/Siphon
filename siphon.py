@@ -12234,6 +12234,15 @@ def main() -> None:
             engagement_name=eng.get("engagement_name", ""),
             target=(target.get("base_url") or target.get("host", "")) if isinstance(target, dict) else "",
         )
+        try:
+            import pr0t31n_dep_snapshot as _ds
+            _ds.write_snapshot(
+                base_project, "siphon", VERSION,
+                binaries=["ffuf", "grpcurl", "katana", "sqlmap", "nuclei"],
+                pip_packages=["requests", "colorama", "pyyaml", "selenium"],
+            )
+        except Exception:
+            pass
 
         pm = ProgressManager(project_dir / "checkpoint.json")
         _si_active_pm[0] = pm

@@ -117,6 +117,26 @@ def run(cmd, check: bool = True, capture: bool = False,
 # pip pre-check
 # ---------------------------------------------------------------------------
 
+
+def _dpkg_installed(pkg):
+    try:
+        r = subprocess.run(["dpkg", "-s", pkg],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return r.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def _rpm_installed(pkg):
+    try:
+        return subprocess.run(
+            ["rpm", "-q", pkg],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        ).returncode == 0
+    except FileNotFoundError:
+        return False
+
+
 def _pip_installed(pkg_spec: str) -> bool:
     """Check whether a pip package is already importable."""
     import importlib.util
@@ -136,7 +156,25 @@ def _pip_installed(pkg_spec: str) -> bool:
 # Homebrew helper — never run as root
 # ---------------------------------------------------------------------------
 
+def _brew_installed_set():
+    bp = shutil.which("brew") or "/opt/homebrew/bin/brew"
+    try:
+        r = subprocess.run([bp, "list", "--formula", "-1"],
+                           capture_output=True, text=True, timeout=30)
+        return set(r.stdout.split()) if r.returncode == 0 else set()
+    except Exception:
+        return set()
+
+_brew_cache = None
+
 def brew_install(pkg: str) -> bool:
+    global _brew_cache
+    if _brew_cache is None:
+        _brew_cache = _brew_installed_set()
+    base = pkg.rsplit("/", 1)[-1] if "/" in pkg else pkg
+    if base in _brew_cache:
+        info(f"  ✓ {pkg} already installed (brew)")
+        return True
     brew_path = shutil.which("brew")
     if not brew_path:
         for p in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]:
@@ -173,15 +211,30 @@ def apt_install(packages: list) -> None:
         info("Running apt-get update ...")
         run(["apt-get", "update", "-y"])
         _apt_updated = True
-    run(["apt-get", "install", "-y"] + packages)
+    _needed = [p for p in packages if not _dpkg_installed(p)]
+    _skip = len(packages) - len(_needed)
+    if _skip:
+        info(f"  {_skip} APT package(s) already installed")
+    if _needed:
+        run(["apt-get", "install", "-y"] + _needed)
 
 
 def dnf_install(packages: list) -> None:
-    run(["dnf", "install", "-y"] + packages)
+    _needed = [p for p in packages if not _rpm_installed(p)]
+    _skip = len(packages) - len(_needed)
+    if _skip:
+        info(f"  {_skip} DNF package(s) already installed")
+    if _needed:
+        run(["dnf", "install", "-y"] + _needed)
 
 
 def zypper_install(packages: list) -> None:
-    run(["zypper", "install", "-y"] + packages)
+    _needed = [p for p in packages if not _rpm_installed(p)]
+    _skip = len(packages) - len(_needed)
+    if _skip:
+        info(f"  {_skip} zypper package(s) already installed")
+    if _needed:
+        run(["zypper", "install", "-y"] + _needed)
 
 
 # ---------------------------------------------------------------------------
@@ -509,13 +562,17 @@ def install_selenium() -> None:
                 if not _apt_updated:
                     run(["apt-get", "update", "-y"], check=False)
                     _apt_updated = True
-                result = subprocess.run(
-                    ["apt-get", "install", "-y", "python3-selenium"],
-                    check=False,
-                )
-                if result.returncode == 0:
+                if _dpkg_installed("python3-selenium"):
                     _installed = True
-                    info("python3-selenium installed via apt-get")
+                    info("python3-selenium already installed (apt)")
+                else:
+                    result = subprocess.run(
+                        ["apt-get", "install", "-y", "python3-selenium"],
+                        check=False,
+                    )
+                    if result.returncode == 0:
+                        _installed = True
+                        info("python3-selenium installed via apt-get")
             elif OS == "dnf" and shutil.which("dnf"):
                 warn("pip install failed — trying dnf (last resort) ...")
                 result = subprocess.run(
