@@ -1793,12 +1793,12 @@
     },
     {
       "id": "SI-028",
-      "title": "Missing Secure Cookie Attribute: SameSite",
+      "title": "Cookies: Missing SameSite Attribute",
       "aliases": [
-        "Missing Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: HttpOnly",
-        "Misconfigured Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: Secure"
+        "Cookies: Missing SameSite Attribute",
+        "Cookies: Missing HttpOnly Flag",
+        "Cookies: Misconfigured SameSite Attribute",
+        "Cookies: Missing Secure Flag"
       ],
       "source_tools": [
         "siphon"
@@ -1903,12 +1903,12 @@
     },
     {
       "id": "SI-029",
-      "title": "Misconfigured Secure Cookie Attribute: SameSite",
+      "title": "Cookies: Misconfigured SameSite Attribute",
       "aliases": [
-        "Missing Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: HttpOnly",
-        "Misconfigured Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: Secure"
+        "Cookies: Missing SameSite Attribute",
+        "Cookies: Missing HttpOnly Flag",
+        "Cookies: Misconfigured SameSite Attribute",
+        "Cookies: Missing Secure Flag"
       ],
       "source_tools": [
         "siphon"
@@ -2408,12 +2408,12 @@
     },
     {
       "id": "SI-037",
-      "title": "Missing Secure Cookie Attribute: HttpOnly",
+      "title": "Cookies: Missing HttpOnly Flag",
       "aliases": [
-        "Missing Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: HttpOnly",
-        "Misconfigured Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: Secure"
+        "Cookies: Missing SameSite Attribute",
+        "Cookies: Missing HttpOnly Flag",
+        "Cookies: Misconfigured SameSite Attribute",
+        "Cookies: Missing Secure Flag"
       ],
       "source_tools": [
         "siphon"
@@ -2518,12 +2518,12 @@
     },
     {
       "id": "SI-038",
-      "title": "Missing Secure Cookie Attribute: Secure",
+      "title": "Cookies: Missing Secure Flag",
       "aliases": [
-        "Missing Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: HttpOnly",
-        "Misconfigured Secure Cookie Attribute: SameSite",
-        "Missing Secure Cookie Attribute: Secure"
+        "Cookies: Missing SameSite Attribute",
+        "Cookies: Missing HttpOnly Flag",
+        "Cookies: Misconfigured SameSite Attribute",
+        "Cookies: Missing Secure Flag"
       ],
       "source_tools": [
         "siphon"

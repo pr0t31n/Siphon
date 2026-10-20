@@ -5461,7 +5461,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         if "httponly" not in _sc_lower:
             output.add_finding(
                 phase="recon",
-                title="Missing Secure Cookie Attribute: HttpOnly",
+                title="Cookies: Missing HttpOnly Flag",
                 severity="LOW",
                 url=base_url,
                 detail=(
@@ -5477,7 +5477,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         if _is_https and "secure" not in _sc_lower:
             output.add_finding(
                 phase="recon",
-                title="Missing Secure Cookie Attribute: Secure",
+                title="Cookies: Missing Secure Flag",
                 severity="LOW",
                 url=base_url,
                 detail=(
@@ -5493,7 +5493,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         if not _ss_m:
             output.add_finding(
                 phase="recon",
-                title="Missing Secure Cookie Attribute: SameSite",
+                title="Cookies: Missing SameSite Attribute",
                 severity="LOW",
                 url=base_url,
                 detail=(
@@ -5510,7 +5510,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             if _ss_val not in ("strict", "lax", "none"):
                 output.add_finding(
                     phase="recon",
-                    title="Misconfigured Secure Cookie Attribute: SameSite",
+                    title="Cookies: Misconfigured SameSite Attribute",
                     severity="LOW",
                     url=base_url,
                     detail=(
@@ -5524,7 +5524,7 @@ def phase_recon(settings: dict, sess: requests.Session,
             elif _ss_val == "none" and "secure" not in _sc_lower:
                 output.add_finding(
                     phase="recon",
-                    title="Misconfigured Secure Cookie Attribute: SameSite",
+                    title="Cookies: Misconfigured SameSite Attribute",
                     severity="LOW",
                     url=base_url,
                     detail=(
