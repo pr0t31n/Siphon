@@ -8214,7 +8214,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "MEDIUM",
       "cwe": [],
       "cve_examples": [],
       "cvss_v3_base": null,
@@ -8253,7 +8253,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [],
       "cve_examples": [],
       "cvss_v3_base": null,
@@ -8292,7 +8292,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "MEDIUM",
       "cwe": [],
       "cve_examples": [],
       "cvss_v3_base": null,
@@ -8331,7 +8331,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "INFO",
       "cwe": [],
       "cve_examples": [],
       "cvss_v3_base": null,
@@ -8377,7 +8377,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-639"
       ],
@@ -8486,7 +8486,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "MEDIUM",
       "cwe": [
         "CWE-942"
       ],
@@ -8586,7 +8586,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "93",
         "113"
@@ -8693,7 +8693,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "CRITICAL",
       "cwe": [],
       "cve_examples": [],
       "cvss_v3_base": null,
@@ -8739,7 +8739,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-347"
       ],
@@ -8847,7 +8847,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-90"
       ],
@@ -8962,7 +8962,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-915"
       ],
@@ -9070,7 +9070,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-943"
       ],
@@ -9189,7 +9189,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-20",
         "CWE-77",
@@ -9315,7 +9315,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-22",
         "CWE-23",
@@ -9548,7 +9548,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-20",
         "CWE-601"
@@ -9640,7 +9640,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-502"
       ],
@@ -9735,7 +9735,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-1392"
       ],
@@ -9871,7 +9871,7 @@
       "source_tools": [
         "siphon"
       ],
-      "risk": "",
+      "risk": "HIGH",
       "cwe": [
         "CWE-611",
         "CWE-827"
