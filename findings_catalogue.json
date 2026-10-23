@@ -283,7 +283,7 @@
     },
     {
       "id": "SI-006",
-      "title": "Undocumented API Endpoint Detected",
+      "title": "Discovery: Undocumented API Endpoint Detected",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -339,7 +339,7 @@
     },
     {
       "id": "SI-007",
-      "title": "Undocumented HTTP Method Accepted",
+      "title": "Discovery: Undocumented HTTP Method Accepted",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -394,7 +394,7 @@
     },
     {
       "id": "SI-008",
-      "title": "Undocumented API Parameter Accepted",
+      "title": "Discovery: Undocumented API Parameter Accepted",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -449,7 +449,7 @@
     },
     {
       "id": "SI-009",
-      "title": "Undocumented Parameter Accepted",
+      "title": "Discovery: Undocumented Parameter Accepted",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -504,7 +504,7 @@
     },
     {
       "id": "SI-010",
-      "title": "Endpoint Not in Scope File",
+      "title": "Discovery: Endpoint Not in Scope File",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -557,7 +557,7 @@
     },
     {
       "id": "SI-011",
-      "title": "HTTP Method Not in Scope File",
+      "title": "Discovery: HTTP Method Not in Scope File",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -610,7 +610,7 @@
     },
     {
       "id": "SI-012",
-      "title": "GraphQL Subscription Endpoint Detected",
+      "title": "Discovery: GraphQL Subscription Endpoint Detected",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -786,7 +786,7 @@
     },
     {
       "id": "SI-015",
-      "title": "File Upload Endpoint Detected",
+      "title": "Discovery: File Upload Endpoint Detected",
       "aliases": [
         "Interesting Endpoint Discovered",
         "Wildcard (*) Detected",
@@ -885,7 +885,7 @@
     },
     {
       "id": "SI-016",
-      "title": "Potential Undocumented Upload Endpoint Discovered",
+      "title": "Discovery: Potential Undocumented Upload Endpoint Discovered",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -2686,7 +2686,7 @@
     },
     {
       "id": "SI-040",
-      "title": "CRLF Injection in API Parameter",
+      "title": "Injection: CRLF Injection in API Parameter",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -2743,7 +2743,7 @@
     },
     {
       "id": "SI-041",
-      "title": "Log Injection via User-Agent / Query Parameter",
+      "title": "Injection: Log Injection via User-Agent / Query Parameter",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -2800,7 +2800,7 @@
     },
     {
       "id": "SI-042",
-      "title": "SOAP Verbose Fault / Error Disclosure",
+      "title": "Information Disclosure: SOAP Verbose Fault / Error Disclosure",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3081,7 +3081,7 @@
     },
     {
       "id": "SI-047",
-      "title": "JSONP Endpoint Detected — Potential Data Leakage",
+      "title": "Information Disclosure: JSONP Endpoint Detected — Potential Data Leakage",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3195,7 +3195,7 @@
     },
     {
       "id": "SI-049",
-      "title": "Possible SSRF — Delayed Response",
+      "title": "Injection: Possible SSRF — Delayed Response",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3485,7 +3485,7 @@
     },
     {
       "id": "SI-054",
-      "title": "Server-Timing Header Leaks Authentication Duration",
+      "title": "Information Disclosure: Server-Timing Header Leaks Authentication Duration",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3542,7 +3542,7 @@
     },
     {
       "id": "SI-055",
-      "title": "API Returns More Fields Than Documented",
+      "title": "Information Disclosure: API Returns More Fields Than Documented",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3598,7 +3598,7 @@
     },
     {
       "id": "SI-056",
-      "title": "HTTP Method Override — DELETE via POST Accepted",
+      "title": "Web Misconfiguration: HTTP Method Override — DELETE via POST Accepted",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3654,7 +3654,7 @@
     },
     {
       "id": "SI-057",
-      "title": "CSV Injection in User Export",
+      "title": "Injection: CSV Injection in User Export",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3936,7 +3936,7 @@
     },
     {
       "id": "SI-062",
-      "title": "Excessive Data Exposure — Sensitive Fields in API Response",
+      "title": "Information Disclosure: Excessive Data Exposure — Sensitive Fields in API Response",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4049,7 +4049,7 @@
     },
     {
       "id": "SI-064",
-      "title": "Sensitive Data Exposed in API Response",
+      "title": "Information Disclosure: Sensitive Data Exposed in API Response",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4523,7 +4523,7 @@
     },
     {
       "id": "SI-071",
-      "title": "JWT kid Header Path Traversal",
+      "title": "Injection: JWT kid Header Path Traversal",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4696,7 +4696,7 @@
     },
     {
       "id": "SI-074",
-      "title": "Reflected Cross-Site Scripting (XSS)",
+      "title": "Injection: Reflected Cross-Site Scripting (XSS)",
       "aliases": [
         "Cross-Site Scripting",
         "XSS Vulnerability",
@@ -4985,7 +4985,7 @@
     },
     {
       "id": "SI-078",
-      "title": "SOAP Injection — Parameter Reflected or Error Triggered",
+      "title": "Injection: SOAP Injection — Parameter Reflected or Error Triggered",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5042,7 +5042,7 @@
     },
     {
       "id": "SI-079",
-      "title": "SSRF via API Parameter",
+      "title": "Injection: SSRF via API Parameter",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5720,7 +5720,7 @@
     },
     {
       "id": "SI-089",
-      "title": "SQL Injection in API Parameter",
+      "title": "Injection: SQL Injection in API Parameter",
       "aliases": [
         "SQLi",
         "Database Injection",
@@ -5852,7 +5852,7 @@
     },
     {
       "id": "SI-090",
-      "title": "Blind SQL Injection (Boolean-Based)",
+      "title": "Injection: Blind SQL Injection (Boolean-Based)",
       "aliases": [
         "SQLi",
         "Database Injection",
@@ -5982,7 +5982,7 @@
     },
     {
       "id": "SI-091",
-      "title": "Blind SQL Injection (Time-Based)",
+      "title": "Injection: Blind SQL Injection (Time-Based)",
       "aliases": [
         "SQLi",
         "Database Injection",
@@ -6112,7 +6112,7 @@
     },
     {
       "id": "SI-092",
-      "title": "NoSQL Injection in API Parameter",
+      "title": "Injection: NoSQL Injection in API Parameter",
       "aliases": [
         "NoSQL Injection in API Parameter",
         "CouchDB Injection",
@@ -6214,7 +6214,7 @@
     },
     {
       "id": "SI-093",
-      "title": "OS Command Injection in API Parameter",
+      "title": "Injection: OS Command Injection in API Parameter",
       "aliases": [
         "Shell Injection",
         "Remote Code Execution",
@@ -6334,7 +6334,7 @@
     },
     {
       "id": "SI-094",
-      "title": "Server-Side Template Injection (SSTI)",
+      "title": "Injection: Server-Side Template Injection (SSTI)",
       "aliases": [
         "Freemarker Injection",
         "Template Injection",
@@ -6446,7 +6446,7 @@
     },
     {
       "id": "SI-095",
-      "title": "Path Traversal / Local File Inclusion in API",
+      "title": "Injection: Path Traversal / Local File Inclusion in API",
       "aliases": [
         "File Path Traversal",
         "Arbitrary File Read",
@@ -6564,7 +6564,7 @@
     },
     {
       "id": "SI-096",
-      "title": "LDAP Injection in API Parameter",
+      "title": "Injection: LDAP Injection in API Parameter",
       "aliases": [
         "LDAP Authentication Bypass",
         "Directory Service Injection",
@@ -6733,7 +6733,7 @@
     },
     {
       "id": "SI-098",
-      "title": "JWT — jku/x5u Header Injection (JWKS Spoofing)",
+      "title": "Injection: JWT — jku/x5u Header Injection (JWKS Spoofing)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -6796,7 +6796,7 @@
     },
     {
       "id": "SI-099",
-      "title": "JWT — kid Header SQL Injection",
+      "title": "Injection: JWT — kid Header SQL Injection",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -6973,7 +6973,7 @@
     },
     {
       "id": "SI-102",
-      "title": "WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)",
+      "title": "Injection: WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)",
       "aliases": [
         "SOAP WS-Addressing SSRF",
         "WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)"
@@ -7272,7 +7272,7 @@
     },
     {
       "id": "SI-105",
-      "title": "Unsafe API Consumption — Webhook URL Accepted (SSRF Risk)",
+      "title": "Injection: Unsafe API Consumption — Webhook URL Accepted (SSRF Risk)",
       "aliases": [
         "Unsafe API Consumption — Webhook URL Accepted (SSRF Risk)",
         "Server-Side Request Forgery via Webhook",
@@ -7368,7 +7368,7 @@
     },
     {
       "id": "SI-106",
-      "title": "Unsafe API Consumption — Open Redirect to External URL",
+      "title": "Web Vulnerability: Unsafe API Consumption — Open Redirect to External URL",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -7427,7 +7427,7 @@
     },
     {
       "id": "SI-107",
-      "title": "Unsafe API Consumption — Serialization Markers in Response",
+      "title": "Injection: Unsafe API Consumption — Serialization Markers in Response",
       "aliases": [
         "Unsafe Consumption — Serialization Markers in API Response",
         "Unsafe API Consumption — Serialization Markers in Response"
@@ -7717,7 +7717,7 @@
     },
     {
       "id": "SI-110",
-      "title": "XML External Entity (XXE) Injection in API",
+      "title": "Injection: XML External Entity (XXE) Injection in API",
       "aliases": [
         "XXE",
         "XXE in API",
@@ -7836,7 +7836,7 @@
     },
     {
       "id": "SI-111",
-      "title": "HTTP Methods: Unsafe Methods Enabled",
+      "title": "Web Misconfiguration: Unsafe Methods Enabled",
       "aliases": [
         "TRACE Method XST Attack",
         "Cross-Site Tracing (XST)",
@@ -7922,7 +7922,7 @@
     },
     {
       "id": "SI-112",
-      "title": "HTTP Method Override Accepted",
+      "title": "Web Misconfiguration: HTTP Method Override Accepted",
       "aliases": [
         "HTTP Method Override Abuse",
         "HTTP Verb Tampering",
@@ -8150,7 +8150,7 @@
     },
     {
       "id": "SI-115",
-      "title": "CORS Wildcard (*) Detected",
+      "title": "Discovery: CORS Wildcard (*) Detected",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -8209,7 +8209,7 @@
     },
     {
       "id": "SI-116",
-      "title": "HTTP Method Override Accepted — {override_method} via {override_hdr}",
+      "title": "Web Misconfiguration: HTTP Method Override Accepted — {override_method} via {override_hdr}",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -8326,7 +8326,7 @@
     },
     {
       "id": "SI-119",
-      "title": "Wildcard (*) Detected: {base_url}",
+      "title": "Discovery: Wildcard (*) Detected: {base_url}",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -8579,7 +8579,7 @@
     },
     {
       "id": "SI-122",
-      "title": "CRLF Injection",
+      "title": "Injection: CRLF Injection",
       "aliases": [
         "CRLF Injection"
       ],
@@ -8836,7 +8836,7 @@
     },
     {
       "id": "SI-125",
-      "title": "LDAP Injection",
+      "title": "Injection: LDAP Injection",
       "aliases": [
         "LDAP Authentication Bypass",
         "Directory Service Injection",
@@ -9057,7 +9057,7 @@
     },
     {
       "id": "SI-127",
-      "title": "NoSQL Injection",
+      "title": "Injection: NoSQL Injection",
       "aliases": [
         "NoSQL Injection in API Parameter",
         "CouchDB Injection",
@@ -9174,7 +9174,7 @@
     },
     {
       "id": "SI-128",
-      "title": "OS Command Injection",
+      "title": "Injection: OS Command Injection",
       "aliases": [
         "Shell Injection",
         "Remote Code Execution",
@@ -9301,7 +9301,7 @@
     },
     {
       "id": "SI-129",
-      "title": "Path Traversal / Local File Inclusion",
+      "title": "Injection: Path Traversal / Local File Inclusion",
       "aliases": [
         "File Path Traversal",
         "Arbitrary File Read",
@@ -9424,7 +9424,7 @@
     },
     {
       "id": "SI-130",
-      "title": "SQL Injection (Error-Based)",
+      "title": "Injection: SQL Injection (Error-Based)",
       "aliases": [
         "SQLi",
         "Database Injection",
@@ -9538,7 +9538,7 @@
     },
     {
       "id": "SI-131",
-      "title": "Unsafe Consumption — Open Redirect to External URL",
+      "title": "Web Vulnerability: Unsafe Consumption — Open Redirect to External URL",
       "aliases": [
         "Open URL Redirect",
         "Redirect Parameter Manipulation",
@@ -9632,7 +9632,7 @@
     },
     {
       "id": "SI-132",
-      "title": "Unsafe Consumption — Serialization Markers in API Response",
+      "title": "Injection: Unsafe Consumption — Serialization Markers in API Response",
       "aliases": [
         "Unsafe Consumption — Serialization Markers in API Response",
         "Unsafe API Consumption — Serialization Markers in Response"
@@ -9857,7 +9857,7 @@
     },
     {
       "id": "SI-134",
-      "title": "XML External Entity (XXE) Injection",
+      "title": "Injection: XML External Entity (XXE) Injection",
       "aliases": [
         "XXE",
         "XXE in API",
@@ -10145,7 +10145,7 @@
     },
     {
       "id": "SI-138",
-      "title": "HTTP Parameter Pollution",
+      "title": "Injection: HTTP Parameter Pollution",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10461,7 +10461,7 @@
     },
     {
       "id": "SI-144",
-      "title": "Server-Sent Events Stream Over Cleartext HTTP",
+      "title": "Web Misconfiguration: Server-Sent Events Stream Over Cleartext HTTP",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10620,7 +10620,7 @@
     },
     {
       "id": "SI-147",
-      "title": "Application Responses Identify Valid Accounts",
+      "title": "Information Disclosure: Application Responses Identify Valid Accounts",
       "aliases": [
         "User Enumeration via Response Differential",
         "Username Enumeration"
@@ -10990,7 +10990,7 @@
     },
     {
       "id": "SI-154",
-      "title": "Unhandled Application Exception",
+      "title": "Information Disclosure: Unhandled Application Exception",
       "aliases": [
         "Exception Disclosure in API Response",
         "Stack Trace Disclosure",
@@ -11104,7 +11104,7 @@
     },
     {
       "id": "SI-156",
-      "title": "Bearer Token Transmitted in URL Query Parameter",
+      "title": "Information Disclosure: Bearer Token Transmitted in URL Query Parameter",
       "aliases": [
         "Bearer Token in URL",
         "Token Leakage via URL"
@@ -11590,7 +11590,7 @@
     },
     {
       "id": "SI-166",
-      "title": "API Version Header Manipulation Yields Different Response",
+      "title": "Web Misconfiguration: API Version Header Manipulation Yields Different Response",
       "aliases": [
         "API Version Negotiation",
         "Version Header Bypass"
@@ -11635,7 +11635,7 @@
     },
     {
       "id": "SI-167",
-      "title": "Web Endpoint Discovered (Katana)",
+      "title": "Discovery: Web Endpoint Discovered (Katana)",
       "aliases": [
         "Katana Endpoint Discovery",
         "Web Path Discovered"
