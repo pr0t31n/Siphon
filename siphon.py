@@ -2855,7 +2855,7 @@ def _check_jwt_pii(payload: dict, url: str, output: "OutputManager") -> bool:
         return False
     output.add_finding(
         phase="session",
-        title="JWT Token Contains Personally Identifiable Information",
+        title="JWT: JWT Token Contains Personally Identifiable Information",
         severity="MEDIUM",
         url=url,
         detail=(
@@ -4853,7 +4853,7 @@ def phase_discovery(settings: dict, sess: requests.Session,
             if src.startswith(("http://", "https://")):
                 output.add_finding(
                     phase="discovery",
-                    title="API Specification Exposed",
+                    title="Sensitive File Exposed: API Specification Exposed",
                     severity="INFO",
                     url=src,
                     detail=f"API specification ({fmt}) is publicly accessible.",
@@ -4906,7 +4906,7 @@ def phase_discovery(settings: dict, sess: requests.Session,
                         con.info(f"Discovered spec at: {probe_url} ({fmt})")
                         output.add_finding(
                             phase="discovery",
-                            title="API Specification Exposed",
+                            title="Sensitive File Exposed: API Specification Exposed",
                             severity="LOW",
                             url=probe_url,
                             detail=f"API specification ({fmt}) found at {probe_url}",
@@ -5554,7 +5554,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                     output, "recon", "cors_wildcard", test_resp)
                 output.add_finding(
                     phase="recon",
-                    title="Security Misconfiguration / CORS Wildcard with Credentials",
+                    title="Permissive Security Header: Security Misconfiguration / CORS Wildcard with Credentials",
                     severity="HIGH" if _acac_str.lower() == "true" else "MEDIUM",
                     url=base_url,
                     detail=f"API sets Access-Control-Allow-Origin: *{_cred_note}. Wildcard CORS allows any origin to read API responses.",
@@ -5568,7 +5568,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                     output, "recon", "cors_misconfig", test_resp)
                 output.add_finding(
                     phase="recon",
-                    title="CORS Misconfiguration Allowing Credential Leakage",
+                    title="Permissive Security Header: CORS Misconfiguration Allowing Credential Leakage",
                     severity="HIGH",
                     url=base_url,
                     detail="The CORS policy reflects arbitrary origins or uses a wildcard origin combined with credentials-allowed, permitting malicious third-party sites to make credentialed cross-origin requests and read responses.",
@@ -5589,7 +5589,7 @@ def phase_recon(settings: dict, sess: requests.Session,
                 output, "recon", "cors_null_origin", _null_resp)
             output.add_finding(
                 phase="recon",
-                title="CORS Allows Null Origin",
+                title="Permissive Security Header: CORS Allows Null Origin",
                 severity=_null_sev,
                 url=base_url,
                 detail=(
@@ -5653,7 +5653,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     if detected_frameworks:
         output.add_finding(
             phase="recon",
-            title="API Framework Identified",
+            title="Discovery: API Framework Identified",
             severity="INFO",
             url=base_url,
             detail=f"Framework fingerprint detected: {', '.join(detected_frameworks)}",
@@ -5691,7 +5691,7 @@ def phase_recon(settings: dict, sess: requests.Session,
         if dr is not None and dr.status_code == 200 and _debug_body_re.search(dr.text[:4000]):
             output.add_finding(
                 phase="recon",
-                title="Debug / Developer Console Exposed",
+                title="Debug Endpoint Exposed: Debug / Developer Console Exposed",
                 severity="HIGH",
                 url=durl,
                 detail=f"A debug or developer console endpoint is accessible at {durl}.",
@@ -5815,7 +5815,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     if leaked_headers:
         output.add_finding(
             phase="recon",
-            title="Sensitive Authentication Headers Exposed in Response",
+            title="Authentication: Sensitive Authentication Headers Exposed in Response",
             severity="HIGH",
             url=base_url,
             detail=(
@@ -5845,7 +5845,7 @@ def phase_recon(settings: dict, sess: requests.Session,
     if _rl_headers_found:
         output.add_finding(
             phase="recon",
-            title="Rate Limit Headers Expose Throttling Configuration",
+            title="Authentication: Rate Limit Headers Expose Throttling Configuration",
             severity="INFO",
             url=base_url,
             detail=(
@@ -6048,7 +6048,7 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
                 _body_snippet = resp.text[:500] if hasattr(resp, 'text') else ""
                 output.add_finding(
                     phase="fuzzing",
-                    title="Improper Input Validation Results in Server Error",
+                    title="Input Validation: Improper Input Validation Results in Server Error",
                     severity="MEDIUM",
                     url=url,
                     detail=(
@@ -6543,7 +6543,7 @@ def _content_type_confusion(endpoint, base_url, sess, timeout, url, method, outp
     if r is not None and r.status_code in _ACCEPTED_STATUS:
         output.add_finding(
             phase="fuzzing",
-            title="Content-Type Confusion — Alternate Body Format Accepted",
+            title="Misconfigured Security Header: Content-Type Confusion — Alternate Body Format Accepted",
             severity="LOW", url=url, method=method,
             detail=f"The endpoint accepted a form-urlencoded body (HTTP {r.status_code}) for a request documented to use JSON. Accepting multiple body formats can enable parser-differential attacks, input-validation bypass, and CSRF.",
             evidence="Form-urlencoded body accepted on a JSON endpoint.",
@@ -6583,7 +6583,7 @@ def _resource_consumption(endpoint, base_url, sess, timeout, url, method, base, 
             if rlen > max(base_len * 5, base_len + 50000):
                 output.add_finding(
                     phase="rate_limiting",
-                    title="Unbounded Resource Consumption via Pagination Parameter",
+                    title="Input Validation: Unbounded Resource Consumption via Pagination Parameter",
                     severity="MEDIUM", url=url, method=method,
                     detail=f"Parameter '{name}' accepted an extreme value ({huge}) and returned a ~{rlen}-byte response versus a {base_len}-byte baseline, indicating the API does not cap the result-set size regardless of the client-supplied value (API4 Unrestricted Resource Consumption).",
                     evidence=f"{name}={huge} returned {rlen} bytes (baseline {base_len}).",
@@ -6678,7 +6678,7 @@ def _schema_abuse_checks(endpoint: dict, base_url: str, sess, output, timeout,
             if r is not None and r.status_code in _ACCEPTED_STATUS:
                 output.add_finding(
                     phase="fuzzing",
-                    title="Enumerated Parameter Value Restriction Not Enforced",
+                    title="API Misconfiguration: Enumerated Parameter Value Restriction Not Enforced",
                     severity="LOW", url=url,
                     detail=f"Parameter '{name}' declares an enumerated set of allowed values {enum}, but the server accepted an out-of-enum value (HTTP {r.status_code}) instead of rejecting it. Server-side value validation appears to be missing.",
                     evidence=f"Out-of-enum value accepted on parameter '{name}'.",
@@ -6696,7 +6696,7 @@ def _schema_abuse_checks(endpoint: dict, base_url: str, sess, output, timeout,
             if r is not None and r.status_code in _ACCEPTED_STATUS:
                 output.add_finding(
                     phase="fuzzing",
-                    title="Numeric Parameter Boundary Not Enforced",
+                    title="Input Validation: Numeric Parameter Boundary Not Enforced",
                     severity="LOW", url=url,
                     detail=f"Parameter '{name}' declares numeric bounds but the server accepted an out-of-range value ({bad}, HTTP {r.status_code}) without rejecting it.",
                     evidence=f"Out-of-range value {bad} accepted on parameter '{name}'.",
@@ -6710,7 +6710,7 @@ def _schema_abuse_checks(endpoint: dict, base_url: str, sess, output, timeout,
             if r is not None and r.status_code in _ACCEPTED_STATUS:
                 output.add_finding(
                     phase="fuzzing",
-                    title="Parameter Type Confusion Accepted",
+                    title="Input Validation: Parameter Type Confusion Accepted",
                     severity="MEDIUM", url=url,
                     detail=f"Parameter '{name}' is declared as a scalar ({p.get('type')}) but the server accepted a JSON array value (HTTP {r.status_code}). Type confusion can enable NoSQL operator injection, authentication bypass, or application logic errors.",
                     evidence=f"Non-scalar (array) value accepted on parameter '{name}'.",
@@ -7405,7 +7405,7 @@ def phase_injection(settings: dict, sess: requests.Session,
                     _500_seen.add(_ep_key)
                     output.add_finding(
                         phase="injection",
-                        title="Improper Input Validation Results in Server Error",
+                        title="Input Validation: Improper Input Validation Results in Server Error",
                         severity="MEDIUM",
                         url=url,
                         detail=(
@@ -7523,7 +7523,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                 ):
                     output.add_finding(
                         phase="auth_bypass",
-                        title="Weak or Default Credentials Accepted",
+                        title="Authentication: Default Credentials Accepted",
                         severity="CRITICAL",
                         url=login_url,
                         detail="The target accepted well-known default or factory-set credentials, granting unauthorised access.",
@@ -7677,7 +7677,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
     if "jku" in header:
         output.add_finding(
             phase="auth_bypass",
-            title="JWT Contains jku Header",
+            title="JWT: JWT Contains jku Header",
             severity="HIGH",
             url=base_url,
             detail=(f"JWT header contains 'jku' field pointing to: {header['jku']}. "
@@ -7711,7 +7711,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
             if resp and resp.status_code in (200, 201):
                 output.add_finding(
                     phase="auth_bypass",
-                    title="JWT None Algorithm Authentication Bypass",
+                    title="Authentication Bypass: JWT None Algorithm Authentication Bypass",
                     severity="CRITICAL",
                     url=url,
                     detail="The application accepts JSON Web Tokens specifying the alg:none algorithm, allowing an attacker to forge arbitrary tokens without possessing a signing key and bypass authentication entirely.",
@@ -7758,7 +7758,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
             if resp and resp.status_code in (200, 201):
                 output.add_finding(
                     phase="auth_bypass",
-                    title="Weak JWT Secret",
+                    title="Authentication: Weak JWT Secret",
                     severity="HIGH",
                     url=url,
                     detail=f"JWT was re-signed with weak secret '{secret}' and accepted.",
@@ -7787,7 +7787,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
         if "exp" not in payload:
             output.add_finding(
                 phase="auth_bypass",
-                title="JWT Missing Expiry Claim",
+                title="JWT: JWT Missing Expiry Claim",
                 severity="MEDIUM",
                 url=base_url,
                 detail=(f"The JWT in use has no 'exp' claim. Without an expiry, the token is "
@@ -7816,7 +7816,7 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                     if not re.search(r'invalid|incorrect|failed|unauthorized|wrong|error', resp.text, re.I):
                         output.add_finding(
                             phase="auth_bypass",
-                            title="Type Juggling / JSON Type Confusion Authentication Bypass",
+                            title="Authentication Bypass: Type Juggling / JSON Type Confusion Authentication Bypass",
                             severity="HIGH",
                             url=login_url_jt,
                             detail=(f"API login endpoint accepted a JSON body with non-string types "
@@ -8183,7 +8183,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
         )
         output.add_finding(
             phase="rate_limiting",
-            title="Missing Rate Limiting",
+            title="Authentication: Missing Rate Limiting",
             severity="HIGH",
             url=test_url,
             detail="Authentication and sensitive API endpoints do not enforce request rate limits, account lockout, or CAPTCHA, allowing unlimited brute-force or credential-stuffing attempts.",
@@ -8211,7 +8211,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
                 hdr_val  = list(bypass_hdr.values())[0]
                 output.add_finding(
                     phase="rate_limiting",
-                    title="Rate Limit Bypass via X-Forwarded-For Header",
+                    title="Authentication: Rate Limit Bypass via X-Forwarded-For Header",
                     severity="HIGH",
                     url=test_url,
                     detail=(f"Rate limit bypassed by setting {hdr_name}: {hdr_val}. "
@@ -8231,7 +8231,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
                 if not retry_after:
                     output.add_finding(
                         phase="rate_limiting",
-                        title="Rate Limit Response Missing Retry-After Header",
+                        title="Missing Security Header: Rate Limit Response Missing Retry-After Header",
                         severity="LOW",
                         url=test_url,
                         detail=(
@@ -8264,7 +8264,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
         if anon_bypass:
             output.add_finding(
                 phase="rate_limiting",
-                title="Rate Limit Bypass — Unauthenticated Session Has Separate Bucket",
+                title="Unauthenticated Access: Rate Limit Bypass — Unauthenticated Session Has Separate Bucket",
                 severity="MEDIUM",
                 url=test_url,
                 detail=(
@@ -8427,7 +8427,7 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
                 if leaked:
                     output.add_finding(
                         phase="mass_assignment",
-                        title="Mass Assignment / Privilege Escalation via Parameter Binding",
+                        title="Broken Access Control: Mass Assignment / Privilege Escalation via Parameter Binding",
                         severity="HIGH",
                         url=url,
                         detail="The application or API auto-binds request input properties to internal model objects without restricting which fields may be set, allowing an attacker to inject privileged fields (e.g., role, isAdmin) and escalate privileges.",
@@ -8450,7 +8450,7 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
                       len(attack_resp.text) > len(normal_body.__str__())):
                     output.add_finding(
                         phase="mass_assignment",
-                        title="Possible Mass Assignment — Response Differs",
+                        title="Broken Access Control: Possible Mass Assignment — Response Differs",
                         severity="MEDIUM",
                         url=url,
                         detail=(f"Response to mass-assignment payload differs from baseline "
@@ -8516,7 +8516,7 @@ def phase_mass_assignment(settings: dict, sess: requests.Session,
                             if priv_keys & flat_keys:
                                 output.add_finding(
                                     phase="mass_assignment",
-                                    title=f"Mass Assignment — {attack_label.title()} Accepted",
+                                    title=f"Broken Access Control: Mass Assignment — {attack_label.title()} Accepted",
                                     severity="HIGH",
                                     url=url,
                                     detail=(
@@ -8872,7 +8872,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
                 type_names = [t["name"] for t in types if not t["name"].startswith("__")]
                 output.add_finding(
                     phase="graphql",
-                    title="GraphQL Introspection Enabled",
+                    title="GraphQL: GraphQL Introspection Enabled",
                     severity="LOW",
                     url=gql_found,
                     detail=(f"GraphQL introspection is enabled, exposing full schema. "
@@ -8895,7 +8895,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
             if "errors" not in data:
                 output.add_finding(
                     phase="graphql",
-                    title="GraphQL Query Depth Attack",
+                    title="GraphQL: GraphQL Query Depth Attack",
                     severity="MEDIUM",
                     url=gql_found,
                     detail="GraphQL endpoint accepted a 10-level deep nested query without error.",
@@ -8915,7 +8915,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
             if "errors" not in data:
                 output.add_finding(
                     phase="graphql",
-                    title="GraphQL Directive Abuse — Accepted Without Limit",
+                    title="GraphQL: GraphQL Directive Abuse — Accepted Without Limit",
                     severity="LOW",
                     url=gql_found,
                     detail=(
@@ -8949,7 +8949,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
             if "data" in data and not data.get("errors"):
                 output.add_finding(
                     phase="graphql",
-                    title="GraphQL Fragment Sprawl — No Fragment Count Limit",
+                    title="GraphQL: GraphQL Fragment Sprawl — No Fragment Count Limit",
                     severity="MEDIUM",
                     url=gql_found,
                     detail=(
@@ -8982,7 +8982,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
                              r'StackTrace|java\.|NullPointer', err_text, re.I):
                     output.add_finding(
                         phase="graphql",
-                        title="GraphQL Error Response Leaks Internal Details",
+                        title="GraphQL: GraphQL Error Response Leaks Internal Details",
                         severity="MEDIUM",
                         url=gql_found,
                         detail=(
@@ -9046,7 +9046,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
             if re.search(r'[Dd]id you mean|[Ss]uggestion|[Ss]imilar', _sg_err_text):
                 output.add_finding(
                     phase="graphql",
-                    title="GraphQL Field Name Suggestions Enabled",
+                    title="GraphQL: GraphQL Field Name Suggestions Enabled",
                     severity="LOW",
                     url=gql_found,
                     detail=(
@@ -9080,7 +9080,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
             if isinstance(_b_data, list) and len(_b_data) >= 2:
                 output.add_finding(
                     phase="graphql",
-                    title="GraphQL Batching Enabled Without Limit",
+                    title="GraphQL: GraphQL Batching Enabled Without Limit",
                     severity="MEDIUM",
                     url=gql_found,
                     detail=(
@@ -9116,7 +9116,7 @@ def phase_graphql(settings: dict, sess: requests.Session,
             if len(_a_keys) >= 5:
                 output.add_finding(
                     phase="graphql",
-                    title="GraphQL Alias-Based Rate Limit Bypass",
+                    title="Authentication: GraphQL Alias-Based Rate Limit Bypass",
                     severity="MEDIUM",
                     url=gql_found,
                     detail=(
@@ -9200,7 +9200,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
             if r and r.status_code in (200, 201):
                 output.add_finding(
                     phase="business_flows",
-                    title="Business Flow — Workflow Step Directly Accessible",
+                    title="Business Logic: Business Flow — Workflow Step Directly Accessible",
                     severity="HIGH",
                     url=url,
                     detail=(
@@ -9254,7 +9254,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
         if len(successes) > 1:
             output.add_finding(
                 phase="business_flows",
-                title="Business Flow — Race Condition (Duplicate Operation)",
+                title="Business Logic: Business Flow — Race Condition (Duplicate Operation)",
                 severity="HIGH",
                 url=url,
                 detail=(
@@ -9307,7 +9307,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
                         r'error|invalid|rejected|negative|below.zero', r.text, re.I):
                     output.add_finding(
                         phase="business_flows",
-                        title="Business Flow — Numeric Field Accepts Negative/Zero Value",
+                        title="Business Logic: Business Flow — Numeric Field Accepts Negative/Zero Value",
                         severity="HIGH",
                         url=url,
                         detail=(
@@ -9351,7 +9351,7 @@ def phase_business_flows(settings: dict, sess: requests.Session,
             if r and r.status_code in (200, 201):
                 output.add_finding(
                     phase="business_flows",
-                    title="Business Flow — Bulk Endpoint Accepts Unrestricted Batch Size",
+                    title="Business Logic: Business Flow — Bulk Endpoint Accepts Unrestricted Batch Size",
                     severity="MEDIUM",
                     url=url,
                     detail=(
@@ -9652,7 +9652,7 @@ def phase_bfla(settings: dict, auth_sess, output: OutputManager,
                 if admin_indicators or (isinstance(data, list) and len(data) > 1):
                     output.add_finding(
                         phase="bfla",
-                        title="BFLA — Broken Function Level Authorization",
+                        title="Broken Access Control: BFLA — Broken Function Level Authorization",
                         severity="CRITICAL",
                         url=url,
                         detail=(f"Regular user can access privileged endpoint: {path}"),
@@ -9668,7 +9668,7 @@ def phase_bfla(settings: dict, auth_sess, output: OutputManager,
                 if len(resp.text) > 100:
                     output.add_finding(
                         phase="bfla",
-                        title="BFLA — Admin Endpoint Accessible",
+                        title="Broken Access Control: BFLA — Admin Endpoint Accessible",
                         severity="HIGH",
                         url=url,
                         detail=f"Admin-like endpoint returns HTTP 200 for regular user: {path}",
@@ -9764,7 +9764,7 @@ def phase_cross_user(settings: dict, auth_sess, auth2_sess,
                 if resp_id and str(resp_id) == str(user1_id):
                     output.add_finding(
                         phase="cross_user",
-                        title="Cross-User Data Leakage",
+                        title="Broken Access Control: Cross-User Data Leakage",
                         severity="CRITICAL",
                         url=url,
                         detail=(f"User2 can access User1's data (ID {user1_id}) "
@@ -9813,7 +9813,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
             if "exp" not in payload:
                 output.add_finding(
                     phase="session",
-                    title="JWT Missing Expiry Claim",
+                    title="JWT: JWT Missing Expiry Claim",
                     severity="MEDIUM",
                     url=base_url,
                     detail="JWT access token does not contain an 'exp' (expiration) claim.",
@@ -9825,7 +9825,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
             if "iat" not in payload:
                 output.add_finding(
                     phase="session",
-                    title="JWT Missing Issued-At Claim",
+                    title="JWT: JWT Missing Issued-At Claim",
                     severity="LOW",
                     url=base_url,
                     detail="JWT does not contain an 'iat' (issued at) claim.",
@@ -9838,7 +9838,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
             if alg.lower() in ("none", ""):
                 output.add_finding(
                     phase="session",
-                    title="JWT Uses Insecure Algorithm",
+                    title="JWT: JWT Uses Insecure Algorithm",
                     severity="CRITICAL",
                     url=base_url,
                     detail=f"JWT algorithm is '{alg}', which provides no security.",
@@ -9848,7 +9848,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
             elif alg == "HS256":
                 output.add_finding(
                     phase="session",
-                    title="JWT Uses Symmetric Algorithm (HS256)",
+                    title="JWT: JWT Uses Symmetric Algorithm (HS256)",
                     severity="LOW",
                     url=base_url,
                     detail="HS256 requires sharing the secret key; RS256 is preferred for APIs.",
@@ -9885,7 +9885,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
                             if ck_name in _pre_cookies and _pre_cookies[ck_name] == ck_val:
                                 output.add_finding(
                                     phase="session",
-                                    title="Session Token Not Rotated After Authentication",
+                                    title="Session: Session Token Not Rotated After Authentication",
                                     severity="HIGH",
                                     url=base_url,
                                     detail=(
@@ -10018,7 +10018,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
                 )):
                     output.add_finding(
                         phase="session",
-                        title="JWT Token Not Invalidated After Logout",
+                        title="Session: JWT Token Not Invalidated After Logout",
                         severity="HIGH",
                         url=url,
                         detail="Token remains valid after logout endpoint was called.",
@@ -10074,7 +10074,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
                     ) and abs(len(body) - len(baseline_body)) < len(baseline_body) * 0.5):
                         output.add_finding(
                             phase="session",
-                            title="Session Tokens Remain Valid After Logout",
+                            title="Session: Session Tokens Remain Valid After Logout",
                             severity="MEDIUM",
                             url=baseline_url,
                             detail=(
@@ -10122,7 +10122,7 @@ def phase_session(settings: dict, auth_sess, output: OutputManager,
                         ):
                             output.add_finding(
                                 phase="session",
-                                title="Excessive API Session Timeout",
+                                title="Session: Excessive API Session Timeout",
                                 severity="LOW",
                                 url=_st_probe_url,
                                 detail=(
@@ -10217,7 +10217,7 @@ def phase_jwt(settings: dict, auth_sess, output: OutputManager,
             cracked_secret = secret
             output.add_finding(
                 phase="jwt",
-                title="JWT HMAC Secret Cracked",
+                title="JWT: JWT HMAC Secret Cracked",
                 severity="CRITICAL",
                 url=probe_url,
                 detail=f"JWT was re-signed with cracked secret '{secret}' and accepted by server.",
@@ -10292,7 +10292,7 @@ def phase_jwt(settings: dict, auth_sess, output: OutputManager,
             if resp and resp.status_code in (200, 201):
                 output.add_finding(
                     phase="jwt",
-                    title="JWT Algorithm Confusion Attack (RS256 → HS256)",
+                    title="JWT: JWT Algorithm Confusion Attack (RS256 → HS256)",
                     severity="CRITICAL",
                     url=probe_url,
                     detail="Server accepted HS256 token when RS256 was expected (algorithm confusion).",
@@ -10358,7 +10358,7 @@ def phase_jwt(settings: dict, auth_sess, output: OutputManager,
                 if resp and resp.status_code in (200, 201):
                     output.add_finding(
                         phase="jwt",
-                        title="JWT Scope/Claim Manipulation Accepted",
+                        title="JWT: JWT Scope/Claim Manipulation Accepted",
                         severity="HIGH",
                         url=probe_url,
                         detail=(
@@ -10679,7 +10679,7 @@ def phase_soap(settings: dict, sess: requests.Session,
                 if "siphon_wsse_probe" in r.text or ("Fault" not in r.text and len(r.text) > 50):
                     output.add_finding(
                         phase="soap",
-                        title="WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
+                        title="Authentication Bypass: WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
                         severity="HIGH",
                         url=sep,
                         detail=(
@@ -11916,7 +11916,7 @@ def _ws_checks(inventory, root, output, timeout) -> None:
         if ws_url.startswith("ws://"):
             output.add_finding(
                 phase="protocols",
-                title="Insecure WebSocket Transport (Unencrypted ws://)",
+                title="WebSocket: Insecure WebSocket Transport (Unencrypted ws://)",
                 severity="MEDIUM", url=ws_url,
                 detail="The WebSocket endpoint is served over unencrypted ws://, exposing "
                        "messages (including any auth tokens) to network interception.",
@@ -11926,7 +11926,7 @@ def _ws_checks(inventory, root, output, timeout) -> None:
             )
         output.add_finding(
             phase="protocols",
-            title="WebSocket Handshake Accepts Arbitrary Origin (CSWSH Risk)",
+            title="WebSocket: WebSocket Handshake Accepts Arbitrary Origin (CSWSH Risk)",
             severity="HIGH", url=ws_url,
             detail="The WebSocket handshake succeeded with an attacker-controlled Origin header "
                    "and without credentials, indicating the server does not validate Origin. If "
@@ -11958,7 +11958,7 @@ def _sse_checks(inventory, root, anon_sess, output, timeout) -> None:
         if status == 200:
             output.add_finding(
                 phase="protocols",
-                title="Unauthenticated Server-Sent Events (SSE) Stream",
+                title="Unauthenticated Access: Unauthenticated Server-Sent Events (SSE) Stream",
                 severity="MEDIUM", url=url,
                 detail="A Server-Sent Events stream (text/event-stream) was accessible without "
                        "authentication. SSE streams frequently push user- or tenant-scoped events, "

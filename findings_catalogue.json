@@ -8,7 +8,7 @@
   "findings": [
     {
       "id": "SI-001",
-      "title": "API Endpoint Discovered (dirsearch)",
+      "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -63,7 +63,7 @@
     },
     {
       "id": "SI-002",
-      "title": "API Endpoint Discovered (Feroxbuster)",
+      "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -118,7 +118,7 @@
     },
     {
       "id": "SI-003",
-      "title": "API Endpoint Discovered (FFUF)",
+      "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -173,7 +173,7 @@
     },
     {
       "id": "SI-004",
-      "title": "API Endpoint Discovered (Kiterunner)",
+      "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -228,7 +228,7 @@
     },
     {
       "id": "SI-005",
-      "title": "API Framework Identified",
+      "title": "Discovery: API Framework Identified",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -667,7 +667,7 @@
     },
     {
       "id": "SI-013",
-      "title": "JWT Contains jku Header",
+      "title": "JWT: JWT Contains jku Header",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -729,7 +729,7 @@
     },
     {
       "id": "SI-014",
-      "title": "JWT Missing Issued-At Claim",
+      "title": "JWT: JWT Missing Issued-At Claim",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -941,7 +941,7 @@
     },
     {
       "id": "SI-017",
-      "title": "JWT Missing Expiry Claim",
+      "title": "JWT: JWT Missing Expiry Claim",
       "aliases": [
         "JWT — Missing Expiry Claim (No exp)"
       ],
@@ -2013,7 +2013,7 @@
     },
     {
       "id": "SI-030",
-      "title": "API Specification Exposed",
+      "title": "Sensitive File Exposed: API Specification Exposed",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -2629,7 +2629,7 @@
     },
     {
       "id": "SI-039",
-      "title": "Rate Limit Response Missing Retry-After Header",
+      "title": "Missing Security Header: Rate Limit Response Missing Retry-After Header",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -2857,7 +2857,7 @@
     },
     {
       "id": "SI-043",
-      "title": "GraphQL Field Suggestions Enabled",
+      "title": "GraphQL: GraphQL Field Suggestions Enabled",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -2914,7 +2914,7 @@
     },
     {
       "id": "SI-044",
-      "title": "GraphQL Error Response Leaks Internal Details",
+      "title": "GraphQL: GraphQL Error Response Leaks Internal Details",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -2971,7 +2971,7 @@
     },
     {
       "id": "SI-045",
-      "title": "GraphQL Directive Abuse — Accepted Without Limit",
+      "title": "GraphQL: GraphQL Directive Abuse — Accepted Without Limit",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3026,7 +3026,7 @@
     },
     {
       "id": "SI-046",
-      "title": "GraphQL Fragment Sprawl — No Fragment Count Limit",
+      "title": "GraphQL: GraphQL Fragment Sprawl — No Fragment Count Limit",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3138,7 +3138,7 @@
     },
     {
       "id": "SI-048",
-      "title": "Possible Mass Assignment — Response Differs",
+      "title": "Broken Access Control: Possible Mass Assignment — Response Differs",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3253,7 +3253,7 @@
     },
     {
       "id": "SI-050",
-      "title": "JWT Uses Symmetric Algorithm (HS256)",
+      "title": "JWT: JWT Uses Symmetric Algorithm (HS256)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3310,7 +3310,7 @@
     },
     {
       "id": "SI-051",
-      "title": "Security Misconfiguration / CORS Wildcard with Credentials",
+      "title": "Permissive Security Header: Security Misconfiguration / CORS Wildcard with Credentials",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3425,7 +3425,7 @@
     },
     {
       "id": "SI-053",
-      "title": "Debug / Developer Console Exposed",
+      "title": "Debug Endpoint Exposed: Debug / Developer Console Exposed",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3711,7 +3711,7 @@
     },
     {
       "id": "SI-058",
-      "title": "Business Flow — Numeric Field Accepts Negative/Zero Value",
+      "title": "Business Logic: Business Flow — Numeric Field Accepts Negative/Zero Value",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3824,7 +3824,7 @@
     },
     {
       "id": "SI-060",
-      "title": "BOLA — Object Enumeration Possible",
+      "title": "Enumeration: BOLA — Object Enumeration Possible",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3879,7 +3879,7 @@
     },
     {
       "id": "SI-061",
-      "title": "BFLA — Broken Function Level Authorization",
+      "title": "Broken Access Control: BFLA — Broken Function Level Authorization",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -3992,7 +3992,7 @@
     },
     {
       "id": "SI-063",
-      "title": "Cross-User Data Leakage",
+      "title": "Broken Access Control: Cross-User Data Leakage",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4105,7 +4105,7 @@
     },
     {
       "id": "SI-065",
-      "title": "Sensitive Authentication Headers Exposed in Response",
+      "title": "Authentication: Sensitive Authentication Headers Exposed in Response",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4160,7 +4160,7 @@
     },
     {
       "id": "SI-066",
-      "title": "Missing Rate Limiting",
+      "title": "Authentication: Missing Rate Limiting",
       "aliases": [
         "No Rate Limiting on API",
         "Missing Rate Limit on Sensitive Endpoint",
@@ -4244,7 +4244,7 @@
     },
     {
       "id": "SI-067",
-      "title": "Rate Limit Bypass — Unauthenticated Session Has Separate Bucket",
+      "title": "Unauthenticated Access: Rate Limit Bypass — Unauthenticated Session Has Separate Bucket",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4299,7 +4299,7 @@
     },
     {
       "id": "SI-068",
-      "title": "Rate Limit Bypass via X-Forwarded-For Header",
+      "title": "Authentication: Rate Limit Bypass via X-Forwarded-For Header",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4356,7 +4356,7 @@
     },
     {
       "id": "SI-069",
-      "title": "Mass Assignment Vulnerability",
+      "title": "Broken Access Control: Mass Assignment Vulnerability",
       "aliases": [
         "Over-Posted Parameters",
         "Mass Assignment — Accepted",
@@ -4457,7 +4457,7 @@
     },
     {
       "id": "SI-070",
-      "title": "JWT Uses Insecure Algorithm",
+      "title": "JWT: JWT Uses Insecure Algorithm",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4581,7 +4581,7 @@
     },
     {
       "id": "SI-072",
-      "title": "JWT Token Not Invalidated After Logout",
+      "title": "Session: JWT Token Not Invalidated After Logout",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4639,7 +4639,7 @@
     },
     {
       "id": "SI-073",
-      "title": "CORS — Reflected Origin with Credentials",
+      "title": "Permissive Security Header: CORS — Reflected Origin with Credentials",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4818,7 +4818,7 @@
     },
     {
       "id": "SI-075",
-      "title": "GraphQL Introspection Enabled",
+      "title": "GraphQL: GraphQL Introspection Enabled",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4875,7 +4875,7 @@
     },
     {
       "id": "SI-076",
-      "title": "GraphQL Batch Query Attack Possible",
+      "title": "GraphQL: GraphQL Batch Query Attack Possible",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -4930,7 +4930,7 @@
     },
     {
       "id": "SI-077",
-      "title": "GraphQL Query Depth Attack",
+      "title": "GraphQL: GraphQL Query Depth Attack",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5102,7 +5102,7 @@
     },
     {
       "id": "SI-080",
-      "title": "Business Flow — Workflow Step Directly Accessible",
+      "title": "Business Logic: Business Flow — Workflow Step Directly Accessible",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5157,7 +5157,7 @@
     },
     {
       "id": "SI-081",
-      "title": "Business Flow — Race Condition (Duplicate Operation)",
+      "title": "Business Logic: Business Flow — Race Condition (Duplicate Operation)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5214,7 +5214,7 @@
     },
     {
       "id": "SI-082",
-      "title": "Business Flow — Bulk Endpoint Accepts Unrestricted Batch Size",
+      "title": "Business Logic: Business Flow — Bulk Endpoint Accepts Unrestricted Batch Size",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5269,7 +5269,7 @@
     },
     {
       "id": "SI-083",
-      "title": "Missing Authentication Enforcement",
+      "title": "Authentication: Missing Authentication Enforcement",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5325,7 +5325,7 @@
     },
     {
       "id": "SI-084",
-      "title": "BFLA — Admin Endpoint Accessible",
+      "title": "Broken Access Control: BFLA — Admin Endpoint Accessible",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5382,7 +5382,7 @@
     },
     {
       "id": "SI-085",
-      "title": "BOLA — Broken Object Level Authorization",
+      "title": "Broken Access Control: BOLA — Broken Object Level Authorization",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5439,7 +5439,7 @@
     },
     {
       "id": "SI-086",
-      "title": "Default Credentials Accepted on API Login Endpoint",
+      "title": "Authentication: Default Credentials Accepted",
       "aliases": [
         "Default Credentials Accepted on API Login Endpoint",
         "SSH Brute-Force Credentials Valid",
@@ -5550,7 +5550,7 @@
     },
     {
       "id": "SI-087",
-      "title": "Type Juggling / JSON Type Confusion Authentication Bypass",
+      "title": "Authentication Bypass: Type Juggling / JSON Type Confusion Authentication Bypass",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -5608,7 +5608,7 @@
     },
     {
       "id": "SI-088",
-      "title": "JWT None Algorithm Accepted",
+      "title": "Authentication Bypass: JWT None Algorithm Accepted",
       "aliases": [
         "JWT alg:none Vulnerability",
         "JWT RS256 to HS256 Confusion",
@@ -6670,7 +6670,7 @@
     },
     {
       "id": "SI-097",
-      "title": "JWT Algorithm Confusion Attack (RS256 to HS256)",
+      "title": "JWT: JWT Algorithm Confusion Attack (RS256 to HS256)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -6853,7 +6853,7 @@
     },
     {
       "id": "SI-100",
-      "title": "JWT HMAC Secret Cracked",
+      "title": "JWT: JWT HMAC Secret Cracked",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -6916,7 +6916,7 @@
     },
     {
       "id": "SI-101",
-      "title": "GraphQL Introspection Enabled (Production)",
+      "title": "GraphQL: GraphQL Introspection Enabled (Production)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -7066,7 +7066,7 @@
     },
     {
       "id": "SI-103",
-      "title": "WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
+      "title": "Authentication Bypass: WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
       "aliases": [
         "WS-Security Bypass",
         "WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
@@ -7176,7 +7176,7 @@
     },
     {
       "id": "SI-104",
-      "title": "WSDL Enumeration — Service Definition Exposed",
+      "title": "Enumeration: WSDL Enumeration — Service Definition Exposed",
       "aliases": [
         "WSDL Enumeration — Service Definition Exposed",
         "Web Service WSDL Accessible",
@@ -7521,7 +7521,7 @@
     },
     {
       "id": "SI-108",
-      "title": "Weak JWT Secret",
+      "title": "Authentication: Weak JWT Secret",
       "aliases": [
         "JWT Secret Brute-Forceable",
         "JWT Secret Cracked",
@@ -7624,7 +7624,7 @@
     },
     {
       "id": "SI-109",
-      "title": "Sensitive File Exposed",
+      "title": "Sensitive File Exposed: Sensitive File Exposed",
       "aliases": [
         "Archive File Exposed",
         "Sensitive File Exposed",
@@ -8005,7 +8005,7 @@
     },
     {
       "id": "SI-113",
-      "title": "Unauthenticated Access to Endpoint",
+      "title": "Unauthenticated Access: Unauthenticated Access to Endpoint",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -8065,7 +8065,7 @@
     },
     {
       "id": "SI-114",
-      "title": "Missing Rate Limit on Sensitive Endpoint",
+      "title": "Authentication: Missing Rate Limit on Sensitive Endpoint",
       "aliases": [
         "No Rate Limiting on API",
         "Missing Rate Limit on Sensitive Endpoint",
@@ -8248,7 +8248,7 @@
     },
     {
       "id": "SI-117",
-      "title": "Mass Assignment — {attack_label.title()} Accepted",
+      "title": "Broken Access Control: Mass Assignment — {attack_label.title()} Accepted",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -8365,7 +8365,7 @@
     },
     {
       "id": "SI-120",
-      "title": "Broken Object Level Authorization (IDOR / BOLA)",
+      "title": "Broken Access Control: Broken Object Level Authorization (IDOR / BOLA)",
       "aliases": [
         "API Object Access Control Failure",
         "API IDOR",
@@ -8472,7 +8472,7 @@
     },
     {
       "id": "SI-121",
-      "title": "CORS Misconfiguration Allowing Credential Leakage",
+      "title": "Permissive Security Header: CORS Misconfiguration Allowing Credential Leakage",
       "aliases": [
         "Permissive CORS Policy",
         "CORS Misconfiguration Allowing Credential Leakage",
@@ -8688,7 +8688,7 @@
     },
     {
       "id": "SI-123",
-      "title": "JWT Algorithm Confusion Attack (RS256 → HS256)",
+      "title": "JWT: JWT Algorithm Confusion Attack (RS256 → HS256)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -8727,7 +8727,7 @@
     },
     {
       "id": "SI-124",
-      "title": "JWT None Algorithm Authentication Bypass",
+      "title": "Authentication Bypass: JWT None Algorithm Authentication Bypass",
       "aliases": [
         "JWT alg:none Vulnerability",
         "JWT RS256 to HS256 Confusion",
@@ -8949,7 +8949,7 @@
     },
     {
       "id": "SI-126",
-      "title": "Mass Assignment / Privilege Escalation via Parameter Binding",
+      "title": "Broken Access Control: Mass Assignment / Privilege Escalation via Parameter Binding",
       "aliases": [
         "Over-Posted Parameters",
         "Mass Assignment — Accepted",
@@ -9723,7 +9723,7 @@
     },
     {
       "id": "SI-133",
-      "title": "Weak or Default Credentials Accepted",
+      "title": "Authentication: Default Credentials Accepted",
       "aliases": [
         "Default Admin Credentials",
         "Default Username and Password",
@@ -9988,7 +9988,7 @@
     },
     {
       "id": "SI-135",
-      "title": "Enumerated Parameter Value Restriction Not Enforced",
+      "title": "API Misconfiguration: Enumerated Parameter Value Restriction Not Enforced",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10040,7 +10040,7 @@
     },
     {
       "id": "SI-136",
-      "title": "Numeric Parameter Boundary Not Enforced",
+      "title": "Input Validation: Numeric Parameter Boundary Not Enforced",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10092,7 +10092,7 @@
     },
     {
       "id": "SI-137",
-      "title": "Parameter Type Confusion Accepted",
+      "title": "Input Validation: Parameter Type Confusion Accepted",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10197,7 +10197,7 @@
     },
     {
       "id": "SI-139",
-      "title": "Content-Type Confusion — Alternate Body Format Accepted",
+      "title": "Misconfigured Security Header: Content-Type Confusion — Alternate Body Format Accepted",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10249,7 +10249,7 @@
     },
     {
       "id": "SI-140",
-      "title": "Unbounded Resource Consumption via Pagination Parameter",
+      "title": "Input Validation: Unbounded Resource Consumption via Pagination Parameter",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10301,7 +10301,7 @@
     },
     {
       "id": "SI-141",
-      "title": "Insecure WebSocket Transport (Unencrypted ws://)",
+      "title": "WebSocket: Insecure WebSocket Transport (Unencrypted ws://)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10354,7 +10354,7 @@
     },
     {
       "id": "SI-142",
-      "title": "WebSocket Handshake Accepts Arbitrary Origin (CSWSH Risk)",
+      "title": "WebSocket: WebSocket Handshake Accepts Arbitrary Origin (CSWSH Risk)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10408,7 +10408,7 @@
     },
     {
       "id": "SI-143",
-      "title": "Unauthenticated Server-Sent Events (SSE) Stream",
+      "title": "Unauthenticated Access: Unauthenticated Server-Sent Events (SSE) Stream",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10514,7 +10514,7 @@
     },
     {
       "id": "SI-145",
-      "title": "gRPC Server Reflection Exposed",
+      "title": "gRPC: gRPC Server Reflection Exposed",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10567,7 +10567,7 @@
     },
     {
       "id": "SI-146",
-      "title": "Insecure gRPC Transport (Plaintext / No TLS)",
+      "title": "gRPC: Insecure gRPC Transport (Plaintext / No TLS)",
       "aliases": [],
       "source_tools": [
         "siphon"
@@ -10683,7 +10683,7 @@
     },
     {
       "id": "SI-148",
-      "title": "Timing-Based Username Enumeration",
+      "title": "Enumeration: Timing-Based Username Enumeration",
       "aliases": [
         "Authentication Timing Oracle"
       ],
@@ -10728,7 +10728,7 @@
     },
     {
       "id": "SI-149",
-      "title": "Improper Input Validation Results in Server Error",
+      "title": "Input Validation: Improper Input Validation Results in Server Error",
       "aliases": [
         "500 Error on Invalid Input",
         "Unhandled Server Error"
@@ -10829,7 +10829,7 @@
     },
     {
       "id": "SI-151",
-      "title": "JWT Scope/Claim Manipulation Accepted",
+      "title": "JWT: JWT Scope/Claim Manipulation Accepted",
       "aliases": [
         "JWT Scope Escalation",
         "JWT Claim Tampering"
@@ -10891,7 +10891,7 @@
     },
     {
       "id": "SI-152",
-      "title": "Excessive API Session Timeout",
+      "title": "Session: Excessive API Session Timeout",
       "aliases": [
         "Missing Session Timeout",
         "Excessive Session Lifetime"
@@ -10937,7 +10937,7 @@
     },
     {
       "id": "SI-153",
-      "title": "Session Tokens Remain Valid After Logout",
+      "title": "Session: Session Tokens Remain Valid After Logout",
       "aliases": [
         "Cookie Session Not Invalidated on Logout",
         "Session Token Replay After Logout"
@@ -11040,7 +11040,7 @@
     },
     {
       "id": "SI-155",
-      "title": "JWT Token Contains Personally Identifiable Information",
+      "title": "JWT: JWT Token Contains Personally Identifiable Information",
       "aliases": [
         "PII in JWT",
         "JWT Payload PII Disclosure"
@@ -11208,7 +11208,7 @@
     },
     {
       "id": "SI-158",
-      "title": "Session Token Not Rotated After Authentication",
+      "title": "Session: Session Token Not Rotated After Authentication",
       "aliases": [
         "Session Fixation",
         "Pre-Authentication Session Reuse"
@@ -11269,7 +11269,7 @@
     },
     {
       "id": "SI-159",
-      "title": "CORS Allows Null Origin",
+      "title": "Permissive Security Header: CORS Allows Null Origin",
       "aliases": [
         "CORS Null Origin",
         "Null Origin CORS Bypass"
@@ -11319,7 +11319,7 @@
     },
     {
       "id": "SI-160",
-      "title": "GraphQL Field Name Suggestions Enabled",
+      "title": "GraphQL: GraphQL Field Name Suggestions Enabled",
       "aliases": [
         "GraphQL Did You Mean",
         "GraphQL Schema Enumeration via Suggestions"
@@ -11364,7 +11364,7 @@
     },
     {
       "id": "SI-161",
-      "title": "GraphQL Batching Enabled Without Limit",
+      "title": "GraphQL: GraphQL Batching Enabled Without Limit",
       "aliases": [
         "GraphQL Batch Query",
         "GraphQL Query Batching Abuse"
@@ -11409,7 +11409,7 @@
     },
     {
       "id": "SI-162",
-      "title": "GraphQL Alias-Based Rate Limit Bypass",
+      "title": "Authentication: GraphQL Alias-Based Rate Limit Bypass",
       "aliases": [
         "GraphQL Alias Abuse",
         "GraphQL Alias DoS"
@@ -11501,7 +11501,7 @@
     },
     {
       "id": "SI-164",
-      "title": "Postman Collection or Environment File Exposed",
+      "title": "Sensitive File Exposed: Postman Collection or Environment File Exposed",
       "aliases": [
         "Postman Collection Exposure",
         "Postman Environment Leak"
@@ -11546,7 +11546,7 @@
     },
     {
       "id": "SI-165",
-      "title": "Rate Limit Headers Expose Throttling Configuration",
+      "title": "Authentication: Rate Limit Headers Expose Throttling Configuration",
       "aliases": [
         "Rate Limit Header Disclosure",
         "X-RateLimit Headers"
