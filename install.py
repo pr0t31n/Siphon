@@ -67,6 +67,30 @@ OS = detect_os()
 
 
 # ---------------------------------------------------------------------------
+# Distro identification (Kali vs generic Debian/Ubuntu)
+# ---------------------------------------------------------------------------
+
+def _read_os_release():
+    info = {}
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line:
+                    k, _, v = line.partition("=")
+                    info[k] = v.strip('"').strip("'").lower()
+    except FileNotFoundError:
+        pass
+    return info
+
+_OS_RELEASE = _read_os_release()
+
+
+def is_kali():
+    return _OS_RELEASE.get("ID", "") == "kali"
+
+
+# ---------------------------------------------------------------------------
 # Privilege helpers
 # ---------------------------------------------------------------------------
 
@@ -249,7 +273,6 @@ APT_PACKAGES = [
     "python3-dev",
     "git",
     "golang-go",
-    "feroxbuster",
     "ffuf",
 ]
 
@@ -273,10 +296,56 @@ BREW_PACKAGES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# feroxbuster — Kali: apt, others: GitHub binary release
+# ---------------------------------------------------------------------------
+
+def _install_feroxbuster():
+    """Install feroxbuster — Kali: apt, others: GitHub binary release."""
+    if shutil.which("feroxbuster"):
+        info("  ✓ feroxbuster already installed")
+        return
+    if is_kali():
+        try:
+            run(["apt-get", "install", "-y", "feroxbuster"], check=False)
+            if shutil.which("feroxbuster"):
+                return
+        except Exception:
+            pass
+    arch = platform.machine()
+    if arch in ("x86_64", "amd64"):
+        tag = "x86_64-linux-feroxbuster.tar.gz"
+    elif arch in ("aarch64", "arm64"):
+        tag = "aarch64-linux-feroxbuster.tar.gz"
+    else:
+        note(f"feroxbuster: no prebuilt binary for {arch} — install manually")
+        return
+    url = f"https://github.com/epi052/feroxbuster/releases/latest/download/{tag}"
+    info(f"Downloading feroxbuster from GitHub ({arch}) …")
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        tarball = os.path.join(td, "feroxbuster.tar.gz")
+        try:
+            urllib.request.urlretrieve(url, tarball)
+            import tarfile
+            with tarfile.open(tarball) as tf:
+                tf.extractall(td)
+            src = os.path.join(td, "feroxbuster")
+            if os.path.isfile(src):
+                shutil.copy2(src, "/usr/local/bin/feroxbuster")
+                os.chmod("/usr/local/bin/feroxbuster", 0o755)
+                info("feroxbuster installed to /usr/local/bin/feroxbuster")
+            else:
+                warn("feroxbuster binary not found in archive")
+        except Exception as e:
+            warn(f"feroxbuster download failed: {e} — install manually")
+
+
 def install_system() -> None:
     banner("Phase: system packages")
     if OS == "apt":
         apt_install(APT_PACKAGES)
+        _install_feroxbuster()
     elif OS == "dnf":
         dnf_install(DNF_PACKAGES)
         # feroxbuster/ffuf not in default dnf repos — install via go
@@ -286,8 +355,10 @@ def install_system() -> None:
             env["GOBIN"] = "/usr/local/bin"
             if not shutil.which("ffuf"):
                 run([go_bin, "install", "github.com/ffuf/ffuf/v2@latest"], check=False, env=env)
+        _install_feroxbuster()
     elif OS == "zypper":
         zypper_install(["sslscan", "curl", "jq", "python3-pip", "git", "golang"])
+        _install_feroxbuster()
     elif OS == "macos":
         for pkg in BREW_PACKAGES:
             brew_install(pkg)
@@ -844,7 +915,7 @@ def print_summary(skips: set) -> None:
     note("dirsearch     installed from git (/opt/dirsearch) — available as /usr/local/bin/dirsearch.")
     note("kiterunner    installed from git (/opt/kiterunner) — available as /usr/local/bin/kr.")
     note("ffuf          installed via go/brew — available as /usr/local/bin/ffuf.")
-    info("feroxbuster   installed via apt/brew — available as feroxbuster.")
+    info("feroxbuster   installed via apt/brew/GitHub — available as feroxbuster.")
 
 
 # ---------------------------------------------------------------------------
