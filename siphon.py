@@ -12180,10 +12180,19 @@ def main() -> None:
     _si_proj_root = Path(scan["project"]).resolve()
     _si_proj_root.mkdir(parents=True, exist_ok=True)
     _si_active_pm = [None]  # mutable container for checkpoint callback
+    _si_active_role = [""]  # mutable: tracks which role is being tested
+
+    def _si_checkpoint_cb():
+        _pm = _si_active_pm[0]
+        if _pm is None:
+            return
+        _pm.save_runtime_state({"paused_role": _si_active_role[0]})
+        _pm._save()
+
     if _pp is not None:
         _pause_mgr = _pp.PauseManager(_si_proj_root, "siphon")
         _pause_mgr.start_watcher(
-            checkpoint_callback=lambda: _si_active_pm[0]._save() if _si_active_pm[0] else None,
+            checkpoint_callback=_si_checkpoint_cb,
             grace_period=30,
         )
         _pause_mgr.log_run_type(
@@ -12246,8 +12255,18 @@ def main() -> None:
 
         pm = ProgressManager(project_dir / "checkpoint.json")
         _si_active_pm[0] = pm
-        if pm.get_state()["completed_phases"]:
-            con.info(f"Checkpoint found — resuming ({len(pm.get_state()['completed_phases'])} phases already done)")
+        _si_is_resume = bool(pm.get_state()["completed_phases"])
+        if _si_is_resume:
+            _si_rs = pm.load_runtime_state()
+            _si_paused_role = _si_rs.get("paused_role", "")
+            _si_n_done = len(pm.get_state()["completed_phases"])
+            if _si_paused_role:
+                con.info(
+                    f"Checkpoint found — resuming ({_si_n_done} phases done, "
+                    f"paused during role '{_si_paused_role}'). "
+                    f"Re-authenticating all roles before continuing.")
+            else:
+                con.info(f"Checkpoint found — resuming ({_si_n_done} phases already done)")
 
         phases_cfg = t_scan.get("phases", {})
 
@@ -12285,7 +12304,11 @@ def main() -> None:
             else:
                 con.log(f"[auth:{label}] Authentication failed — no credentials were applied to the session", "ERROR")
 
+        if _si_is_resume:
+            con.info("[resume] Re-authenticating primary session …")
         _report_auth_status(auth_sess,  t_scan.get("auth",  {}), "primary")
+        if _si_is_resume:
+            con.info("[resume] Re-authenticating secondary session …")
         _report_auth_status(auth2_sess, t_scan.get("auth2", {}), "secondary")
 
         # ------------------------------------------------------------------
@@ -12383,6 +12406,7 @@ def main() -> None:
             _ctx_label = _ctx["label"]
             _ctx_auth  = _ctx["auth_sess"]
             _ctx_s     = _ctx["settings"]
+            _si_active_role[0] = _ctx_label
 
             # Set auth context so all findings in this pass carry the account
             if _ctx_label == "unauthenticated":
