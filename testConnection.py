@@ -82,6 +82,8 @@ AUTH_METHODS: dict[str, str] = {
     "aws_sigv4":           "AWS Signature Version 4 — AWS SigV4 signed requests",
     # ── Custom ────────────────────────────────────────────────────────────────
     "header_creds":        "Custom Headers — static key-value credential headers",
+    # ── Fingerprint (cross-tool) ──────────────────────────────────────────────
+    "fingerprint":         "Fingerprint — replays auth recipe from auth_fingerprint.json (forwarded from Fracture)",
 }
 
 
@@ -814,6 +816,30 @@ def build_auth_session(
         sess.headers.update(hdrs)
         names = list(hdrs.keys())
         return sess, f"Set {len(names)} header(s): {', '.join(names)}"
+
+    # ── Fingerprint (forwarded from Fracture) ────────────────────────────────
+    elif method == "fingerprint":
+        from pathlib import Path as _FpPath2
+        fp_file = auth.get("fingerprint_file", "")
+        if not fp_file:
+            return sess, "ERROR: fingerprint method requires fingerprint_file path"
+        fp_p = _FpPath2(fp_file)
+        if not fp_p.is_file():
+            return sess, f"ERROR: fingerprint file not found: {fp_file}"
+        try:
+            import json as _json_fp
+            fp_data = _json_fp.loads(fp_p.read_text())
+        except Exception as _fe:
+            return sess, f"ERROR: failed to parse fingerprint: {_fe}"
+        fc = fp_data.get("fracture_auth_config", {})
+        if not fc:
+            return sess, "ERROR: fingerprint file has no fracture_auth_config"
+        replay = dict(auth)
+        for k, v in fc.items():
+            if k not in ("_auth_recipe", "method"):
+                replay[k] = v
+        replay["method"] = fc.get("method", "form_login")
+        return build_auth_session(replay, timeout, proxy, verify_ssl)
 
     return sess, f"WARNING: unknown auth method '{method}'"
 

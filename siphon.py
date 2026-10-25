@@ -2168,6 +2168,31 @@ def _build_auth_session(settings: dict, auth_key: str = "auth") -> requests.Sess
     elif method == "webauthn_probe":
         sess.headers["X-WebAuthn-Token"] = "1"
 
+    # ── Fingerprint (forwarded from Fracture) ────────────────────────────────
+    elif method == "fingerprint":
+        from pathlib import Path as _FpPath2
+        fp_file = auth_cfg.get("fingerprint_file", "")
+        if not fp_file:
+            return None
+        fp_p = _FpPath2(fp_file)
+        if not fp_p.is_file():
+            return None
+        try:
+            import json as _json_fp
+            fp_data = _json_fp.loads(fp_p.read_text())
+        except Exception:
+            return None
+        fc = fp_data.get("fracture_auth_config", {})
+        if not fc:
+            return None
+        replay_auth = dict(auth_cfg)
+        for k, v in fc.items():
+            if k not in ("_auth_recipe", "method"):
+                replay_auth[k] = v
+        replay_auth["method"] = fc.get("method", "form_login")
+        scan[auth_key] = replay_auth
+        return _build_auth_session(settings, auth_key)
+
     # ── Auto / Unknown — try username+password methods in priority order ──────
     elif method == "auto":
         # Attempts each method that accepts a username and password, stops at the
