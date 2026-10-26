@@ -742,6 +742,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 _MANAGED = os.environ.get("CRUCIBLE_MANAGED", "0") == "1"
+_CP_FINDING = "__CRUCIBLE_FINDING__:"
 
 
 class VantageConsole:
@@ -1278,6 +1279,25 @@ class OutputManager:
             tmp = self.findings_json.with_suffix(".tmp")
             tmp.write_text(json.dumps(existing_all, indent=2), encoding="utf-8")
             tmp.replace(self.findings_json)
+
+        if _MANAGED and not merged:
+            try:
+                _fp = json.dumps({
+                    "title": title, "ip": _strip_scheme(url),
+                    "port": int(port) if port else 0,
+                    "hostname": hostname, "risk": sev_upper,
+                    "description": detail or "",
+                    "sources": source if source is not None else f"siphon-{phase}",
+                    "service": service or "", "affected": url,
+                    "cves": cves or "", "output_file": output_file or "",
+                    "remediation": remediation or "",
+                    "owasp": _owasp_name or "", "confidence": confidence or "",
+                    "api_endpoint_path": _api_path or "",
+                    "api_method": _api_method or "",
+                }, ensure_ascii=False)
+                print(f"{_CP_FINDING}{_fp}", flush=True)
+            except Exception:
+                pass
 
         return native_entry
 
