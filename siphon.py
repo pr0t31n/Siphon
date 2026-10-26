@@ -4771,7 +4771,8 @@ def _run_ffuf_params(endpoint_url: str, phase: str, scan: dict,
 
     timeout = scan.get("timeout", 10)
     rate    = scan.get("tool_rate", 50)
-    out_file = output.output_path(phase, f"ffuf_params_{re.sub(r'[^\\w]', '_', endpoint_url)[:60]}.json")
+    _safe_name = re.sub(r'[^\w]', '_', endpoint_url)[:60]
+    out_file = output.output_path(phase, f"ffuf_params_{_safe_name}.json")
 
     # Curated API parameter-name wordlist (data/api_param_names.txt; falls back
     # to the in-code list when the data file is absent).
