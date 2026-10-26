@@ -7549,11 +7549,26 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
 
     # 0. Default credential testing against common API login endpoints
     cred_sess = _make_session(settings)
+    # Build a baseline for SPA/wildcard detection — if the target returns
+    # the same body for everything, credential "success" is meaningless.
+    _cred_baseline_body = None
+    try:
+        _bl_resp = _safe_get(cred_sess, root + "/__siphon_cred_baseline__", timeout=timeout)
+        if _bl_resp and _bl_resp.status_code == 200:
+            _cred_baseline_body = _bl_resp.text[:2000]
+    except Exception:
+        pass
     for login_path in _DEFAULT_CRED_PATHS:
         login_url = root + login_path
         # Quick probe to see if path exists
         probe = _safe_get(cred_sess, login_url, timeout=timeout)
         if not probe or probe.status_code in (404, 410, 501):
+            continue
+        # Skip HTML responses — the target is returning a web page, not an
+        # API response.  SPAs and catch-all servers return 200 + HTML for
+        # every path, making credential testing meaningless.
+        _probe_ct = (probe.headers.get("Content-Type") or "").lower()
+        if "text/html" in _probe_ct:
             continue
         for uname, pwd in _DEFAULT_API_CREDS:
             try:
@@ -7562,6 +7577,19 @@ def phase_auth_bypass(settings: dict, sess: requests.Session,
                     json={"username": uname, "password": pwd},
                     timeout=timeout,
                 )
+                # Skip HTML responses from POST too
+                _resp_ct = (resp.headers.get("Content-Type") or "").lower()
+                if "text/html" in _resp_ct:
+                    continue
+                # SPA/wildcard detection: if the POST response body is nearly
+                # identical to the probe or to the baseline, it's a catch-all
+                _resp_body = resp.text[:2000]
+                if (_cred_baseline_body and _resp_body
+                        and _resp_body == _cred_baseline_body):
+                    continue
+                if (probe.text and _resp_body
+                        and _resp_body == probe.text[:2000]):
+                    continue
                 # Heuristic: 200/201 with no error keywords = success
                 if resp.status_code in (200, 201) and not re.search(
                     r'invalid|incorrect|failed|unauthorized|wrong|bad.*cred|error',
@@ -8212,7 +8240,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
                 rate_limited_at = i + 1
                 break
 
-    if not got_429:
+    if not got_429 and _rl_statuses:
         _rl_file = output.output_path("rate_limiting", "missing_rate_limit.txt")
         _status_summary = ", ".join(str(s) for s in _rl_statuses[:20])
         if len(_rl_statuses) > 20:
@@ -8233,7 +8261,7 @@ def phase_rate_limiting(settings: dict, sess: requests.Session,
             severity="HIGH",
             url=test_url,
             detail="Authentication and sensitive API endpoints do not enforce request rate limits, account lockout, or CAPTCHA, allowing unlimited brute-force or credential-stuffing attempts.",
-            evidence=f"{threshold} requests sent without receiving HTTP 429",
+            evidence=f"{len(_rl_statuses)} requests sent without receiving HTTP 429",
             remediation="Implement per-IP and per-account rate limiting with progressive delays or lockout on all authentication endpoints; add CAPTCHA for interactive login flows; alert on anomalous request volumes.",
             output_file=str(_rl_file),
         )
