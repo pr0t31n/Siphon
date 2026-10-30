@@ -4108,6 +4108,14 @@ _DISCOVERY_PATHS = [
     "/schema.json",
 ]
 
+_API_BASE_PATHS = [
+    "/api", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
+    "/v1", "/v2", "/v3",
+    "/rest", "/rest/api", "/rest/v1", "/rest/v2",
+    "/graphql", "/api/graphql",
+    "/jsonapi",
+]
+
 
 def _parse_openapi_spec(spec: dict) -> list:
     """Parse OpenAPI 2.x or 3.x spec and return list of endpoint dicts."""
@@ -4986,6 +4994,50 @@ def phase_discovery(settings: dict, sess: requests.Session,
                             source_finding="discovery",
                             priority="medium",
                         )
+
+    # ------------------------------------------------------------------ #
+    # 3b. Probe common API base paths when root 404s and no spec found   #
+    # ------------------------------------------------------------------ #
+    if not spec_was_provided and not inventory:
+        root_resp = _safe_get(sess, target_root + (target["path"] or "/"),
+                              timeout=timeout)
+        root_404 = root_resp and root_resp.status_code == 404
+        if root_404 or not root_resp:
+            con.info("Root returned %s — probing common API base paths",
+                     root_resp.status_code if root_resp else "no response")
+            _discovered_bases: list[dict] = []
+            for bp in _API_BASE_PATHS:
+                bp_url = target_root + bp
+                bp_resp = _safe_get(sess, bp_url, timeout=timeout)
+                if bp_resp and bp_resp.status_code in (
+                        200, 201, 204, 301, 302, 401, 403):
+                    _discovered_bases.append({
+                        "path": bp,
+                        "status": bp_resp.status_code,
+                    })
+            if _discovered_bases:
+                best = None
+                for db in _discovered_bases:
+                    if db["status"] in (200, 201, 204):
+                        best = db
+                        break
+                if not best:
+                    best = _discovered_bases[0]
+                paths_str = ", ".join(
+                    f"{d['path']} ({d['status']})" for d in _discovered_bases[:5])
+                con.info("Found %d active API base path(s): %s",
+                         len(_discovered_bases), paths_str)
+                for db in _discovered_bases:
+                    inventory.append({
+                        "method": "GET",
+                        "path": db["path"],
+                        "params": [],
+                        "body_fields": [],
+                        "auth_required": db["status"] in (401, 403),
+                        "operation_id": db["path"].strip("/").replace("/", "_"),
+                        "tags": ["discovered-base"],
+                        "summary": f"API base path (HTTP {db['status']})",
+                    })
 
     # ------------------------------------------------------------------ #
     # 4. Fallback minimal inventory when nothing was found                #

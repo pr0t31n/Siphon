@@ -44,7 +44,7 @@ from urllib3.util.retry import Retry
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-VERSION = "2.0.1"
+VERSION = "2.1.0"
 
 AUTH_METHODS: dict[str, str] = {
     # ── Token-based ───────────────────────────────────────────────────────────
@@ -84,7 +84,19 @@ AUTH_METHODS: dict[str, str] = {
     "header_creds":        "Custom Headers — static key-value credential headers",
     # ── Fingerprint (cross-tool) ──────────────────────────────────────────────
     "fingerprint":         "Fingerprint — replays auth recipe from auth_fingerprint.json (forwarded from Fracture)",
+    # ── Auto-detect ───────────────────────────────────────────────────────────
+    "auto":                "Auto-detect — probe URL with AuthProbe, use best-fit method",
 }
+
+
+
+_API_BASE_PROBE_PATHS = [
+    "/api", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
+    "/v1", "/v2", "/v3",
+    "/rest", "/rest/api", "/rest/v1", "/rest/v2",
+    "/graphql", "/api/graphql",
+    "/jsonapi",
+]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -844,6 +856,30 @@ def build_auth_session(
     return sess, f"WARNING: unknown auth method '{method}'"
 
 
+
+def _probe_api_base_paths(
+    sess: requests.Session,
+    base_url: str,
+    timeout: int,
+) -> list[dict]:
+    """Probe common API base paths when root URL returns 404.
+
+    Returns a list of {path, status} dicts for each active path discovered.
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(base_url)
+    root = f"{parsed.scheme}://{parsed.netloc}"
+    found: list[dict] = []
+    for path in _API_BASE_PROBE_PATHS:
+        try:
+            resp = sess.get(root + path, timeout=timeout, allow_redirects=False)
+            if resp.status_code in (200, 201, 204, 301, 302, 401, 403):
+                found.append({"path": path, "status": resp.status_code})
+        except Exception:
+            pass
+    return found
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Connection test
 # ─────────────────────────────────────────────────────────────────────────────
@@ -867,8 +903,31 @@ def test_connection(
           "auth_info":   str,
         }
     """
-    sess, auth_info = build_auth_session(auth, timeout, proxy, verify_ssl)
-    auth_method = (auth.get("method") or auth.get("auth_type") or "bearer").strip().lower()
+    auth_method = (auth.get("method") or auth.get("auth_method")
+                  or auth.get("auth_type") or "bearer").strip().lower()
+
+    # Resolve "auto" via AuthProbe before building the session
+    auto_probe_result = None
+    if auth_method == "auto":
+        auto_probe_result = run_probe(url, timeout, proxy, verify_ssl)
+        methods = auto_probe_result.get("auth_methods", [])
+        if methods:
+            detected = methods[0]["method"]
+            auth = dict(auth)
+            auth["method"] = detected
+            auth_method = detected
+        else:
+            auth = dict(auth)
+            auth.pop("method", None)
+            auth.pop("auth_method", None)
+            auth.pop("auth_type", None)
+            auth_method = "none"
+
+    if auth_method == "none":
+        sess = _make_session(verify_ssl, proxy)
+        auth_info = "Auto-detect: no auth method identified — proceeding unauthenticated"
+    else:
+        sess, auth_info = build_auth_session(auth, timeout, proxy, verify_ssl)
 
     # Login-based methods: the POST outcome is authoritative
     if auth_method in (
@@ -899,7 +958,21 @@ def test_connection(
                 msg = "HTTP 403 Forbidden — credentials accepted but access denied"
                 return {"success": False, "message": msg, "status_code": sc, "auth_info": auth_info}
             msg = f"Connection successful — HTTP {sc}"
-            return {"success": True, "message": msg, "status_code": sc, "auth_info": auth_info}
+            result = {"success": True, "message": msg, "status_code": sc, "auth_info": auth_info}
+            if sc == 404:
+                discovered = _probe_api_base_paths(sess, url, timeout)
+                if discovered:
+                    result["api_bases"] = discovered
+                    paths_str = ", ".join(
+                        f"{d['path']} ({d['status']})" for d in discovered[:5]
+                    )
+                    result["message"] += (
+                        f" — root returned 404 but found "
+                        f"{len(discovered)} active API path(s): {paths_str}"
+                    )
+            if auto_probe_result:
+                result["probe"] = auto_probe_result
+            return result
         except requests.exceptions.SSLError as exc:
             return {
                 "success": False,
