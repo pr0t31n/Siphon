@@ -12249,14 +12249,21 @@ def main() -> None:
             f"[multi-role] {_n_roles} role(s) loaded from project settings — skipping prompt"
         )
     elif _MANAGED:
-        # Managed mode with no auth_matrix — run unauthenticated only.
-        # Do NOT prompt; the operator is in Crucible/Vantage and cannot
-        # interact with Siphon's stdin.
+        # Managed mode with no auth_matrix — multi-role testing won't run.
+        # Primary auth (scan.auth) is handled separately in the credential-
+        # context builder below.
         _n_roles = 0
-        con.info(
-            "[multi-role] No auth_matrix in project settings — running "
-            "unauthenticated only (managed mode, no prompt)"
-        )
+        _has_primary = scan.get("auth", {}).get("enabled", False)
+        if _has_primary:
+            con.info(
+                "[multi-role] No additional roles configured — "
+                "primary auth will be used for testing"
+            )
+        else:
+            con.info(
+                "[multi-role] No auth_matrix in project settings — running "
+                "unauthenticated only (managed mode, no prompt)"
+            )
     else:
         _n_roles = _prompt_multi_role_setup(scan.get("auth", {}))
         if _n_roles >= 1:
@@ -12495,11 +12502,23 @@ def main() -> None:
                     "label": _r_label, "settings": _r_s, "auth_sess": _r_as,
                     "reduced": False, "multi_role": False, "role_idx": -1,
                 })
+            # Primary auth without auth_matrix: the bearer/cookie/basic session
+            # built above is valid but was never placed into a credential context.
+            # Add it so the main scan loop runs authenticated.
+            if not _cred_contexts and auth_sess is not None:
+                _cred_contexts.append({
+                    "label": "authenticated", "settings": t_settings,
+                    "auth_sess": auth_sess,
+                    "reduced": False, "multi_role": False, "role_idx": -1,
+                })
         # Unauthenticated context always last.
-        # Reduced if multi-role mode (role 1 already ran the full scan).
+        # When primary auth added a context above, reduce the unauthenticated
+        # pass (the full scan already ran with auth).
         _cred_contexts.append({
             "label": "unauthenticated", "settings": t_settings, "auth_sess": None,
-            "reduced": _n_roles >= 1, "multi_role": False, "role_idx": -1,
+            "reduced": (_n_roles >= 1 or
+                        any(c["label"] == "authenticated" for c in _cred_contexts)),
+            "multi_role": False, "role_idx": -1,
         })
 
         api_inventory: list = []
