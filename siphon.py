@@ -11360,29 +11360,70 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
         except Exception as e:
             con.warn(f"[tls] sslscan error: {e}")
 
-    # ── testssl.sh ────────────────────────────────────────────────────────────
+    # ── testssl.sh (aligned with Fracture's implementation) ─────────────────
+    # CVE map for JSON-based extraction
+    _TESTSSL_CVES_JSON = {
+        "heartbleed": "CVE-2014-0160", "ROBOT": "CVE-2017-13099",
+        "DROWN": "CVE-2016-0800", "POODLE": "CVE-2014-3566",
+        "BEAST": "CVE-2011-3389", "CCS": "CVE-2014-0224",
+        "LUCKY13": "CVE-2013-0169", "FREAK": "CVE-2015-0204",
+        "LOGJAM": "CVE-2015-4000", "SWEET32": "CVE-2016-2183",
+        "ticketbleed": "CVE-2016-9244",
+    }
+    _TESTSSL_RISK_MAP = {
+        "CRITICAL": "CRITICAL", "HIGH": "HIGH", "MEDIUM": "MEDIUM",
+        "LOW": "LOW", "WARN": "INFO", "INFO": "INFO", "OK": "INFO",
+    }
+    _TESTSSL_PROTO_IDS = {
+        "SSLv2": "SSLv2", "SSLv3": "SSLv3",
+        "TLS1": "TLSv1.0", "TLS1_1": "TLSv1.1",
+    }
+    _TS_SKIP_IDS = frozenset({
+        "overall_grade", "cert_revocation", "security_headers", "TLS1_2",
+    })
+    _RE_TS_SUBJECT = re.compile(r"subject\s*[:/]\s*(.+)", re.I)
+    _RE_TS_ISSUER  = re.compile(r"issuer\s*[:/]\s*(.+)", re.I)
+    _RE_TS_EXPIRY  = re.compile(r"expires\s*[:/]\s*(.+)", re.I)
+    _RE_TS_SAN     = re.compile(r"subjectAltName.*?:\s*(.+)", re.I)
+    _RE_TS_GRADE   = re.compile(r"Overall Grade\s*[:\-]\s*([A-F][+-]?)", re.I)
+
     if testssl:
         _ts_file = output.tool_path("testssl", f"testssl_{host}_{port}.txt")
+        _ts_json_f = _ts_file.parent / f"testssl_{host}_{port}_findings.json"
         try:
             result = _run_logged(
-                [testssl, "--fast", "--quiet", host_port],
-                output_file=_ts_file, tool_name="testssl", text=True, timeout=120,
+                [testssl, "--color", "0", "--warnings", "off", "--quiet",
+                 "--severity", "LOW", "--jsonfile", str(_ts_json_f), host_port],
+                output_file=_ts_file, tool_name="testssl", text=True, timeout=300,
             )
             _ts_out = result.stdout + result.stderr
             _ts_file.write_text(_ts_out, encoding="utf-8")
             ran_any = True
 
-            # False positive filtering (aligned with Fracture's testssl parser):
-            # - "(OK)" lines: testssl marks passing checks with (OK); not a vulnerability.
-            # - "Testing robust forward secrecy": section header, no finding.
-            # - "User-agent:" / "Disallow:": embedded HTTP content in testssl output that
-            #   can contain keywords matching cipher/protocol patterns.
-            # - "not offered": cipher or protocol absent — explicitly safe.
-            # - DROWN advisory continuation line contains "make sure you don't use this
-            #   certificate" which itself references the word "DROWN" in context.
+            # ── No-TLS-service guard (Fracture-aligned) ──────────────────
+            _ts_lo = _ts_out.lower()
+            _ts_no_tls = (
+                "couldn't determine what's running" in _ts_lo
+                or (
+                    all(
+                        f"{_p}    not offered" in _ts_lo
+                        or f"{_p}   not offered" in _ts_lo
+                        or f"{_p}  not offered" in _ts_lo
+                        for _p in ("tls 1.2", "tls 1.3")
+                    )
+                    and "no connection" in _ts_lo
+                )
+            )
+            if _ts_no_tls:
+                con.info(
+                    f"[tls] testssl: no TLS service on {host_port} "
+                    "— suppressing findings to avoid false positives"
+                )
+                raise RuntimeError("testssl: no TLS service")
+
+            # ── Text-based pattern matching (FP-filtered) ────────────────
             _TESTSSL_NOISE = re.compile(
-                r'Testing robust forward secrecy'
-                r'|User-agent:'
+                r'User-agent:'
                 r'|Disallow:'
                 r'|not offered'
                 r'|make sure you don.t use this certificate',
@@ -11391,23 +11432,214 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
             _ts_filtered = "\n".join(
                 ln for ln in _ts_out.splitlines()
                 if "(OK)" not in ln
-                and (not _TESTSSL_NOISE.search(ln)
-                     or "forward secrecy" in ln.lower())
+                and "potentially vulnerable" not in ln.lower()
+                and not _TESTSSL_NOISE.search(ln)
             )
             for _title, (pat, severity) in _TLS_VULN_PATTERNS.items():
                 if pat.search(_ts_filtered):
-                    _vuln = _title
                     output.add_finding(
                         phase="tls",
                         title=_title,
                         severity=severity,
                         url=base_url,
-                        detail=f"{_vuln} detected on {host_port}.",
-                        evidence=f"testssl.sh output matched pattern for: {_vuln}",
+                        detail=f"{_title} detected on {host_port}.",
+                        evidence=f"testssl.sh output matched pattern for: {_title}",
                         remediation=_tls_remediation,
                         output_file=str(_ts_file),
                         source="testssl.sh",
                     )
+
+            # ── LOGJAM common-prime detection ────────────────────────────
+            _logjam_cp = re.search(
+                r'LOGJAM[^\n]*(?:common prime|DH)[^\n]*?(\d+)\s*bits',
+                _ts_out, re.I,
+            )
+            _logjam_has_export = bool(re.search(
+                r'LOGJAM[^\n]*export', _ts_out, re.I))
+            if _logjam_cp and not _logjam_has_export:
+                _dh_bits = int(_logjam_cp.group(1))
+                if _dh_bits <= 1024:
+                    _lj_risk = "HIGH"
+                    _lj_title = "TLS Vulnerability: LOGJAM"
+                    _lj_desc = (
+                        f"TLS service uses a {_dh_bits}-bit "
+                        "Diffie-Hellman prime, which permits the classic "
+                        "LOGJAM downgrade attack (CVE-2015-4000)."
+                    )
+                else:
+                    _lj_risk = "INFO"
+                    _lj_title = "TLS Vulnerability (Potential): LOGJAM"
+                    _lj_desc = (
+                        f"(Potential) testssl flagged LOGJAM due to a "
+                        f"common {_dh_bits}-bit DH prime, but no export "
+                        "ciphers or small DH parameters were detected."
+                    )
+                output.add_finding(
+                    phase="tls", title=_lj_title, severity=_lj_risk,
+                    url=base_url, detail=_lj_desc,
+                    remediation="Enable TLS 1.3. Prefer ECDHE over DHE.",
+                    output_file=str(_ts_file), source="testssl.sh",
+                    extra={"cves": "CVE-2015-4000", "nist": "SC-8"},
+                )
+
+            # ── Certificate text extraction ──────────────────────────────
+            _ts_cert_subject = _ts_cert_issuer = _ts_cert_expiry = None
+            _ts_cert_san: list = []
+            _ts_grade = None
+            for _tsln in _ts_out.splitlines():
+                _tsln_s = _tsln.strip()
+                if not _ts_cert_subject:
+                    _m = _RE_TS_SUBJECT.search(_tsln_s)
+                    if _m: _ts_cert_subject = _m.group(1).strip()
+                if not _ts_cert_issuer:
+                    _m = _RE_TS_ISSUER.search(_tsln_s)
+                    if _m: _ts_cert_issuer = _m.group(1).strip()
+                if not _ts_cert_expiry:
+                    _m = _RE_TS_EXPIRY.search(_tsln_s)
+                    if _m: _ts_cert_expiry = _m.group(1).strip()
+                if not _ts_cert_san:
+                    _m = _RE_TS_SAN.search(_tsln_s)
+                    if _m: _ts_cert_san = [s.strip() for s in _m.group(1).split(",") if s.strip()]
+                if not _ts_grade:
+                    _m = _RE_TS_GRADE.search(_tsln_s)
+                    if _m: _ts_grade = _m.group(1)
+
+            if _ts_cert_subject or _ts_cert_issuer or _ts_cert_expiry or _ts_cert_san:
+                _cert_lines = []
+                if _ts_cert_subject: _cert_lines.append(f"Subject: {_ts_cert_subject}")
+                if _ts_cert_issuer:  _cert_lines.append(f"Issuer: {_ts_cert_issuer}")
+                if _ts_cert_expiry:  _cert_lines.append(f"Not Valid After: {_ts_cert_expiry}")
+                if _ts_cert_san:     _cert_lines.append(f"SANs ({len(_ts_cert_san)}): " + ", ".join(_ts_cert_san[:30]))
+                if _ts_grade:        _cert_lines.append(f"TLS Grade: {_ts_grade}")
+                output.add_finding(
+                    phase="tls", title="SSL/TLS Certificate Information",
+                    severity="INFO", url=base_url,
+                    detail=f"TLS certificate details for {host}:{port}.",
+                    evidence="\n".join(_cert_lines),
+                    remediation="", output_file=str(_ts_file),
+                    source="testssl.sh",
+                )
+
+            # ── JSON-based structured finding extraction ─────────────────
+            if _ts_json_f.exists():
+                try:
+                    _ts_raw = json.loads(_ts_json_f.read_text(encoding="utf-8", errors="replace"))
+                    if isinstance(_ts_raw, list):
+                        _ts_findings_j = _ts_raw
+                    elif isinstance(_ts_raw, dict):
+                        _ts_findings_j = _ts_raw.get("findings", [])
+                        if not _ts_findings_j:
+                            _sr = _ts_raw.get("scanResult", [])
+                            _ts_findings_j = _sr[0].get("Finding", []) if _sr else []
+                    else:
+                        _ts_findings_j = []
+                except Exception:
+                    _ts_findings_j = []
+                for _tsf in _ts_findings_j:
+                    try:
+                        _tsf_id      = re.sub(r'\s*<[^>]*>\s*$', '', _tsf.get("id", "")).strip()
+                        _tsf_sev     = (_tsf.get("severity") or "INFO").upper()
+                        _tsf_risk    = _TESTSSL_RISK_MAP.get(_tsf_sev, "INFO")
+                        _tsf_finding = _tsf.get("finding") or ""
+                        _tsf_finding_lo = _tsf_finding.lower()
+                        _tsf_cve_inline = ",".join(re.findall(r'CVE-\d{4}-\d+', _tsf_finding))
+                        if _tsf_id in _TESTSSL_PROTO_IDS:
+                            if any(kw in _tsf_finding_lo for kw in
+                                   ("not offered", "connect problem",
+                                    "couldn't open socket", "connect timeout")):
+                                continue
+                            _tsf_proto = _TESTSSL_PROTO_IDS[_tsf_id]
+                            _tsf_title = f"Deprecated Protocol Enabled: {_tsf_proto}"
+                            if "SSLv2" in _tsf_proto:   _tsf_risk = "HIGH"
+                            elif "SSLv3" in _tsf_proto:  _tsf_risk = "MEDIUM"
+                            else:                        _tsf_risk = "LOW"
+                            _tsf_cve = _TESTSSL_CVES_JSON.get(_tsf_id, "")
+                        else:
+                            _tsf_cve = _TESTSSL_CVES_JSON.get(_tsf_id, "")
+                            if _tsf_cve_inline:
+                                _all = {c for c in (_tsf_cve + "," + _tsf_cve_inline).split(",") if c.strip()}
+                                _tsf_cve = ",".join(sorted(_all))
+                            if _tsf_id in _TS_SKIP_IDS or _tsf_id.startswith("cipher-"):
+                                continue
+                            elif _tsf_id.startswith("FS"):
+                                if "offered" in _tsf_finding_lo and "not" not in _tsf_finding_lo:
+                                    continue
+                                _tsf_title = "SSL/TLS Forward Secrecy: Not Supported"
+                                _tsf_risk  = "MEDIUM"
+                            elif "self-signed" in _tsf_finding_lo or "self signed" in _tsf_finding_lo:
+                                _tsf_title = "Self-Signed Certificate"
+                                _tsf_risk  = "HIGH"
+                            elif "chain incomplete" in _tsf_finding_lo:
+                                _tsf_title = "SSL/TLS Certificate: Chain Incomplete"
+                                _tsf_risk  = "LOW"
+                            elif _tsf_id == "TLS1_3":
+                                if "not offered" in _tsf_finding_lo:
+                                    _tsf_title = "TLS 1.3 Not Supported"
+                                    _tsf_risk  = "LOW"
+                                else:
+                                    continue
+                            elif "potentially vulnerable" in _tsf_finding_lo:
+                                _tsf_title = f"TLS Vulnerability (Potential): {_tsf_id}"
+                                _tsf_risk  = "INFO"
+                            elif _tsf_id.startswith("cipher_order"):
+                                if "not" in _tsf_finding_lo:
+                                    _tsf_title = "SSL/TLS Cipher: No Cipher Order Configured"
+                                    _tsf_risk  = "LOW"
+                                else:
+                                    continue
+                            elif _tsf_id.lower() == "cert_extlifespan":
+                                _tsf_title = "SSL/TLS Certificate: Long Duration"
+                                _tsf_risk  = "MEDIUM"
+                            elif _tsf_id.lower().startswith("hsts"):
+                                if "offered" in _tsf_finding_lo and "not offered" not in _tsf_finding_lo:
+                                    continue
+                                _tsf_title = "Missing Security Header: Strict-Transport-Security"
+                                _tsf_risk  = "MEDIUM"
+                            elif _tsf_id in ("cert_notAfter", "cert_expirationStatus", "expiration"):
+                                if any(kw in _tsf_finding_lo for kw in ("expired", "already past", "has expired")):
+                                    _tsf_title = "Expired SSL Certificate"
+                                    _tsf_risk  = "HIGH"
+                                else:
+                                    continue
+                            elif _tsf_id == "secure_client_renego":
+                                if "not vulnerable" in _tsf_finding_lo:
+                                    continue
+                                _tsf_title = "TLS Vulnerability: Client-Initiated Renegotiation"
+                                _tsf_risk  = "LOW"
+                            elif _tsf_id == "cert_trust":
+                                if _tsf_sev in ("OK", "INFO"):
+                                    continue
+                                _tsf_title = "SSL/TLS Certificate: Trust Issue"
+                                _tsf_risk  = "HIGH"
+                            elif _tsf_id == "cipherlist_OBSOLETED":
+                                _tsf_title = "SSL/TLS Ciphers: Obsolete Ciphers"
+                                _tsf_risk  = "MEDIUM"
+                            elif _tsf_id == "cipherlist_LOW":
+                                if "not offered" in _tsf_finding_lo: continue
+                                _tsf_title = "SSL/TLS Ciphers: LOW-Grade Ciphers Accepted"
+                                _tsf_risk  = "HIGH"
+                            elif _tsf_id == "cipherlist_3DES_IDEA":
+                                if "not offered" in _tsf_finding_lo: continue
+                                _tsf_title = "SSL/TLS Ciphers: 3DES/IDEA Ciphers Accepted"
+                                _tsf_risk  = "MEDIUM"
+                            elif _tsf_id == "fallback_SCSV":
+                                if _tsf_sev in ("OK", "INFO"): continue
+                                if "offered" in _tsf_finding_lo and "not" not in _tsf_finding_lo: continue
+                                _tsf_title = "SSL/TLS Vulnerability: TLS_FALLBACK_SCSV Not Supported"
+                                _tsf_risk  = "LOW"
+                            else:
+                                _tsf_title = f"TLS Finding: {_tsf_id}"
+                        output.add_finding(
+                            phase="tls", title=_tsf_title, severity=_tsf_risk,
+                            url=base_url, detail=_tsf_finding,
+                            remediation=_tls_remediation,
+                            output_file=str(_ts_file), source="testssl.sh",
+                            extra={"cves": _tsf_cve, "nist": "SC-8"} if _tsf_cve else {},
+                        )
+                    except Exception:
+                        continue
+        except RuntimeError:
+            pass
         except Exception as e:
             con.warn(f"[tls] testssl error: {e}")
 
