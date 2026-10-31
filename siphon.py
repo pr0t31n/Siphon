@@ -1047,6 +1047,17 @@ class OutputManager:
         self._phase_context: dict = {}
         self.action_items_json = self.out_dir / "action_items.json"
         self._action_items_lock = threading.Lock()
+        self._fdb = None
+        _db_path = os.environ.get("PR0T31N_FINDINGS_DB")
+        if _db_path:
+            try:
+                import sys as _s
+                if "/opt/pr0t31n/shared" not in _s.path:
+                    _s.path.insert(0, "/opt/pr0t31n/shared")
+                import pr0t31n_findings_db
+                self._fdb = pr0t31n_findings_db.FindingsDB(_db_path)
+            except Exception:
+                self._fdb = None
         self._setup_dirs()
         if not self.findings_json.exists():
             self.findings_json.write_text("[]", encoding="utf-8")
@@ -1279,6 +1290,12 @@ class OutputManager:
             tmp = self.findings_json.with_suffix(".tmp")
             tmp.write_text(json.dumps(existing_all, indent=2), encoding="utf-8")
             tmp.replace(self.findings_json)
+
+            if self._fdb and not merged:
+                try:
+                    self._fdb.insert_finding(fr_entry)
+                except Exception:
+                    pass
 
         if _MANAGED and not merged:
             try:
