@@ -1102,6 +1102,37 @@ class OutputManager:
         """Set the active auth context for subsequent add_finding calls."""
         self._current_accounts = list(accounts)
 
+    _PHASE_CATEGORY = {
+        "discovery":        "API Discovery",
+        "recon":            "API Reconnaissance",
+        "fuzzing":          "Input Validation",
+        "injection":        "Injection",
+        "auth_bypass":      "Authentication Bypass",
+        "bfla":             "Broken Access Control",
+        "bola":             "Broken Access Control",
+        "access_matrix":    "Broken Access Control",
+        "mass_assignment":  "Broken Access Control",
+        "data_exposure":    "Data Exposure",
+        "rate_limit":       "Rate Limiting",
+        "tls":              "TLS/SSL Security",
+        "session":          "Session Management",
+        "jwt":              "JWT Security",
+        "cors":             "CORS Misconfiguration",
+        "graphql":          "GraphQL Security",
+        "soap":             "SOAP Security",
+        "ssrf":             "Server-Side Request Forgery",
+        "protocols":        "Protocol Security",
+        "verb_tampering":   "HTTP Method Tampering",
+        "unsafe_consumption": "Unsafe Consumption",
+        "file_upload":      "File Upload Security",
+        "file_upload_info": "File Upload Security",
+        "rate_limiting":    "Rate Limiting",
+        "sensitive_files":  "Sensitive Data Exposure",
+        "cross_user":       "Broken Access Control",
+        "business_flows":   "Business Logic",
+        "user_enum":        "User Enumeration",
+    }
+
     def add_finding(
         self,
         phase: str,
@@ -1114,6 +1145,7 @@ class OutputManager:
         extra: dict | None = None,
         output_file: str = "",
         source: str | None = None,
+        category: str = "",
         # ── v1.1 API enrichment kwargs (preferred over extra dict) ─────
         # Phases that know these natively should pass them directly. If a
         # caller omits them they fall through to the extra-dict path then
@@ -1226,6 +1258,7 @@ class OutputManager:
             "is_rogue_endpoint": _is_rogue,
             "owasp_api":         _owasp_api_short,
             "confidence":        confidence,
+            "category":          category or (self._PHASE_CATEGORY.get(phase, "") if ":" not in title else ""),
         }
 
         # Native Siphon entry kept in self.findings for supplementary reports
@@ -6185,16 +6218,25 @@ def phase_fuzzing(settings: dict, sess: requests.Session,
             # #8: Internal hostname exposure check
             _check_internal_hostnames(resp, url, "fuzzing", output, target.get("hostname", ""))
             if resp.status_code not in (405, 404, 400, 501, 403):
-                output.add_finding(
-                    phase="fuzzing",
-                    title="Undocumented HTTP Method Accepted",
-                    severity="MEDIUM",
-                    url=url,
-                    detail=(f"Method {method} returned HTTP {resp.status_code} "
-                            f"on endpoint documented as {ep['method']} only."),
-                    evidence=f"{method} {url} -> {resp.status_code}",
-                    remediation="Restrict allowed HTTP methods per endpoint.",
+                _is_cors_preflight = (
+                    method == "OPTIONS"
+                    and resp.status_code in (200, 204)
+                    and any(
+                        k.lower().startswith("access-control-")
+                        for k in resp.headers
+                    )
                 )
+                if not _is_cors_preflight:
+                    output.add_finding(
+                        phase="fuzzing",
+                        title="Undocumented HTTP Method Accepted",
+                        severity="MEDIUM",
+                        url=url,
+                        detail=(f"Method {method} returned HTTP {resp.status_code} "
+                                f"on endpoint documented as {ep['method']} only."),
+                        evidence=f"{method} {url} -> {resp.status_code}",
+                        remediation="Restrict allowed HTTP methods per endpoint.",
+                    )
 
         # Parameter fuzzing: inject common params not in spec
         documented_param_names = {p["name"] for p in ep.get("params", [])}
@@ -11443,12 +11485,16 @@ def phase_tls(settings: dict, output: OutputManager) -> None:
                 r'User-agent:'
                 r'|Disallow:'
                 r'|not offered'
-                r'|make sure you don.t use this certificate',
+                r'|make sure you don.t use this certificate'
+                r'|omitting Null Authentication'
+                r'|Testing robust forward secrecy',
                 re.I,
             )
             _ts_filtered = "\n".join(
                 ln for ln in _ts_out.splitlines()
                 if "(OK)" not in ln
+                and "not vulnerable" not in ln.lower()
+                and "no rc4 ciphers" not in ln.lower()
                 and "potentially vulnerable" not in ln.lower()
                 and not _TESTSSL_NOISE.search(ln)
             )
