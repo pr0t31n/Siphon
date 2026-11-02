@@ -1,0 +1,117 @@
+{
+  "tool": "siphon",
+  "version": "1.0",
+  "checks": [
+    {
+      "id": "SI-MC-001",
+      "title": "API Key Rotation Mechanism",
+      "description": "Verify whether the application provides a mechanism for users or administrators to rotate API keys without service disruption.",
+      "instructions": [
+        "Authenticate to the application and navigate to API key management or developer settings.",
+        "Look for options to generate new API keys, revoke existing keys, or set key expiration.",
+        "If key rotation is available, verify that generating a new key does not immediately invalidate the old one (grace period).",
+        "Check whether key rotation can be performed without contacting support.",
+        "If no key rotation mechanism exists, mark as Missing."
+      ],
+      "priority": "MEDIUM",
+      "owasp_mapping": "OWASP API2:2023",
+      "finding_template": {
+        "title": "No API Key Rotation Mechanism Available",
+        "risk": "MEDIUM",
+        "description": "The application does not provide a self-service mechanism for rotating API keys. Users and administrators cannot generate replacement keys, set key expiration dates, or revoke compromised keys without contacting support. In the event of key compromise, the inability to quickly rotate credentials extends the window of unauthorized access.",
+        "remediation": "Implement a self-service API key management interface that allows authorized users to generate new keys, set expiration dates, and revoke existing keys. Provide a configurable grace period during rotation where both old and new keys are valid to prevent service disruption. Log all key lifecycle events for audit purposes.",
+        "cwe": ["CWE-320"],
+        "owasp_api": "API2:2023"
+      }
+    },
+    {
+      "id": "SI-MC-002",
+      "title": "API Versioning and Deprecation Headers",
+      "description": "Verify whether the API implements versioning and communicates deprecation status through response headers.",
+      "instructions": [
+        "Send a request to any API endpoint and inspect the response headers.",
+        "Look for versioning headers such as API-Version, X-API-Version, or version info in the URL path.",
+        "Look for deprecation headers such as Deprecation, Sunset, or X-API-Deprecated.",
+        "If the API uses URL-based versioning (e.g., /v1/, /v2/), verify that older versions return deprecation warnings.",
+        "If no versioning scheme or deprecation communication is present, mark as Missing."
+      ],
+      "priority": "LOW",
+      "owasp_mapping": "",
+      "finding_template": {
+        "title": "API Lacks Versioning or Deprecation Communication",
+        "risk": "INFO",
+        "description": "The API does not implement a versioning scheme or communicate endpoint deprecation status through response headers. Without versioning, breaking changes to the API may silently affect consumers. Without deprecation headers (Deprecation, Sunset), API consumers have no programmatic way to detect that an endpoint they depend on is scheduled for removal.",
+        "remediation": "Implement API versioning using URL path segments (e.g., /v1/resource), request headers (Accept-Version), or content negotiation. For deprecated endpoints, include the RFC 8594 Deprecation header with the deprecation date and the Sunset header with the removal date. Include a Link header pointing to the replacement endpoint or migration documentation.",
+        "cwe": [],
+        "owasp_api": ""
+      }
+    },
+    {
+      "id": "SI-MC-003",
+      "title": "API Documentation Exposure",
+      "description": "Verify whether API documentation endpoints (Swagger UI, OpenAPI spec, GraphQL playground) are accessible in the production environment.",
+      "instructions": [
+        "Attempt to access common API documentation paths: /swagger, /swagger-ui, /api-docs, /openapi.json, /openapi.yaml, /docs, /redoc, /graphql (with browser for playground).",
+        "Check for Swagger/OpenAPI specification files at /v2/api-docs, /v3/api-docs, /.well-known/openapi.",
+        "If documentation is accessible without authentication, note whether it exposes internal endpoints, schemas, or sensitive parameter names.",
+        "If documentation is accessible and exposes internal details, mark as Missing (should be restricted in production).",
+        "If documentation is not accessible or requires authentication, mark as Exists."
+      ],
+      "priority": "MEDIUM",
+      "owasp_mapping": "OWASP API9:2023",
+      "finding_template": {
+        "title": "API Documentation Exposed in Production",
+        "risk": "LOW",
+        "description": "API documentation interfaces (such as Swagger UI, ReDoc, or GraphQL Playground) are accessible in the production environment without authentication. The documentation exposes the complete API surface including endpoint paths, request/response schemas, parameter names, and potentially internal or administrative endpoints. This information assists an attacker in mapping the attack surface and crafting targeted requests.",
+        "remediation": "Disable or restrict access to API documentation endpoints in the production environment. If documentation must remain available for partner integrations, require authentication and limit access to authorized API consumers. Ensure that internal or administrative endpoints are not included in externally-facing documentation.",
+        "cwe": ["CWE-200"],
+        "owasp_api": "API9:2023"
+      }
+    },
+    {
+      "id": "SI-MC-004",
+      "title": "Webhook Signature Verification",
+      "description": "Verify whether outbound webhooks from the application include a cryptographic signature that recipients can use to verify authenticity.",
+      "instructions": [
+        "Identify whether the application sends outbound webhooks (check documentation, settings, or integration pages).",
+        "If webhooks are present, configure a test webhook endpoint and trigger an event.",
+        "Inspect the webhook request headers for a signature header (e.g., X-Signature, X-Hub-Signature-256, X-Webhook-Signature).",
+        "If a signature is present, verify it uses HMAC-SHA256 or stronger (not MD5 or plain SHA1).",
+        "If the application does not send webhooks, this check is not applicable — mark as Exists.",
+        "If webhooks are sent without signatures, mark as Missing."
+      ],
+      "priority": "MEDIUM",
+      "owasp_mapping": "OWASP API8:2023",
+      "finding_template": {
+        "title": "Webhook Payloads Not Cryptographically Signed",
+        "risk": "MEDIUM",
+        "description": "The application sends outbound webhook notifications without including a cryptographic signature in the request headers. Webhook recipients cannot verify that the payload originated from the legitimate application and has not been tampered with in transit. An attacker who can predict the webhook endpoint URL can forge webhook payloads to trigger unintended actions in downstream systems.",
+        "remediation": "Include an HMAC-SHA256 signature in a dedicated header (e.g., X-Signature-256) on all outbound webhook requests. Provide each webhook subscriber with a unique signing secret. Document the signature verification process so recipients can validate payload authenticity. Consider including a timestamp in the signed payload to prevent replay attacks.",
+        "cwe": ["CWE-345"],
+        "owasp_api": "API8:2023"
+      }
+    },
+    {
+      "id": "SI-MC-005",
+      "title": "GraphQL Introspection Disabled in Production",
+      "description": "Verify whether GraphQL introspection queries are disabled in the production environment, if the application uses GraphQL.",
+      "instructions": [
+        "Identify the GraphQL endpoint (commonly /graphql, /gql, /api/graphql).",
+        "Send an introspection query: {\"query\": \"{__schema{types{name}}}\"}",
+        "If the query returns the full schema including all types, fields, and mutations, introspection is enabled.",
+        "If the application does not use GraphQL, this check is not applicable — mark as Exists.",
+        "If introspection returns a full schema in production, mark as Missing."
+      ],
+      "priority": "MEDIUM",
+      "owasp_mapping": "OWASP API9:2023",
+      "finding_template": {
+        "title": "GraphQL Introspection Enabled in Production",
+        "risk": "LOW",
+        "description": "The GraphQL endpoint permits introspection queries in the production environment, exposing the complete API schema including all types, fields, queries, mutations, and subscriptions. This provides an attacker with a comprehensive map of the API surface, including potentially sensitive or administrative operations that are not documented in public-facing API documentation.",
+        "remediation": "Disable introspection in the production environment by configuring the GraphQL server to reject __schema and __type queries. If introspection must remain available for specific consumers, restrict it to authenticated requests from authorized development or partner accounts. Consider implementing persisted queries to further limit the operations that can be executed.",
+        "cwe": ["CWE-200"],
+        "owasp_api": "API9:2023"
+      }
+    }
+  ]
+}
