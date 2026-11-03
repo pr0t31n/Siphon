@@ -309,7 +309,7 @@ Other safety/quality changes in v2.20.0:
   before reporting (and carry `Firm`/`Tentative` confidence accordingly).
 
 Evidence files referenced by findings are recorded **relative to the run
-directory** (CLAUDE.md §13c), so Crucible / Prometheus / Helm bundles resolve them.
+directory** (CLAUDE.md §13c), so Crucible / Prometheus resolve them.
 
 ### Logging, back-off & auth-bypass accuracy (v2.21.0)
 

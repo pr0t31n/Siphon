@@ -6945,7 +6945,7 @@ def _save_http_evidence(output: "OutputManager", phase: str, label: str,
     resp_path.write_text("\n".join(resp_lines), encoding="utf-8")
 
     # §13c: evidence paths are recorded relative to the run directory root so
-    # downstream consumers (Crucible, Prometheus, Helm bundles) resolve them.
+    # downstream consumers (Crucible, Prometheus) resolve them.
     def _rel(p):
         try:
             return str(p.relative_to(output.out_dir))
