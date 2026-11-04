@@ -432,7 +432,7 @@ Severity levels: `CRITICAL` | `HIGH` | `MEDIUM` | `LOW` | `INFO`
 ## Crucible Integration
 
 Siphon is wrapped by **Crucible** (port 5500) as tool key `"si"`. When launched
-by Crucible, the environment variable `VANTAGE_MANAGED=1` is set and Siphon emits
+by Crucible, the environment variable `CRUCIBLE_MANAGED=1` is set and Siphon emits
 structured protocol tokens on stdout:
 
 | Token | Purpose |
