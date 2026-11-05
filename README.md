@@ -75,11 +75,11 @@ max_tokens), and tags.
 | API3:2023 — Broken Object Property Level Auth | Phase 6 (mass_assignment), Phase 8 (data_exposure) |
 | API4:2023 — Unrestricted Resource Consumption | Phase 5 (rate_limiting) |
 | API5:2023 — Broken Function Level Auth        | Phase 11 (bfla)      |
-| API6:2023 — Unrestricted Access to Sensitive Business Flows | Phase 5, Phase 2 |
+| API6:2023 — Unrestricted Access to Sensitive Business Flows | Phase 5, Phase 2, Phase 9b (business_flows) |
 | API7:2023 — Server Side Request Forgery       | Phase 7 (ssrf)       |
-| API8:2023 — Security Misconfiguration         | Phase 1 (recon), Phase 9 (graphql) |
-| API9:2023 — Improper Inventory Management     | Phase 0 (discovery)  |
-| API10:2023 — Unsafe Consumption of APIs       | Phase 3 (injection)  |
+| API8:2023 — Security Misconfiguration         | Phase 1 (recon), Phase 9 (graphql), Phase 16 (tls) |
+| API9:2023 — Improper Inventory Management     | Phase 0 (discovery), Phase 15 (sensitive_files)  |
+| API10:2023 — Unsafe Consumption of APIs       | Phase 3 (injection), Phase 16b (unsafe_consumption)  |
 
 ---
 
@@ -103,6 +103,35 @@ pip install -r requirements.txt
 
 ---
 
+## CLI Reference
+
+| Flag | Argument | Description |
+|------|----------|-------------|
+| `--settings` | `FILE` | JSON settings file (see Settings Reference below) |
+| `--url` | `URL` | Primary API base URL |
+| `--urls` | `URLS` | Comma-separated list of additional API base URLs |
+| `--openapi` | `URL` | OpenAPI/Swagger spec URL or file path (legacy; prefer `--spec-file`) |
+| `--spec-file` | `FILE` | API spec file or URL to ingest (may be repeated); supports OpenAPI JSON/YAML, Swagger, GraphQL SDL/introspection, Postman Collection, Insomnia export, HAR |
+| `--project` | `DIR` | Output directory |
+| `--fast` | | Skip slow phases |
+| `--resume` | `DIR` | Resume from existing output directory |
+| `--no-injection` | | Skip injection phase |
+| `--no-auth` | | Skip auth-required phases |
+| `--environment` | `production` or `non-production` | **MANDATORY.** Target environment. `non-production` runs full testing; `production` skips write-method state changes and disables business-flow / mass-assignment phases. Required (no default) unless set in the settings file. |
+| `--list-phases` | | List all phases and exit |
+| `--username` | `USER` | Auth username |
+| `--password` | `PASS` | Auth password |
+| `--auth-method` | `METHOD` | Auth method. Choices: `bearer`, `basic`, `digest`, `apikey`, `cookie_login`, `token_login`, `oauth2_client_creds`, `header_creds`, `ntlm` |
+| `--auth-type` | `TYPE` | Legacy alias for `--auth-method`. Choices: `token`, `basic`, `form` |
+| `--login-url` | `URL` | Login endpoint URL (used with `cookie_login` / `token_login`) |
+| `--auth-token` | `TOKEN` | Pre-obtained auth token (bearer) |
+| `--threads` | `N` | Concurrent request threads (default: 20) |
+| `--timeout` | `SEC` | Per-request timeout in seconds (default: 10) |
+| `--proxy` | `URL` | HTTP proxy (e.g. `http://127.0.0.1:8080` for Burp Suite) |
+| `--version` | | Print version and exit |
+
+---
+
 ## Usage
 
 ### Basic scan (unauthenticated):
@@ -114,6 +143,19 @@ python3 siphon.py --url https://api.example.com/v1
 ```bash
 python3 siphon.py --url https://api.example.com/v1 \
     --openapi /path/to/openapi.json
+```
+
+### Scan with multiple spec files (Postman + HAR):
+```bash
+python3 siphon.py --url https://api.example.com/v1 \
+    --spec-file collection.postman.json \
+    --spec-file traffic.har
+```
+
+### Multiple API base URLs:
+```bash
+python3 siphon.py --url https://api.example.com/v1 \
+    --urls https://api2.example.com/v1,https://internal.example.com/api
 ```
 
 ### Authenticated scan with Bearer token:
@@ -129,6 +171,18 @@ python3 siphon.py --url https://api.example.com/v1 \
     --login-url https://api.example.com/auth/login \
     --username user@example.com \
     --password s3cr3t
+```
+
+### Resume a previous scan:
+```bash
+python3 siphon.py --resume /path/to/previous/output
+```
+
+### Non-production full scan with proxy:
+```bash
+python3 siphon.py --url https://api.example.com/v1 \
+    --environment non-production \
+    --proxy http://127.0.0.1:8080
 ```
 
 ### Fast scan (skip slow phases):
@@ -232,8 +286,8 @@ All results are written to the `project` directory:
 | `siphon_output.csv`  | Findings in CSV format for spreadsheet import |
 | `siphon_output.txt`  | Human-readable text report |
 | `api_inventory.json` | Discovered endpoint inventory (value-aware as of v2.13.0 — see below) |
-| `meta.json` | Tool identity + version (§13b) |
-| `scan.log` / `scan.log.json` | Timestamped audit log (v2.26.0+): own version + phase EVENT transitions + all messages (§13b/§14j/§14k). External tool versions are recorded in each invocation's `.log` sibling. |
+| `meta.json` | Tool identity + version (S13b) |
+| `scan.log` / `scan.log.json` | Timestamped audit log (v2.26.0+): own version + phase EVENT transitions + all messages (S13b/S14j/S14k). External tool versions are recorded in each invocation's `.log` sibling. |
 | `errors.log` / `errors.log.json` | ERROR-level + TOOL_ERROR entries |
 
 ### Value-aware endpoint inventory (v2.13.0)
@@ -249,8 +303,8 @@ examples those files carry. Each endpoint in `api_inventory.json` is enriched wi
 - **`observed_responses`** — real/example responses harvested from HAR captures
   and saved Postman example responses (a known-good oracle for later phases).
 - **Name-based type inference** — when nothing is declared, the field name is
-  used to infer a likely type/format (e.g. `*_id` → integer, `email` → email,
-  `*_at` → date-time, `is_*` → boolean, `callback`/`url` → uri).
+  used to infer a likely type/format (e.g. `*_id` -> integer, `email` -> email,
+  `*_at` -> date-time, `is_*` -> boolean, `callback`/`url` -> uri).
 
 These additions are backward compatible — existing keys (`params`,
 `body_fields`, etc.) are preserved, so downstream consumers are unaffected.
@@ -331,7 +385,7 @@ directly.
 - **Content-Type confusion** — a JSON endpoint that also accepts a
   form-urlencoded body (parser-differential / CSRF surface).
 - **Unbounded resource consumption** — pagination parameters (`limit`,
-  `page_size`, …) that accept an extreme value and return a materially larger
+  `page_size`, ...) that accept an extreme value and return a materially larger
   result set, i.e. no server-side cap (OWASP API4).
 - **Excessive data exposure (BOPLA)** — response fields that are **not** part of
   the documented response schema and look sensitive (PII/credentials/tokens).
@@ -345,8 +399,8 @@ Set it via `--environment {production,non-production}` (CLI) or `scan.environmen
 (settings); Crucible presents a required dropdown. Siphon **refuses to run**
 without it.
 
-- **non-production** → full testing.
-- **production** → partial testing: **no write-method state changes** (injection,
+- **non-production** -> full testing.
+- **production** -> partial testing: **no write-method state changes** (injection,
   schema-abuse, XXE, command/CRLF/path-traversal, deserialization, and method
   fuzzing are skipped on `POST`/`PUT`/`PATCH`/`DELETE`; read-method equivalents
   still run), and the **business-flow and mass-assignment phases are disabled**.
@@ -364,11 +418,11 @@ Other safety/quality changes in v2.20.0:
   before reporting (and carry `Firm`/`Tentative` confidence accordingly).
 
 Evidence files referenced by findings are recorded **relative to the run
-directory** (CLAUDE.md §13c), so Crucible / Prometheus resolve them.
+directory** (CLAUDE.md S13c), so Crucible / Prometheus resolve them.
 
 ### Logging, back-off & auth-bypass accuracy (v2.21.0)
 
-- **Tool execution logging (§14):** every external binary invocation
+- **Tool execution logging (S14):** every external binary invocation
   (kiterunner, ffuf, feroxbuster, dirsearch, sslscan, testssl) now emits a
   sibling `.log` next to its primary output via the shared
   `pr0t31n_tool_runner`, capturing the command line, timing, exit code, and
@@ -397,7 +451,7 @@ directory** (CLAUDE.md §13c), so Crucible / Prometheus resolve them.
   honors the production safety gate (write-method SSRF is skipped in production).
 - **JWT attacks (C11):** already covered by the JWT phase — HMAC secret
   brute-force, jku/x5u JWKS spoofing, kid SQL-injection and path-traversal, and
-  RS256→HS256 algorithm confusion. No change required.
+  RS256->HS256 algorithm confusion. No change required.
 
 ### Non-HTTP protocol coverage (v2.23.0, Phase 21 — `protocols`)
 
@@ -413,7 +467,7 @@ fuzzing / method invocation) for:
   dependency).
 - **gRPC** — uses `grpcurl` server reflection to enumerate services and flags
   exposed reflection and plaintext (non-TLS) transport. Requires `grpcurl`
-  (degrades gracefully if absent); the invocation emits a §14 `.log` sibling.
+  (degrades gracefully if absent); the invocation emits a S14 `.log` sibling.
 
 All protocol checks are read-only, so the phase runs in both production and
 non-production. New dependencies are installed by `install.py`
@@ -430,17 +484,12 @@ context. It then:
 - applies a captured bearer token to the session (when none is set),
 - **seeds** the captured values back into the endpoint inventory (as
   `observed_values` / schema `example`s), so later phases build requests that
-  satisfy create→read→update preconditions and reach real application logic
+  satisfy create->read->update preconditions and reach real application logic
   (e.g. `GET /users/{id}` uses a `{id}` returned by a prior `POST /users`).
 
 The phase produces no findings (it establishes state). In **production** only
 read methods are executed (no state changes); **non-production** runs the full
 chain (capped at 40 requests).
-
-> Still deferred (later release): §14 per-tool `.log` siblings for the external
-> binaries (ffuf / kiterunner / feroxbuster / dirsearch / sslscan / testssl), and
-> stateful request chaining (executing collection requests in dependency order to
-> satisfy create→read→update preconditions).
 
 ### Finding Format
 
@@ -466,21 +515,31 @@ Severity levels: `CRITICAL` | `HIGH` | `MEDIUM` | `LOW` | `INFO`
 
 | Phase | Name | Description |
 |-------|------|-------------|
-| 0 | discovery | Probe for OpenAPI/Swagger spec; build endpoint inventory |
-| 1 | recon | Fingerprint server headers; check CORS and security headers |
-| 2 | fuzzing | HTTP method fuzzing; undocumented parameter discovery |
-| 3 | injection | SQLi, NoSQLi, SSTI, XXE, LDAP injection via API parameters |
-| 4 | auth_bypass | JWT none-alg, weak HMAC, missing auth enforcement |
-| 5 | rate_limiting | Rate limit detection and IP header bypass techniques |
-| 6 | mass_assignment | Over-posting privileged fields in write endpoints |
-| 7 | ssrf | SSRF via URL-accepting API parameters |
-| 8 | data_exposure | Sensitive field detection in API responses |
-| 9 | graphql | GraphQL introspection; query depth attacks |
+| 0 | discovery | OpenAPI/Swagger discovery + Kiterunner/FFUF/Feroxbuster/dirsearch |
+| 0c | chaining | Request chaining — ordered execution + value capture (ids/tokens) for stateful coverage |
+| 1 | recon | API fingerprinting, server headers, CORS, framework detection |
+| 2 | fuzzing | HTTP method fuzzing, FFUF parameter fuzzing |
+| 3 | injection | SQLi, NoSQLi, SSTI, XXE, LDAP, XSS, CMDi, CRLF, Path Traversal |
+| 4 | auth_bypass | JWT algorithm confusion, none-alg, key confusion |
+| 5 | rate_limiting | Rate limit detection and bypass techniques |
+| 6 | mass_assignment | Mass assignment / over-posting attack testing |
+| 7 | ssrf | SSRF via API URL parameters |
+| 8 | data_exposure | Excessive data exposure in API responses |
+| 9 | graphql | GraphQL introspection and query fuzzing |
+| 9b | business_flows | Business flow abuse — workflow skip, race conditions, value manipulation (API6) |
 | 10 | bola | BOLA/IDOR — cross-user object access (auth required) |
-| 11 | bfla | BFLA — admin endpoint access with regular user (auth required) |
+| 11 | bfla | BFLA — function-level authorization bypass (auth required) |
 | 12 | cross_user | Cross-user data leakage (auth + auth2 required) |
-| 13 | session | JWT expiry, logout invalidation, algorithm checks (auth required) |
-| 14 | jwt | JWT HMAC cracking, jku injection, kid injection (auth required) |
+| 13 | session | API session / token management analysis (auth required) |
+| 14 | jwt | JWT advanced attacks — jku, kid, HMAC cracking (auth required) |
+| 15 | sensitive_files | Sensitive file exposure — .env, config, git, swagger (API9) |
+| 16 | tls | TLS/SSL analysis — deprecated protocols, weak ciphers (API8) |
+| 16b | unsafe_consumption | Unsafe API consumption — webhook SSRF, open redirect, deser (API10) |
+| 17 | verb_tampering | HTTP verb tampering — method override header bypass |
+| 18 | soap | SOAP/WS-Security — WSDL enum, WS-Security bypass, SOAP injection |
+| 19 | file_upload_info | File upload endpoint detection — accepted types (informational) |
+| 20 | access_matrix | Multi-credential access matrix — per-role endpoint access, BFLA, unauthenticated access |
+| 21 | protocols | Non-HTTP protocols — WebSocket / SSE / gRPC detection + passive checks |
 
 ---
 
