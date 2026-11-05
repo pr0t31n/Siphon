@@ -492,10 +492,10 @@ structured protocol tokens on stdout:
 
 | Token | Purpose |
 |-------|---------|
-| `__VANTAGE_LOG__:` | Log message |
-| `__VANTAGE_ERR__:` | Error message |
-| `__VANTAGE_STATUS__:` | Phase state update (JSON) |
-| `__VANTAGE_PROMPT__:` | Interactive prompt request (JSON) |
+| `__CRUCIBLE_LOG__:` | Log message |
+| `__CRUCIBLE_ERR__:` | Error message |
+| `__CRUCIBLE_STATUS__:` | Phase state update (JSON) |
+| `__CRUCIBLE_PROMPT__:` | Interactive prompt request (JSON) |
 
 ---
 
