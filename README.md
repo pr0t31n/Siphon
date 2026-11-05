@@ -18,6 +18,9 @@ max_tokens), and tags.
 
 ---
 
+
+> **[View full documentation on the Codex Wiki](https://wiki.pr0t31n.com/tools/siphon)** — detailed features, CLI reference, findings catalogue, and integration guides.
+
 ## OWASP API Security Top 10 2023 Coverage
 
 | OWASP Category                                | Phase(s)             |
