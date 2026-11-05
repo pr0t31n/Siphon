@@ -9,6 +9,13 @@ runs structured attack phases covering injection, authentication bypass, rate
 limiting, mass assignment, SSRF, data exposure, GraphQL attacks, BOLA, BFLA,
 JWT attacks, and cross-user data leakage.
 
+**AI/ML API Detection (v2.40.0):** Phase 0 (discovery) now probes for AI/ML API
+endpoints — OpenAI-compatible, Ollama, Gradio, MLflow, Triton, Streamlit, and
+LangFlow. Detected AI services generate an INFO finding and an `ai_discovered`
+action item recommending pAIn testing. OpenAPI spec analysis also flags AI/ML
+endpoints by path patterns, body field schemas (prompt, messages, temperature,
+max_tokens), and tags.
+
 ---
 
 ## OWASP API Security Top 10 2023 Coverage

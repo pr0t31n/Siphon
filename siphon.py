@@ -18,14 +18,14 @@ output_file field in findings.json; summary.json for Crucible summary panel.
 
 v1.4.0 additions: Wildcard/catch-all detection (ported from Fracture) — Phase 0
 skips FFUF/Feroxbuster/dirsearch and Phase 2 skips entirely when wildcard
-detected; VantageConsole protocol tokens now emit correct JSON for Crucible
+detected; CrucibleConsole protocol tokens now emit correct JSON for Crucible
 log/status/error storage; fixed Gin framework false-positive on nginx headers.
 
 v1.5.0 additions: ProgressManager checkpoint/resume system (mirrors Fracture
 pattern) — checkpoint.json tracks completed phases, _skip() checks both
 settings and checkpoint; HTTP method probing on tool-discovered paths (OPTIONS
 then per-method fallback); INFO findings for endpoints and HTTP methods not
-present in scope/spec file; VantageConsole.status() now emits proper phase
+present in scope/spec file; CrucibleConsole.status() now emits proper phase
 label and detail fields for Crucible Status tab.
 
 Works on Linux, macOS, and Windows.
@@ -738,14 +738,14 @@ except ImportError:
         BRIGHT = DIM = RESET_ALL = ""
 
 # ---------------------------------------------------------------------------
-# VantageConsole — protocol bridge when managed by Vantage/Crucible
+# CrucibleConsole — protocol bridge when managed by Crucible
 # ---------------------------------------------------------------------------
 
 _MANAGED = os.environ.get("CRUCIBLE_MANAGED", "0") == "1"
 _CP_FINDING = "__CRUCIBLE_FINDING__:"
 
 
-class VantageConsole:
+class CrucibleConsole:
     """Emits structured protocol tokens when run under Crucible."""
 
     # Protocol tokens
@@ -956,7 +956,7 @@ class VantageConsole:
 
 
 # Global console instance
-con = VantageConsole()
+con = CrucibleConsole()
 
 
 # ---------------------------------------------------------------------------
@@ -968,7 +968,7 @@ class ProgressManager:
 
     _SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
-    def __init__(self, console: VantageConsole):
+    def __init__(self, console: CrucibleConsole):
         self.con = console
         self._thread: threading.Thread | None = None
         self._stop_evt = threading.Event()
@@ -3856,6 +3856,47 @@ def _load_spec_file(path_or_url: str, sess: requests.Session,
     return inventory, creds, fmt
 
 
+_AI_SPEC_PATTERNS = re.compile(
+    r'(?:chat[/_-]?completions|embeddings|/generate|/predict|'
+    r'inference|/models?/[^/]+/invoke|prompt|llm|'
+    r'vector[/_-]?search|similarity|/train|/fine[_-]?tun)',
+    re.I,
+)
+
+_AI_BODY_FIELDS = frozenset({
+    "prompt", "messages", "model", "temperature", "top_p", "max_tokens",
+    "stop", "stream", "embedding", "input", "instruction", "system",
+    "frequency_penalty", "presence_penalty", "n", "logprobs",
+    "response_format", "tools", "tool_choice",
+})
+
+
+def _detect_ai_spec_endpoints(inventory: list) -> list[dict]:
+    """Scan parsed spec inventory for AI/ML-indicative endpoints."""
+    hits = []
+    for ep in inventory:
+        path = ep.get("path", "")
+        body = set(f.lower() for f in ep.get("body_fields", []))
+        tags = set(t.lower() for t in ep.get("tags", []))
+        summary = (ep.get("summary", "") or "").lower()
+        ai_signals = []
+        if _AI_SPEC_PATTERNS.search(path):
+            ai_signals.append(f"path={path}")
+        if body & _AI_BODY_FIELDS:
+            matched_fields = body & _AI_BODY_FIELDS
+            ai_signals.append(f"body fields: {', '.join(sorted(matched_fields))}")
+        ai_tags = tags & {"ai", "llm", "ml", "inference", "model",
+                          "embedding", "chat", "completion", "prediction"}
+        if ai_tags:
+            ai_signals.append(f"tags: {', '.join(sorted(ai_tags))}")
+        if any(kw in summary for kw in ("machine learning", "ai model",
+               "inference", "embedding", "llm", "prompt", "completion")):
+            ai_signals.append(f"summary mentions AI")
+        if ai_signals:
+            hits.append({"endpoint": ep, "signals": ai_signals})
+    return hits
+
+
 # ---------------------------------------------------------------------------
 # Undocumented endpoint probing
 # ---------------------------------------------------------------------------
@@ -4157,6 +4198,40 @@ _DISCOVERY_PATHS = [
     "/api/schema",
     "/schema.json",
 ]
+
+_AI_API_PATHS = [
+    "/v1/chat/completions",
+    "/v1/completions",
+    "/v1/embeddings",
+    "/v1/models",
+    "/api/generate",
+    "/api/chat",
+    "/api/tags",
+    "/api/show",
+    "/v1/audio/transcriptions",
+    "/v1/images/generations",
+    "/api/2.0/mlflow/experiments/list",
+    "/api/2.0/mlflow/runs/list",
+    "/api/predict",
+    "/v2/models",
+    "/v2/repository/index",
+    "/_stcore/health",
+    "/queue/join",
+    "/api/v1/prediction",
+    "/health",
+]
+
+_AI_API_SIGNATURES = {
+    "Ollama": ["/api/generate", "/api/chat", "/api/tags", "/api/show"],
+    "OpenAI-Compatible": ["/v1/chat/completions", "/v1/completions",
+                          "/v1/embeddings", "/v1/models"],
+    "Gradio": ["/queue/join", "/api/predict"],
+    "MLflow": ["/api/2.0/mlflow/experiments/list",
+               "/api/2.0/mlflow/runs/list"],
+    "Triton Inference Server": ["/v2/models", "/v2/repository/index"],
+    "Streamlit": ["/_stcore/health"],
+    "LangFlow": ["/api/v1/prediction"],
+}
 
 _API_BASE_PATHS = [
     "/api", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
@@ -4973,6 +5048,58 @@ def phase_discovery(settings: dict, sess: requests.Session,
             con.info(f"  Extracted credentials from spec ({fmt}): {list(creds.keys())}")
 
     # ------------------------------------------------------------------ #
+    # 1b. Scan spec inventory for AI/ML endpoints                         #
+    # ------------------------------------------------------------------ #
+    if inventory:
+        _ai_ep_hits = _detect_ai_spec_endpoints(inventory)
+        if _ai_ep_hits:
+            _ai_ep_paths = [h["endpoint"]["path"] for h in _ai_ep_hits]
+            _ai_sigs = "; ".join(
+                f'{h["endpoint"]["path"]} ({", ".join(h["signals"])})'
+                for h in _ai_ep_hits[:10]
+            )
+            output.add_finding(
+                phase="discovery",
+                title="AI/ML API Endpoints in Specification",
+                severity="INFO",
+                url=base_url,
+                detail=(
+                    f"The API specification defines {len(_ai_ep_hits)} "
+                    "endpoint(s) with AI/ML characteristics (LLM inference, "
+                    "embeddings, model serving, or prediction paths). These "
+                    "endpoints warrant specialized AI security testing for "
+                    "prompt injection, data exfiltration, and model abuse."
+                ),
+                evidence=_ai_sigs[:2000],
+                remediation=(
+                    "Implement AI-specific input validation and output "
+                    "filtering on all AI/ML endpoints. Deploy prompt "
+                    "injection defenses, rate limiting, and content safety "
+                    "guardrails."
+                ),
+                extra={"owasp": "API9:2023 Improper Inventory Management"},
+            )
+            _parsed_tr = urlparse(target_root)
+            output.log_action_item(
+                item_type="ai_discovered",
+                recommended_tool="pain",
+                target=base_url,
+                title="AI/ML Endpoints in API Spec — pAIn Testing Recommended",
+                description=(
+                    f"{len(_ai_ep_hits)} AI/ML endpoint(s) found in API "
+                    f"spec: {', '.join(_ai_ep_paths[:5])}. Automated AI "
+                    "security testing with pAIn recommended."
+                ),
+                ip=_parsed_tr.hostname or "",
+                port=_parsed_tr.port or (443 if _parsed_tr.scheme == "https" else 80),
+                hostname=_parsed_tr.hostname or "",
+                source_finding="discovery",
+                priority="HIGH",
+                metadata={"ai_endpoints": _ai_ep_paths[:20]},
+            )
+            con.info(f"AI/ML spec endpoints: {len(_ai_ep_hits)} found")
+
+    # ------------------------------------------------------------------ #
     # 2. Apply spec credentials to session (only when no auth configured) #
     # ------------------------------------------------------------------ #
     auth_cfg = scan.get("auth", {})
@@ -5044,6 +5171,62 @@ def phase_discovery(settings: dict, sess: requests.Session,
                             source_finding="discovery",
                             priority="medium",
                         )
+
+    # ------------------------------------------------------------------ #
+    # 3a. Probe AI/ML API endpoints                                      #
+    # ------------------------------------------------------------------ #
+    con.status("discovery", "running", "Probing for AI/ML API endpoints")
+    _ai_detected_svcs: dict[str, list[str]] = {}
+    for _aip in _AI_API_PATHS:
+        _ai_url = target_root + _aip
+        _ai_resp = _safe_get(sess, _ai_url, timeout=timeout)
+        if _ai_resp and _ai_resp.status_code in (200, 401, 403, 405):
+            for _sn, _sp in _AI_API_SIGNATURES.items():
+                if _aip in _sp:
+                    _ai_detected_svcs.setdefault(_sn, []).append(_aip)
+    if _ai_detected_svcs:
+        _parsed_tr = urlparse(target_root)
+        for _sn, _sp in _ai_detected_svcs.items():
+            _paths_str = ", ".join(_sp)
+            output.add_finding(
+                phase="discovery",
+                title=f"AI/ML API Service Detected: {_sn}",
+                severity="INFO",
+                url=target_root + _sp[0],
+                detail=(
+                    f"AI/ML API endpoints matching {_sn} detected at: "
+                    f"{_paths_str}. AI services may be vulnerable to prompt "
+                    "injection, model manipulation, data exfiltration, and "
+                    "other LLM/AI-specific attack vectors (OWASP Top 10 for "
+                    "LLM Applications 2025)."
+                ),
+                evidence=f"Responding AI paths: {_paths_str}",
+                remediation=(
+                    "Restrict AI/ML API access to authorized clients. "
+                    "Implement input validation, output filtering, and rate "
+                    "limiting on all AI endpoints. Deploy prompt injection "
+                    "defenses and content safety guardrails."
+                ),
+                extra={"owasp": "API9:2023 Improper Inventory Management"},
+            )
+            output.log_action_item(
+                item_type="ai_discovered",
+                recommended_tool="pain",
+                target=target_root,
+                title=f"AI/ML Service ({_sn}) — pAIn Testing Recommended",
+                description=(
+                    f"AI API endpoints detected ({_paths_str}). Automated "
+                    "AI security testing with pAIn recommended for prompt "
+                    "injection, data exfiltration, and LLM-specific attacks."
+                ),
+                ip=_parsed_tr.hostname or "",
+                port=_parsed_tr.port or (443 if _parsed_tr.scheme == "https" else 80),
+                hostname=_parsed_tr.hostname or "",
+                source_finding="discovery",
+                priority="HIGH",
+                metadata={"ai_service": _sn, "ai_paths": _sp},
+            )
+        con.info(f"AI/ML services detected: {', '.join(_ai_detected_svcs.keys())}")
 
     # ------------------------------------------------------------------ #
     # 3b. Probe common API base paths when root 404s and no spec found   #
@@ -12825,10 +13008,10 @@ def main() -> None:
         _check_pause()
         if phases_cfg.get("tls", True) and not pm.is_phase_complete("tls"):
             con.section(f"Siphon — {raw_url} [tls]")
-            pm.set_phase_status("tls", "running", VantageConsole._PHASE_LABELS.get("tls", "tls"))
+            pm.set_phase_status("tls", "running", CrucibleConsole._PHASE_LABELS.get("tls", "tls"))
             try:
                 phase_tls(t_settings, output)
-                pm.set_phase_status("tls", "complete", VantageConsole._PHASE_LABELS.get("tls", "tls"))
+                pm.set_phase_status("tls", "complete", CrucibleConsole._PHASE_LABELS.get("tls", "tls"))
             except Exception as _e:
                 con.err(f"Phase tls error: {_e}")
                 pm.set_phase_status("tls", "error", detail=str(_e))
@@ -12922,11 +13105,11 @@ def main() -> None:
             def _run_phase(phase: str, fn, *args, _lbl: str = _ctx_label) -> None:
                 _check_pause()
                 pm.set_phase_status(f"{phase}#{_lbl}", "running",
-                                    VantageConsole._PHASE_LABELS.get(phase, phase))
+                                    CrucibleConsole._PHASE_LABELS.get(phase, phase))
                 try:
                     fn(*args)
                     pm.set_phase_status(f"{phase}#{_lbl}", "complete",
-                                        VantageConsole._PHASE_LABELS.get(phase, phase))
+                                        CrucibleConsole._PHASE_LABELS.get(phase, phase))
                 except Exception as exc:
                     con.err(f"Phase {phase} [{_lbl}] error: {exc}")
                     pm.set_phase_status(f"{phase}#{_lbl}", "error", detail=str(exc))
@@ -12935,11 +13118,11 @@ def main() -> None:
             def _run_phase_ret(phase: str, fn, *args, _lbl: str = _ctx_label):
                 _check_pause()
                 pm.set_phase_status(f"{phase}#{_lbl}", "running",
-                                    VantageConsole._PHASE_LABELS.get(phase, phase))
+                                    CrucibleConsole._PHASE_LABELS.get(phase, phase))
                 try:
                     result = fn(*args)
                     pm.set_phase_status(f"{phase}#{_lbl}", "complete",
-                                        VantageConsole._PHASE_LABELS.get(phase, phase))
+                                        CrucibleConsole._PHASE_LABELS.get(phase, phase))
                     return result
                 except Exception as exc:
                     con.err(f"Phase {phase} [{_lbl}] error: {exc}")
@@ -13201,11 +13384,11 @@ def main() -> None:
 
         def _run_phase(phase: str, fn, *args) -> None:
             pm.set_phase_status(phase, "running",
-                                VantageConsole._PHASE_LABELS.get(phase, phase))
+                                CrucibleConsole._PHASE_LABELS.get(phase, phase))
             try:
                 fn(*args)
                 pm.set_phase_status(phase, "complete",
-                                    VantageConsole._PHASE_LABELS.get(phase, phase))
+                                    CrucibleConsole._PHASE_LABELS.get(phase, phase))
             except Exception as exc:
                 con.err(f"Phase {phase} error: {exc}")
                 pm.set_phase_status(phase, "error", detail=str(exc))
