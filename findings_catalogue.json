@@ -11,7 +11,8 @@
       "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -66,7 +67,8 @@
       "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -121,7 +123,8 @@
       "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -176,7 +179,8 @@
       "title": "Discovery: API Endpoint Discovered",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -231,7 +235,8 @@
       "title": "Discovery: API Framework Identified",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -286,7 +291,8 @@
       "title": "Discovery: Undocumented API Endpoint Detected",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -342,7 +348,8 @@
       "title": "Discovery: Undocumented HTTP Method Accepted",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -397,7 +404,8 @@
       "title": "Discovery: Undocumented API Parameter Accepted",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -452,7 +460,8 @@
       "title": "Discovery: Undocumented Parameter Accepted",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -507,7 +516,8 @@
       "title": "Discovery: Endpoint Not in Scope File",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -560,7 +570,8 @@
       "title": "Discovery: HTTP Method Not in Scope File",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -613,7 +624,8 @@
       "title": "Discovery: GraphQL Subscription Endpoint Detected",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -670,7 +682,8 @@
       "title": "JWT: JWT Contains jku Header",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -708,7 +721,7 @@
       "description": "Siphon detected a JWT token containing a jku (JWK Set URL) header parameter. The jku header allows the token to specify an external URL from which the server should fetch the public key used to verify the token signature. While this finding is informational (the server may pin allowed jku URLs), the presence of this header indicates potential for JWKS spoofing attacks if the server does not validate the jku URL against an allowlist. This finding is escalated to SI-052 (CRITICAL) if the server was found to accept arbitrary jku values.",
       "impact": "",
       "_x_severity": "INFO",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-3",
         "IA-5",
@@ -732,7 +745,8 @@
       "title": "JWT: JWT Missing Issued-At Claim",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "cwe": [],
@@ -768,7 +782,7 @@
       "description": "The JWT issued by the API does not include an iat (issued-at) claim. The iat claim records when the token was created and enables server-side enforcement of token age policies. Without iat, the server cannot determine how long a token has been in circulation, making it impossible to enforce maximum token age, detect token replay from older sessions, or implement clock-skew tolerances. This weakens overall token lifecycle management.",
       "impact": "",
       "_x_severity": "LOW",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "AC-12"
@@ -881,14 +895,16 @@
       "_x_references": [
         "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html",
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/10-Business_Logic_Testing/09-Test_Upload_of_Malicious_Files"
-      ]
+      ],
+      "category": "Discovery"
     },
     {
       "id": "SI-016",
       "title": "Discovery: Potential Undocumented Upload Endpoint Discovered",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -943,7 +959,7 @@
       "id": "SI-017",
       "title": "JWT: JWT Missing Expiry Claim",
       "aliases": [
-        "JWT \u2014 Missing Expiry Claim (No exp)"
+        "JWT — Missing Expiry Claim (No exp)"
       ],
       "source_tools": [
         "siphon"
@@ -1024,7 +1040,7 @@
       "description": "The JWT issued by the API does not contain an exp (expiration) claim. Without an expiration claim, the token is theoretically valid indefinitely. An attacker who intercepts or steals a token (via XSS, network interception, log leakage, or insider threat) can use it perpetually without any time-based invalidation occurring. This violates the principle of least privilege as applied to authentication tokens and significantly increases the blast radius of any token compromise.",
       "impact": "",
       "_x_severity": "LOW",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "AC-12",
@@ -1039,7 +1055,8 @@
         "https://datatracker.ietf.org/doc/html/rfc7519#section-4.1.4",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
         "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html"
-      ]
+      ],
+      "category": "JWT"
     },
     {
       "id": "SI-018",
@@ -1141,7 +1158,8 @@
       "_x_references": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/02-Fingerprint_Web_Server",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-019",
@@ -1243,7 +1261,8 @@
       "_x_references": [
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Via",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-020",
@@ -1345,7 +1364,8 @@
       "_x_references": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/09-Fingerprint_Web_Application",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-021",
@@ -1449,7 +1469,8 @@
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/01-Information_Gathering/09-Fingerprint_Web_Application",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
         "https://docs.microsoft.com/en-us/dotnet/api/system.web.httpruntime.enableversionheader"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-022",
@@ -1507,7 +1528,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html",
         "https://csp-evaluator.withgoogle.com/",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Permissive Security Header"
     },
     {
       "id": "SI-023",
@@ -1565,7 +1587,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html",
         "https://hstspreload.org/",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Permissive Security Header"
     },
     {
       "id": "SI-024",
@@ -1622,7 +1645,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Permissive Security Header"
     },
     {
       "id": "SI-025",
@@ -1653,7 +1677,7 @@
       "searchsploit_terms": [],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "Set the X-Content-Type-Options header to exactly 'nosniff' on all API responses. This is a binary setting \u2014 only 'nosniff' is valid. Ensure the correct Content-Type header is also set on all responses to prevent browsers from needing to sniff the content type.",
+      "remediation_brief": "Set the X-Content-Type-Options header to exactly 'nosniff' on all API responses. This is a binary setting — only 'nosniff' is valid. Ensure the correct Content-Type header is also set on all responses to prevent browsers from needing to sniff the content type.",
       "remediation_component": "",
       "remediation_category": "",
       "remediation_effort": "",
@@ -1671,13 +1695,14 @@
       ],
       "_x_cves": [],
       "_x_cvss_score": 2.6,
-      "_x_remediation": "Set the X-Content-Type-Options header to exactly 'nosniff' on all API responses. This is a binary setting \u2014 only 'nosniff' is valid. Ensure the correct Content-Type header is also set on all responses to prevent browsers from needing to sniff the content type.",
+      "_x_remediation": "Set the X-Content-Type-Options header to exactly 'nosniff' on all API responses. This is a binary setting — only 'nosniff' is valid. Ensure the correct Content-Type header is also set on all responses to prevent browsers from needing to sniff the content type.",
       "_x_metasploit": [],
       "_x_exploitdb": [],
       "_x_references": [
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Permissive Security Header"
     },
     {
       "id": "SI-026",
@@ -1732,7 +1757,8 @@
       "_x_references": [
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Permissive Security Header"
     },
     {
       "id": "SI-027",
@@ -1789,7 +1815,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Permissive Security Header"
     },
     {
       "id": "SI-028",
@@ -1899,7 +1926,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
-      ]
+      ],
+      "category": "Cookies"
     },
     {
       "id": "SI-029",
@@ -2009,14 +2037,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
-      ]
+      ],
+      "category": "Cookies"
     },
     {
       "id": "SI-030",
       "title": "Sensitive File Exposed: API Specification Exposed",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2074,7 +2104,8 @@
       "title": "Missing Security Header: Content-Security-Policy",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2125,14 +2156,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Missing Security Header"
     },
     {
       "id": "SI-032",
       "title": "Missing Security Header: X-Frame-Options",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2182,14 +2215,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Clickjacking_Defense_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Missing Security Header"
     },
     {
       "id": "SI-033",
       "title": "Missing Security Header: X-Content-Type-Options",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2237,14 +2272,16 @@
       "_x_references": [
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Missing Security Header"
     },
     {
       "id": "SI-034",
       "title": "Missing Security Header: Referrer-Policy",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2292,14 +2329,16 @@
       "_x_references": [
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Referrer-Policy",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Missing Security Header"
     },
     {
       "id": "SI-035",
       "title": "Missing Security Header: Cache-Control",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2349,14 +2388,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Missing Security Header"
     },
     {
       "id": "SI-036",
       "title": "Missing Security Header: Permissions-Policy",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2404,7 +2445,8 @@
       "_x_references": [
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Permissions-Policy",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Missing Security Header"
     },
     {
       "id": "SI-037",
@@ -2514,7 +2556,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
-      ]
+      ],
+      "category": "Cookies"
     },
     {
       "id": "SI-038",
@@ -2625,14 +2668,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html",
         "https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
-      ]
+      ],
+      "category": "Cookies"
     },
     {
       "id": "SI-039",
       "title": "Missing Security Header: Rate Limit Response Missing Retry-After Header",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2689,7 +2734,8 @@
       "title": "Injection: CRLF Injection in API Parameter",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2746,7 +2792,8 @@
       "title": "Injection: Log Injection via User-Agent / Query Parameter",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2803,7 +2850,8 @@
       "title": "Information Disclosure: SOAP Verbose Fault / Error Disclosure",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2910,14 +2958,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
         "https://portswigger.net/web-security/graphql",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "GraphQL"
     },
     {
       "id": "SI-044",
       "title": "GraphQL: GraphQL Error Response Leaks Internal Details",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -2971,10 +3021,11 @@
     },
     {
       "id": "SI-045",
-      "title": "GraphQL: GraphQL Directive Abuse \u2014 Accepted Without Limit",
+      "title": "GraphQL: GraphQL Directive Abuse — Accepted Without Limit",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3026,10 +3077,11 @@
     },
     {
       "id": "SI-046",
-      "title": "GraphQL: GraphQL Fragment Sprawl \u2014 No Fragment Count Limit",
+      "title": "GraphQL: GraphQL Fragment Sprawl — No Fragment Count Limit",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3081,10 +3133,11 @@
     },
     {
       "id": "SI-047",
-      "title": "Information Disclosure: JSONP Endpoint Detected \u2014 Potential Data Leakage",
+      "title": "Information Disclosure: JSONP Endpoint Detected — Potential Data Leakage",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3138,10 +3191,11 @@
     },
     {
       "id": "SI-048",
-      "title": "Broken Access Control: Possible Mass Assignment \u2014 Response Differs",
+      "title": "Broken Access Control: Possible Mass Assignment — Response Differs",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3195,10 +3249,11 @@
     },
     {
       "id": "SI-049",
-      "title": "Injection: Possible SSRF \u2014 Delayed Response",
+      "title": "Injection: Possible SSRF — Delayed Response",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3256,7 +3311,8 @@
       "title": "JWT: JWT Uses Symmetric Algorithm (HS256)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3292,7 +3348,7 @@
       "description": "The API issues JWTs signed with a symmetric HMAC algorithm (HS256, HS384, or HS512). Symmetric algorithms use the same secret key for signing and verification, meaning any party that can verify tokens also knows the secret and can forge arbitrary tokens. In microservice architectures where multiple services verify JWTs, each service possesses the signing secret, increasing the blast radius if any service is compromised. A weak or brute-forceable HMAC secret compounds this risk significantly.",
       "impact": "",
       "_x_severity": "MEDIUM",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SC-28"
@@ -3313,7 +3369,8 @@
       "title": "Permissive Security Header: Security Misconfiguration / CORS Wildcard with Credentials",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -3421,14 +3478,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
         "https://portswigger.net/web-security/authentication"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-053",
       "title": "Debug Endpoint Exposed: Debug / Developer Console Exposed",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -3488,7 +3547,8 @@
       "title": "Information Disclosure: Server-Timing Header Leaks Authentication Duration",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3545,7 +3605,8 @@
       "title": "Information Disclosure: API Returns More Fields Than Documented",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3598,10 +3659,11 @@
     },
     {
       "id": "SI-056",
-      "title": "Web Misconfiguration: HTTP Method Override \u2014 DELETE via POST Accepted",
+      "title": "Web Misconfiguration: HTTP Method Override — DELETE via POST Accepted",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3657,7 +3719,8 @@
       "title": "Injection: CSV Injection in User Export",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3711,10 +3774,11 @@
     },
     {
       "id": "SI-058",
-      "title": "Business Logic: Business Flow \u2014 Numeric Field Accepts Negative/Zero Value",
+      "title": "Business Logic: Business Flow — Numeric Field Accepts Negative/Zero Value",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -3769,7 +3833,8 @@
       "title": "Missing Security Header: Strict-Transport-Security",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -3820,14 +3885,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Strict_Transport_Security_Cheat_Sheet.html",
         "https://hstspreload.org/",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Missing Security Header"
     },
     {
       "id": "SI-060",
-      "title": "Enumeration: BOLA \u2014 Object Enumeration Possible",
+      "title": "Enumeration: BOLA — Object Enumeration Possible",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -3851,7 +3918,7 @@
       "searchsploit_terms": [],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "Replace sequential integer IDs with cryptographically random UUIDs (UUIDv4) or other non-enumerable identifiers. Implement object-level authorization checks on every endpoint regardless of ID type \u2014 do not rely on unguessable IDs as a substitute for authorization. Combine opaque IDs with server-side ownership validation.",
+      "remediation_brief": "Replace sequential integer IDs with cryptographically random UUIDs (UUIDv4) or other non-enumerable identifiers. Implement object-level authorization checks on every endpoint regardless of ID type — do not rely on unguessable IDs as a substitute for authorization. Combine opaque IDs with server-side ownership validation.",
       "remediation_component": "",
       "remediation_category": "",
       "remediation_effort": "",
@@ -3869,7 +3936,7 @@
       ],
       "_x_cves": [],
       "_x_cvss_score": 7.5,
-      "_x_remediation": "Replace sequential integer IDs with cryptographically random UUIDs (UUIDv4) or other non-enumerable identifiers. Implement object-level authorization checks on every endpoint regardless of ID type \u2014 do not rely on unguessable IDs as a substitute for authorization. Combine opaque IDs with server-side ownership validation.",
+      "_x_remediation": "Replace sequential integer IDs with cryptographically random UUIDs (UUIDv4) or other non-enumerable identifiers. Implement object-level authorization checks on every endpoint regardless of ID type — do not rely on unguessable IDs as a substitute for authorization. Combine opaque IDs with server-side ownership validation.",
       "_x_metasploit": [],
       "_x_exploitdb": [],
       "_x_references": [
@@ -3879,10 +3946,11 @@
     },
     {
       "id": "SI-061",
-      "title": "Broken Access Control: BFLA \u2014 Broken Function Level Authorization",
+      "title": "Broken Access Control: BFLA — Broken Function Level Authorization",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -3936,10 +4004,11 @@
     },
     {
       "id": "SI-062",
-      "title": "Information Disclosure: Excessive Data Exposure \u2014 Sensitive Fields in API Response",
+      "title": "Information Disclosure: Excessive Data Exposure — Sensitive Fields in API Response",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4019,7 +4088,7 @@
       "searchsploit_terms": [],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "Implement ownership validation on every endpoint that accesses user-specific resources. Verify that the authenticated user ID matches the owner of the requested resource. Do not rely on the client to supply the correct user ID \u2014 derive the target user from the authenticated session, not from URL parameters or request body. Implement comprehensive integration tests for authorization across all user-scoped endpoints.",
+      "remediation_brief": "Implement ownership validation on every endpoint that accesses user-specific resources. Verify that the authenticated user ID matches the owner of the requested resource. Do not rely on the client to supply the correct user ID — derive the target user from the authenticated session, not from URL parameters or request body. Implement comprehensive integration tests for authorization across all user-scoped endpoints.",
       "remediation_component": "",
       "remediation_category": "",
       "remediation_effort": "",
@@ -4038,21 +4107,23 @@
       ],
       "_x_cves": [],
       "_x_cvss_score": 8.1,
-      "_x_remediation": "Implement ownership validation on every endpoint that accesses user-specific resources. Verify that the authenticated user ID matches the owner of the requested resource. Do not rely on the client to supply the correct user ID \u2014 derive the target user from the authenticated session, not from URL parameters or request body. Implement comprehensive integration tests for authorization across all user-scoped endpoints.",
+      "_x_remediation": "Implement ownership validation on every endpoint that accesses user-specific resources. Verify that the authenticated user ID matches the owner of the requested resource. Do not rely on the client to supply the correct user ID — derive the target user from the authenticated session, not from URL parameters or request body. Implement comprehensive integration tests for authorization across all user-scoped endpoints.",
       "_x_metasploit": [],
       "_x_exploitdb": [],
       "_x_references": [
         "https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/",
         "https://portswigger.net/web-security/access-control/idor",
         "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html"
-      ]
+      ],
+      "category": "Broken Access Control"
     },
     {
       "id": "SI-064",
       "title": "Information Disclosure: Sensitive Data Exposed in API Response",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4108,7 +4179,8 @@
       "title": "Authentication: Sensitive Authentication Headers Exposed in Response",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4168,7 +4240,8 @@
         "Unrestricted API Calls"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -4244,10 +4317,11 @@
     },
     {
       "id": "SI-067",
-      "title": "Unauthenticated Access: Rate Limit Bypass \u2014 Unauthenticated Session Has Separate Bucket",
+      "title": "Unauthenticated Access: Rate Limit Bypass — Unauthenticated Session Has Separate Bucket",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4302,7 +4376,8 @@
       "title": "Authentication: Rate Limit Bypass via X-Forwarded-For Header",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4359,7 +4434,7 @@
       "title": "Broken Access Control: Mass Assignment Vulnerability",
       "aliases": [
         "Over-Posted Parameters",
-        "Mass Assignment \u2014 Accepted",
+        "Mass Assignment — Accepted",
         "Hidden Field Tampering",
         "Auto-Binding Vulnerability",
         "Mass Assignment",
@@ -4453,14 +4528,16 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html",
         "https://owasp.org/API-Security/editions/2023/en/0xa6-unrestricted-access-to-sensitive-business-flows/",
         "https://portswigger.net/web-security/api-testing/lab-exploiting-mass-assignment-vulnerability"
-      ]
+      ],
+      "category": "Broken Access Control"
     },
     {
       "id": "SI-070",
       "title": "JWT: JWT Uses Insecure Algorithm",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4500,7 +4577,7 @@
       "description": "The API issues or accepts JWTs using an algorithm that provides insufficient security guarantees. This includes weak algorithms such as RS256 with small key sizes, or algorithms deprecated by current IETF guidance. Weak algorithm usage allows an attacker with sufficient compute resources to forge token signatures, enabling authentication bypass and privilege escalation. This finding excludes the 'none' algorithm (SI-077) and RS256-to-HS256 confusion (SI-071) which are covered separately.",
       "impact": "",
       "_x_severity": "HIGH",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SC-8",
@@ -4526,7 +4603,8 @@
       "title": "Injection: JWT kid Header Path Traversal",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4562,7 +4640,7 @@
       "description": "The JWT kid (key ID) header parameter is used by the server to locate the signing key on the filesystem, and the server does not sanitize path traversal sequences in the kid value. An attacker can craft a JWT with a kid value like '../../dev/null' to cause the server to use an empty or predictable file as the signing key, then forge a valid JWT signature using that key. If the server uses the kid to construct a filesystem path, path traversal can redirect it to an attacker-controlled key file.",
       "impact": "",
       "_x_severity": "HIGH",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SC-28",
@@ -4584,7 +4662,8 @@
       "title": "Session: JWT Token Not Invalidated After Logout",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4620,7 +4699,7 @@
       "description": "Siphon confirmed that a JWT obtained before calling the logout endpoint remains valid and accepted by the API after the logout call completes. The API relies solely on the JWT's expiry (exp) claim for invalidation and does not maintain a server-side revocation list or blocklist. An attacker who obtains a victim's JWT (via XSS, network interception, log leakage, or device theft) can continue using the token until it naturally expires, even after the victim has logged out and changed their password.",
       "impact": "",
       "_x_severity": "HIGH",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "AC-12",
         "IA-5",
@@ -4639,10 +4718,11 @@
     },
     {
       "id": "SI-073",
-      "title": "Permissive Security Header: CORS \u2014 Reflected Origin with Credentials",
+      "title": "Permissive Security Header: CORS — Reflected Origin with Credentials",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4814,7 +4894,8 @@
         "https://portswigger.net/web-security/cross-site-scripting",
         "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "Injection"
     },
     {
       "id": "SI-075",
@@ -4871,7 +4952,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
         "https://portswigger.net/web-security/graphql",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/"
-      ]
+      ],
+      "category": "GraphQL"
     },
     {
       "id": "SI-076",
@@ -4910,7 +4992,7 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
         "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
       ],
-      "description": "The GraphQL API accepts batched queries \u2014 multiple operations in a single HTTP request submitted as a JSON array. An attacker can use this to bypass rate limiting by packing thousands of operations into a single request, enumerate sensitive data efficiently, or perform brute-force attacks against authentication mutations within a single connection. Since most rate limiting implementations count HTTP requests rather than GraphQL operations, batching multiplies the effective request rate by the batch size.",
+      "description": "The GraphQL API accepts batched queries — multiple operations in a single HTTP request submitted as a JSON array. An attacker can use this to bypass rate limiting by packing thousands of operations into a single request, enumerate sensitive data efficiently, or perform brute-force attacks against authentication mutations within a single connection. Since most rate limiting implementations count HTTP requests rather than GraphQL operations, batching multiplies the effective request rate by the batch size.",
       "impact": "",
       "_x_severity": "HIGH",
       "_x_category": "GraphQL Security",
@@ -4926,14 +5008,16 @@
       "_x_references": [
         "https://cheatsheetseries.owasp.org/cheatsheets/GraphQL_Cheat_Sheet.html",
         "https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/"
-      ]
+      ],
+      "category": "GraphQL"
     },
     {
       "id": "SI-077",
       "title": "GraphQL: GraphQL Query Depth Attack",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -4985,10 +5069,11 @@
     },
     {
       "id": "SI-078",
-      "title": "Injection: SOAP Injection \u2014 Parameter Reflected or Error Triggered",
+      "title": "Injection: SOAP Injection — Parameter Reflected or Error Triggered",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -5045,7 +5130,8 @@
       "title": "Injection: SSRF via API Parameter",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -5081,7 +5167,7 @@
         "https://owasp.org/API-Security/editions/2023/en/0xa7-server-side-request-forgery/"
       ],
       "description": "Siphon confirmed a Server-Side Request Forgery (SSRF) vulnerability where a URL supplied in an API parameter causes the server to make an HTTP request to the specified URL. An attacker can exploit this to reach internal services not accessible from the internet, probe internal network topology, access cloud instance metadata endpoints (e.g., http://169.254.169.254/latest/meta-data/ for AWS credentials), access localhost services, or potentially achieve remote code execution via SSRF chains.",
-      "impact": "An attacker coerces the server into making requests to internal-only services and cloud metadata endpoints, exposing internal APIs, admin panels and short-lived cloud IAM credentials, and providing a pivot to reach systems unreachable from the internet \u2014 frequently escalating to full cloud-account compromise.",
+      "impact": "An attacker coerces the server into making requests to internal-only services and cloud metadata endpoints, exposing internal APIs, admin panels and short-lived cloud IAM credentials, and providing a pivot to reach systems unreachable from the internet — frequently escalating to full cloud-account compromise.",
       "_x_severity": "HIGH",
       "_x_category": "SSRF",
       "_x_nist": [
@@ -5102,10 +5188,11 @@
     },
     {
       "id": "SI-080",
-      "title": "Business Logic: Business Flow \u2014 Workflow Step Directly Accessible",
+      "title": "Business Logic: Business Flow — Workflow Step Directly Accessible",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -5157,10 +5244,11 @@
     },
     {
       "id": "SI-081",
-      "title": "Business Logic: Business Flow \u2014 Race Condition (Duplicate Operation)",
+      "title": "Business Logic: Business Flow — Race Condition (Duplicate Operation)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -5214,10 +5302,11 @@
     },
     {
       "id": "SI-082",
-      "title": "Business Logic: Business Flow \u2014 Bulk Endpoint Accepts Unrestricted Batch Size",
+      "title": "Business Logic: Business Flow — Bulk Endpoint Accepts Unrestricted Batch Size",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -5272,7 +5361,8 @@
       "title": "Authentication: Missing Authentication Enforcement",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -5325,10 +5415,11 @@
     },
     {
       "id": "SI-084",
-      "title": "Broken Access Control: BFLA \u2014 Admin Endpoint Accessible",
+      "title": "Broken Access Control: BFLA — Admin Endpoint Accessible",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -5382,10 +5473,11 @@
     },
     {
       "id": "SI-085",
-      "title": "Broken Access Control: BOLA \u2014 Broken Object Level Authorization",
+      "title": "Broken Access Control: BOLA — Broken Object Level Authorization",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -5446,7 +5538,8 @@
         "Valid Credentials via Brute Force"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [
@@ -5456,7 +5549,14 @@
       "cve_examples": [],
       "cvss_v3_base": 9.8,
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-      "nessus_plugin_ids": [],
+      "nessus_plugin_ids": [
+        10061,
+        10144,
+        10399,
+        34970,
+        57792,
+        87932
+      ],
       "qualys_qids": [],
       "owasp_web": "A07:2021 Identification and Authentication Failures",
       "owasp_api": "API2:2023 Broken Authentication",
@@ -5553,7 +5653,8 @@
       "title": "Authentication Bypass: Type Juggling / JSON Type Confusion Authentication Bypass",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -5686,7 +5787,7 @@
         "auxiliary/scanner/http/jwt_none_alg_bypass"
       ],
       "kev": false,
-      "remediation_brief": "Implement an explicit algorithm allowlist in the JWT verification configuration and reject all tokens using the 'none' algorithm. Never rely on the algorithm specified in the JWT header to determine how to verify the token \u2014 use a server-side configured algorithm. Upgrade JWT libraries to versions that do not accept the 'none' algorithm by default. Audit all JWT validation code paths for algorithm confusion vulnerabilities.",
+      "remediation_brief": "Implement an explicit algorithm allowlist in the JWT verification configuration and reject all tokens using the 'none' algorithm. Never rely on the algorithm specified in the JWT header to determine how to verify the token — use a server-side configured algorithm. Upgrade JWT libraries to versions that do not accept the 'none' algorithm by default. Audit all JWT validation code paths for algorithm confusion vulnerabilities.",
       "remediation_component": "Authentication",
       "remediation_category": "Authentication",
       "remediation_effort": "Low",
@@ -5699,7 +5800,7 @@
       "description": "Siphon confirmed that the API accepts JWTs signed with the 'none' algorithm (alg: none, alg: None, alg: NONE). The 'none' algorithm specifies that no signature is required, meaning an attacker can craft an arbitrary JWT with any claims (any user ID, any role, any expiry) without needing the server's signing key. By setting alg to 'none' and removing the signature, an attacker achieves complete authentication bypass and can impersonate any user including administrators.",
       "impact": "",
       "_x_severity": "CRITICAL",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SC-8"
@@ -5708,7 +5809,7 @@
         "CVE-2015-9235"
       ],
       "_x_cvss_score": 9.8,
-      "_x_remediation": "Implement an explicit algorithm allowlist in the JWT verification configuration and reject all tokens using the 'none' algorithm. Never rely on the algorithm specified in the JWT header to determine how to verify the token \u2014 use a server-side configured algorithm. Upgrade JWT libraries to versions that do not accept the 'none' algorithm by default. Audit all JWT validation code paths for algorithm confusion vulnerabilities.",
+      "_x_remediation": "Implement an explicit algorithm allowlist in the JWT verification configuration and reject all tokens using the 'none' algorithm. Never rely on the algorithm specified in the JWT header to determine how to verify the token — use a server-side configured algorithm. Upgrade JWT libraries to versions that do not accept the 'none' algorithm by default. Audit all JWT validation code paths for algorithm confusion vulnerabilities.",
       "_x_metasploit": [],
       "_x_exploitdb": [],
       "_x_references": [
@@ -5716,7 +5817,8 @@
         "https://auth0.com/blog/critical-vulnerabilities-in-json-web-token-libraries/",
         "https://nvd.nist.gov/vuln/detail/CVE-2015-9235",
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/"
-      ]
+      ],
+      "category": "Authentication Bypass"
     },
     {
       "id": "SI-089",
@@ -5737,7 +5839,8 @@
         "Blind SQL Injection (Time-Based)"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [
@@ -5960,7 +6063,7 @@
         "https://github.com/sqlmapproject/sqlmap"
       ],
       "description": "Siphon confirmed a boolean-based blind SQL injection vulnerability where injecting boolean conditions into an API parameter produces different application responses (different response body, length, or status code) depending on whether the injected condition is true or false. While no data is returned directly, an attacker can exfiltrate the entire database content bit-by-bit by asking true/false questions about the data (e.g., 'is the first character of the admin password greater than M?'). Automated tools like sqlmap can extract the complete database in minutes.",
-      "impact": "An attacker can extract arbitrary database contents one character at a time by observing the difference between the application's responses to TRUE and FALSE injected conditions \u2014 no database error output or visible data is required. This enables disclosure of credentials, session tokens and other sensitive records, and can be escalated to authentication bypass or, on some database engines, command execution.",
+      "impact": "An attacker can extract arbitrary database contents one character at a time by observing the difference between the application's responses to TRUE and FALSE injected conditions — no database error output or visible data is required. This enables disclosure of credentials, session tokens and other sensitive records, and can be escalated to authentication bypass or, on some database engines, command execution.",
       "_x_severity": "CRITICAL",
       "_x_category": "Injection",
       "_x_nist": [
@@ -5978,7 +6081,8 @@
         "https://portswigger.net/web-security/sql-injection/blind",
         "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
         "https://github.com/sqlmapproject/sqlmap"
-      ]
+      ],
+      "category": "Injection"
     },
     {
       "id": "SI-091",
@@ -6108,7 +6212,8 @@
         "https://portswigger.net/web-security/sql-injection/blind",
         "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
         "https://github.com/sqlmapproject/sqlmap"
-      ]
+      ],
+      "category": "Injection"
     },
     {
       "id": "SI-092",
@@ -6123,7 +6228,8 @@
         "NoSQL Injection in API"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [
@@ -6227,7 +6333,8 @@
         "Remote Code Execution via Code Injection"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [
@@ -6442,7 +6549,8 @@
         "https://portswigger.net/web-security/server-side-template-injection",
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/07-Input_Validation_Testing/18-Testing_for_Server-side_Template_Injection",
         "https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Server%20Side%20Template%20Injection"
-      ]
+      ],
+      "category": "Injection"
     },
     {
       "id": "SI-095",
@@ -6458,7 +6566,8 @@
         "Directory Traversal"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -6573,7 +6682,8 @@
         "LDAP Injection in API Parameter"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -6673,7 +6783,8 @@
       "title": "JWT: JWT Algorithm Confusion Attack (RS256 to HS256)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -6699,7 +6810,7 @@
       "searchsploit_terms": [],
       "metasploit_modules": [],
       "kev": false,
-      "remediation_brief": "Configure the JWT verification library to use a server-side algorithm allowlist that only permits the expected algorithm (e.g., RS256). Never determine the verification algorithm from the token's header \u2014 use the algorithm specified in server-side configuration. Use a JWT library version that explicitly defends against algorithm confusion attacks. Test JWT verification with forged HS256 tokens signed with the public key to confirm the fix.",
+      "remediation_brief": "Configure the JWT verification library to use a server-side algorithm allowlist that only permits the expected algorithm (e.g., RS256). Never determine the verification algorithm from the token's header — use the algorithm specified in server-side configuration. Use a JWT library version that explicitly defends against algorithm confusion attacks. Test JWT verification with forged HS256 tokens signed with the public key to confirm the fix.",
       "remediation_component": "",
       "remediation_category": "",
       "remediation_effort": "",
@@ -6712,7 +6823,7 @@
       "description": "Siphon confirmed an algorithm confusion attack where the API normally uses RS256 (asymmetric RSA) but also accepts tokens signed with HS256 (symmetric HMAC). An attacker can obtain the server's public RSA key (which is public by design) and use it as the HMAC secret to sign a forged HS256 token. If the server uses the algorithm from the token header rather than from its configuration to select the verification method, it will verify the forged token using the public RSA key as the HMAC secret, accepting the attacker's fabricated claims.",
       "impact": "",
       "_x_severity": "CRITICAL",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SC-8"
@@ -6721,7 +6832,7 @@
         "CVE-2016-10555"
       ],
       "_x_cvss_score": 9.8,
-      "_x_remediation": "Configure the JWT verification library to use a server-side algorithm allowlist that only permits the expected algorithm (e.g., RS256). Never determine the verification algorithm from the token's header \u2014 use the algorithm specified in server-side configuration. Use a JWT library version that explicitly defends against algorithm confusion attacks. Test JWT verification with forged HS256 tokens signed with the public key to confirm the fix.",
+      "_x_remediation": "Configure the JWT verification library to use a server-side algorithm allowlist that only permits the expected algorithm (e.g., RS256). Never determine the verification algorithm from the token's header — use the algorithm specified in server-side configuration. Use a JWT library version that explicitly defends against algorithm confusion attacks. Test JWT verification with forged HS256 tokens signed with the public key to confirm the fix.",
       "_x_metasploit": [],
       "_x_exploitdb": [],
       "_x_references": [
@@ -6733,10 +6844,11 @@
     },
     {
       "id": "SI-098",
-      "title": "Injection: JWT \u2014 jku/x5u Header Injection (JWKS Spoofing)",
+      "title": "Injection: JWT — jku/x5u Header Injection (JWKS Spoofing)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -6775,7 +6887,7 @@
       "description": "Siphon confirmed that the API fetches the JWT verification key from the URL specified in the jku (JWK Set URL) or x5u (X.509 Certificate Chain URL) header parameter without validating it against an allowlist. An attacker can craft a JWT with a jku pointing to an attacker-controlled server hosting a JWKS with the attacker's own public key, then sign the JWT with the corresponding private key. The server fetches the attacker's JWKS and verifies the signature successfully, accepting forged tokens with arbitrary claims.",
       "impact": "",
       "_x_severity": "CRITICAL",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SC-8"
@@ -6796,10 +6908,11 @@
     },
     {
       "id": "SI-099",
-      "title": "Injection: JWT \u2014 kid Header SQL Injection",
+      "title": "Injection: JWT — kid Header SQL Injection",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -6835,7 +6948,7 @@
       "description": "Siphon confirmed that the JWT kid (key ID) header value is incorporated into a SQL query without parameterization when looking up the verification key. An attacker can inject SQL syntax into the kid header to manipulate the key lookup query. A common payload is \"' UNION SELECT 'attacker_secret' --\" which causes the server to use 'attacker_secret' as the verification key. The attacker then signs a forged JWT with 'attacker_secret', which the server accepts, enabling complete authentication bypass with arbitrary claims.",
       "impact": "",
       "_x_severity": "CRITICAL",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SI-10"
@@ -6856,7 +6969,8 @@
       "title": "JWT: JWT HMAC Secret Cracked",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -6895,7 +7009,7 @@
       "description": "Siphon successfully cracked the HMAC signing secret used by the API to sign JWTs using offline dictionary or brute-force attack (via hashcat or jwt-cracker). A weak or commonly-used HMAC secret can be recovered by testing the signature against wordlists. With the known secret, an attacker can forge arbitrary JWTs with any claims including elevated roles, extended expiry, or a different subject (user ID), achieving complete authentication bypass and privilege escalation to any account.",
       "impact": "",
       "_x_severity": "CRITICAL",
-      "_x_category": "Authentication \u2014 JWT",
+      "_x_category": "Authentication — JWT",
       "_x_nist": [
         "IA-5",
         "SC-28"
@@ -6919,7 +7033,8 @@
       "title": "GraphQL: GraphQL Introspection Enabled (Production)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -6979,7 +7094,8 @@
         "WS-Addressing ReplyTo/FaultTo Header Accepted (SSRF Risk)"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -7066,14 +7182,15 @@
     },
     {
       "id": "SI-103",
-      "title": "Authentication Bypass: WS-Security Bypass \u2014 Expired Timestamp / Empty PasswordDigest Accepted",
+      "title": "Authentication Bypass: WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
       "aliases": [
         "WS-Security Bypass",
-        "WS-Security Bypass \u2014 Expired Timestamp / Empty PasswordDigest Accepted",
+        "WS-Security Bypass — Expired Timestamp / Empty PasswordDigest Accepted",
         "SOAP WS-Security Weakness"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [
@@ -7176,14 +7293,15 @@
     },
     {
       "id": "SI-104",
-      "title": "Enumeration: WSDL Enumeration \u2014 Service Definition Exposed",
+      "title": "Enumeration: WSDL Enumeration — Service Definition Exposed",
       "aliases": [
-        "WSDL Enumeration \u2014 Service Definition Exposed",
+        "WSDL Enumeration — Service Definition Exposed",
         "Web Service WSDL Accessible",
         "SOAP Endpoint Enumerated"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [
@@ -7272,14 +7390,15 @@
     },
     {
       "id": "SI-105",
-      "title": "Injection: Unsafe API Consumption \u2014 Webhook URL Accepted (SSRF Risk)",
+      "title": "Injection: Unsafe API Consumption — Webhook URL Accepted (SSRF Risk)",
       "aliases": [
-        "Unsafe API Consumption \u2014 Webhook URL Accepted (SSRF Risk)",
+        "Unsafe API Consumption — Webhook URL Accepted (SSRF Risk)",
         "Server-Side Request Forgery via Webhook",
         "Webhook SSRF Risk"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -7368,10 +7487,11 @@
     },
     {
       "id": "SI-106",
-      "title": "Web Vulnerability: Unsafe API Consumption \u2014 Open Redirect to External URL",
+      "title": "Web Vulnerability: Unsafe API Consumption — Open Redirect to External URL",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -7427,13 +7547,14 @@
     },
     {
       "id": "SI-107",
-      "title": "Injection: Unsafe API Consumption \u2014 Serialization Markers in Response",
+      "title": "Injection: Unsafe API Consumption — Serialization Markers in Response",
       "aliases": [
-        "Unsafe Consumption \u2014 Serialization Markers in API Response",
-        "Unsafe API Consumption \u2014 Serialization Markers in Response"
+        "Unsafe Consumption — Serialization Markers in API Response",
+        "Unsafe API Consumption — Serialization Markers in Response"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -7529,7 +7650,8 @@
         "Weak HS256 JWT Key"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [
@@ -7598,7 +7720,7 @@
         "https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/",
         "https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html"
       ],
-      "description": "Siphon identified that the HMAC secret used to sign JWTs is weak \u2014 matching a known default value, a short string, a dictionary word, or a low-entropy pattern detectable through analysis of the token structure. A weak HMAC signing secret is susceptible to offline brute-force and dictionary attacks: once a valid JWT is obtained, an attacker can recover the secret using tools such as hashcat or jwt-cracker without any further server interaction. With the recovered secret, the attacker can forge arbitrary JWTs with any claims including elevated roles, alternative subject identifiers, or extended expiry, achieving complete authentication bypass and horizontal or vertical privilege escalation.",
+      "description": "Siphon identified that the HMAC secret used to sign JWTs is weak — matching a known default value, a short string, a dictionary word, or a low-entropy pattern detectable through analysis of the token structure. A weak HMAC signing secret is susceptible to offline brute-force and dictionary attacks: once a valid JWT is obtained, an attacker can recover the secret using tools such as hashcat or jwt-cracker without any further server interaction. With the recovered secret, the attacker can forge arbitrary JWTs with any claims including elevated roles, alternative subject identifiers, or extended expiry, achieving complete authentication bypass and horizontal or vertical privilege escalation.",
       "impact": "",
       "_x_severity": "CRITICAL",
       "_x_category": "Authentication",
@@ -7713,7 +7835,8 @@
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/04-Review_Old_Backup_and_Unreferenced_Files_for_Sensitive_Information",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
         "https://cwe.mitre.org/data/definitions/538.html"
-      ]
+      ],
+      "category": "Sensitive File Exposed"
     },
     {
       "id": "SI-110",
@@ -7729,7 +7852,8 @@
         "XML External Entity (XXE) Injection in API"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [
@@ -7854,7 +7978,8 @@
       "cvss_v3_base": 3.1,
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N",
       "nessus_plugin_ids": [
-        11213
+        11213,
+        43111
       ],
       "qualys_qids": [
         86189
@@ -7898,7 +8023,7 @@
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
         "https://cwe.mitre.org/data/definitions/16.html"
       ],
-      "description": "Siphon confirmed that the HTTP TRACE method is enabled on the API server or a specific endpoint. The TRACE method is a diagnostic tool that echoes the received request back to the client, including all request headers. Cross-Site Tracing (XST) is a technique where an attacker combines TRACE with a browser-based XSS or cross-origin request to cause the victim's browser to send a TRACE request, with the echoed response \u2014 including HttpOnly cookies and Authorization headers \u2014 readable by the attacker's JavaScript. While modern browsers and XHR implementations largely block TRACE, the method's presence indicates insufficient HTTP method restriction and may expose headers through non-browser clients or misconfigured proxies.",
+      "description": "Siphon confirmed that the HTTP TRACE method is enabled on the API server or a specific endpoint. The TRACE method is a diagnostic tool that echoes the received request back to the client, including all request headers. Cross-Site Tracing (XST) is a technique where an attacker combines TRACE with a browser-based XSS or cross-origin request to cause the victim's browser to send a TRACE request, with the echoed response — including HttpOnly cookies and Authorization headers — readable by the attacker's JavaScript. While modern browsers and XHR implementations largely block TRACE, the method's presence indicates insufficient HTTP method restriction and may expose headers through non-browser clients or misconfigured proxies.",
       "impact": "",
       "_x_severity": "LOW",
       "_x_category": "Security Misconfiguration",
@@ -7918,7 +8043,8 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
         "https://cwe.mitre.org/data/definitions/16.html"
-      ]
+      ],
+      "category": "Web Misconfiguration"
     },
     {
       "id": "SI-112",
@@ -8001,14 +8127,16 @@
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Penetration_Testing/02-Configuration_and_Deployment_Management_Testing/06-Test_HTTP_Methods",
         "https://owasp.org/API-Security/editions/2023/en/0xa8-security-misconfiguration/",
         "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html"
-      ]
+      ],
+      "category": "Web Misconfiguration"
     },
     {
       "id": "SI-113",
       "title": "Unauthenticated Access: Unauthenticated Access to Endpoint",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -8073,7 +8201,8 @@
         "Unrestricted API Calls"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -8128,7 +8257,7 @@
         "https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html",
         "https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html"
       ],
-      "description": "Siphon confirmed that an API endpoint handling a sensitive operation \u2014 such as authentication, password reset, OTP validation, account recovery, or payment processing \u2014 does not enforce any rate limiting on incoming requests. While general rate limiting may be absent across all endpoints, the absence of rate limiting specifically on sensitive endpoints is higher-severity because these endpoints are primary targets for brute-force credential attacks, account enumeration, OTP bypass, and API abuse. An attacker can issue unlimited automated requests against these endpoints without encountering any throttling, lockout, or challenge mechanism.",
+      "description": "Siphon confirmed that an API endpoint handling a sensitive operation — such as authentication, password reset, OTP validation, account recovery, or payment processing — does not enforce any rate limiting on incoming requests. While general rate limiting may be absent across all endpoints, the absence of rate limiting specifically on sensitive endpoints is higher-severity because these endpoints are primary targets for brute-force credential attacks, account enumeration, OTP bypass, and API abuse. An attacker can issue unlimited automated requests against these endpoints without encountering any throttling, lockout, or challenge mechanism.",
       "impact": "",
       "_x_severity": "HIGH",
       "_x_category": "Rate Limiting",
@@ -8153,7 +8282,8 @@
       "title": "Discovery: CORS Wildcard (*) Detected",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -8209,10 +8339,11 @@
     },
     {
       "id": "SI-116",
-      "title": "Web Misconfiguration: HTTP Method Override Accepted \u2014 {override_method} via {override_hdr}",
+      "title": "Web Misconfiguration: HTTP Method Override Accepted — {override_method} via {override_hdr}",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [],
@@ -8248,10 +8379,11 @@
     },
     {
       "id": "SI-117",
-      "title": "Broken Access Control: Mass Assignment \u2014 {attack_label.title()} Accepted",
+      "title": "Broken Access Control: Mass Assignment — {attack_label.title()} Accepted",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [],
@@ -8322,14 +8454,16 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:8032",
-      "_template": true
+      "_template": true,
+      "category": "Sensitive File Exposed"
     },
     {
       "id": "SI-119",
       "title": "Discovery: Wildcard (*) Detected: {base_url}",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "cwe": [],
@@ -8361,7 +8495,8 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4363",
-      "_template": true
+      "_template": true,
+      "category": "Wildcard (*) Detected"
     },
     {
       "id": "SI-120",
@@ -8394,7 +8529,7 @@
         150141
       ],
       "owasp_web": "",
-      "owasp_api": "API1:2023 \u2013 Broken Object Level Authorization",
+      "owasp_api": "API1:2023 – Broken Object Level Authorization",
       "nist_csf2": [
         "PR.AA-05"
       ],
@@ -8444,9 +8579,9 @@
           "name": "Autorize (Burp extension)",
           "type": "gui",
           "url": "https://github.com/PortSwigger/autorize",
-          "install": "Burp Suite \u2192 BApp Store \u2192 search 'Autorize'",
+          "install": "Burp Suite → BApp Store → search 'Autorize'",
           "command": "# Setup: Log in as low-priv user, set auth header. Then browse as high-priv user.\n# Autorize replays requests with low-priv session and flags discrepancies.",
-          "description": "Automated authorization testing \u2014 replays every request with a lower-privileged session to detect BOLA/IDOR"
+          "description": "Automated authorization testing — replays every request with a lower-privileged session to detect BOLA/IDOR"
         },
         {
           "name": "Arjun",
@@ -8454,7 +8589,7 @@
           "url": "https://github.com/s0md3v/Arjun",
           "install": "pip3 install arjun",
           "command": "arjun -u https://TARGET/api/endpoint --stable -t 3",
-          "description": "HTTP parameter discovery scanner \u2014 finds hidden GET/POST/JSON parameters"
+          "description": "HTTP parameter discovery scanner — finds hidden GET/POST/JSON parameters"
         },
         {
           "name": "nuclei",
@@ -8468,7 +8603,8 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:6835",
-      "_template": false
+      "_template": false,
+      "category": "Broken Access Control"
     },
     {
       "id": "SI-121",
@@ -8502,8 +8638,8 @@
       "qualys_qids": [
         150116
       ],
-      "owasp_web": "A05:2021 \u2013 Security Misconfiguration",
-      "owasp_api": "API8:2023 \u2013 Security Misconfiguration",
+      "owasp_web": "A05:2021 – Security Misconfiguration",
+      "owasp_api": "API8:2023 – Security Misconfiguration",
       "nist_csf2": [
         "PR.PS-01"
       ],
@@ -8553,7 +8689,7 @@
           "url": "https://github.com/RUB-NDS/CORStest",
           "install": "git clone https://github.com/RUB-NDS/CORStest.git",
           "command": "python corstest.py -i targets.txt -v",
-          "description": "CORS misconfiguration tester \u2014 checks for wildcard, null origin, and prefix bypass"
+          "description": "CORS misconfiguration tester — checks for wildcard, null origin, and prefix bypass"
         },
         {
           "name": "Corsy",
@@ -8575,7 +8711,8 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4350",
-      "_template": false
+      "_template": false,
+      "category": "Permissive Security Header"
     },
     {
       "id": "SI-122",
@@ -8598,7 +8735,7 @@
       "qualys_qids": [
         150019
       ],
-      "owasp_web": "A03:2021 \u2013 Injection",
+      "owasp_web": "A03:2021 – Injection",
       "owasp_api": "",
       "nist_csf2": [
         "PR.DS-02",
@@ -8684,14 +8821,16 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5070",
-      "_template": false
+      "_template": false,
+      "category": "Injection"
     },
     {
       "id": "SI-123",
-      "title": "JWT: JWT Algorithm Confusion Attack (RS256 \u2192 HS256)",
+      "title": "JWT: JWT Algorithm Confusion Attack (RS256 → HS256)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "CRITICAL",
       "cwe": [],
@@ -8756,8 +8895,8 @@
       "qualys_qids": [
         150130
       ],
-      "owasp_web": "A07:2021 \u2013 Identification and Authentication Failures",
-      "owasp_api": "API2:2023 \u2013 Broken Authentication",
+      "owasp_web": "A07:2021 – Identification and Authentication Failures",
+      "owasp_api": "API2:2023 – Broken Authentication",
       "nist_csf2": [
         "PR.AA-01",
         "PR.DS-01"
@@ -8832,7 +8971,8 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5487",
-      "_template": false
+      "_template": false,
+      "category": "Authentication Bypass"
     },
     {
       "id": "SI-125",
@@ -8863,7 +9003,7 @@
       "qualys_qids": [
         150042
       ],
-      "owasp_web": "A03:2021 \u2013 Injection",
+      "owasp_web": "A03:2021 – Injection",
       "owasp_api": "",
       "nist_csf2": [
         "PR.DS-02",
@@ -8945,14 +9085,15 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4954",
-      "_template": false
+      "_template": false,
+      "category": "Injection"
     },
     {
       "id": "SI-126",
       "title": "Broken Access Control: Mass Assignment / Privilege Escalation via Parameter Binding",
       "aliases": [
         "Over-Posted Parameters",
-        "Mass Assignment \u2014 Accepted",
+        "Mass Assignment — Accepted",
         "Hidden Field Tampering",
         "Auto-Binding Vulnerability",
         "Mass Assignment",
@@ -8978,8 +9119,8 @@
       "qualys_qids": [
         150146
       ],
-      "owasp_web": "A01:2021 \u2013 Broken Access Control",
-      "owasp_api": "API6:2023 \u2013 Unrestricted Access to Sensitive Business Flows",
+      "owasp_web": "A01:2021 – Broken Access Control",
+      "owasp_api": "API6:2023 – Unrestricted Access to Sensitive Business Flows",
       "nist_csf2": [
         "PR.AA-05"
       ],
@@ -9031,7 +9172,7 @@
           "url": "https://github.com/s0md3v/Arjun",
           "install": "pip3 install arjun",
           "command": "arjun -u https://TARGET/api/endpoint --stable -t 3",
-          "description": "HTTP parameter discovery scanner \u2014 finds hidden GET/POST/JSON parameters"
+          "description": "HTTP parameter discovery scanner — finds hidden GET/POST/JSON parameters"
         },
         {
           "name": "ffuf",
@@ -9053,7 +9194,8 @@
       "description": "",
       "impact": "Automatic request-to-model binding lets an attacker set privileged or internal fields (e.g. role, is_admin, account_id) that are not part of the intended input, achieving privilege escalation or cross-account data manipulation without any other vulnerability.",
       "_scaffold_from": "siphon.py:5934",
-      "_template": false
+      "_template": false,
+      "category": "Broken Access Control"
     },
     {
       "id": "SI-127",
@@ -9086,8 +9228,8 @@
       "qualys_qids": [
         150044
       ],
-      "owasp_web": "A03:2021 \u2013 Injection",
-      "owasp_api": "API3:2023 \u2013 Injection",
+      "owasp_web": "A03:2021 – Injection",
+      "owasp_api": "API3:2023 – Injection",
       "nist_csf2": [
         "PR.DS-02",
         "DE.CM-01"
@@ -9148,7 +9290,7 @@
           "url": "https://github.com/stampery/mongoaudit",
           "install": "pip install mongoaudit",
           "command": "mongoaudit --host TARGET --port 27017",
-          "description": "Automated MongoDB security auditing tool \u2014 checks authentication, SSL, and authorization"
+          "description": "Automated MongoDB security auditing tool — checks authentication, SSL, and authorization"
         },
         {
           "name": "nuclei",
@@ -9170,7 +9312,8 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4917",
-      "_template": false
+      "_template": false,
+      "category": "Injection"
     },
     {
       "id": "SI-128",
@@ -9211,8 +9354,8 @@
         150050,
         150051
       ],
-      "owasp_web": "A03:2021 \u2013 Injection",
-      "owasp_api": "API3:2023 \u2013 Injection",
+      "owasp_web": "A03:2021 – Injection",
+      "owasp_api": "API3:2023 – Injection",
       "nist_csf2": [
         "PR.DS-02",
         "DE.CM-01"
@@ -9291,13 +9434,14 @@
           "url": "https://github.com/rapid7/metasploit-framework",
           "install": "curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > msfinstall && bash msfinstall",
           "command": "msfconsole -x 'use auxiliary/scanner/mysql/mysql_login; set RHOSTS TARGET; set PASS_FILE /usr/share/metasploit-framework/data/wordlists/unix_passwords.txt; run'",
-          "description": "World's most used penetration testing framework \u2014 modules for DB auth testing, exploitation"
+          "description": "World's most used penetration testing framework — modules for DB auth testing, exploitation"
         }
       ],
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5042",
-      "_template": false
+      "_template": false,
+      "category": "Injection"
     },
     {
       "id": "SI-129",
@@ -9338,8 +9482,8 @@
         150060,
         150061
       ],
-      "owasp_web": "A01:2021 \u2013 Broken Access Control",
-      "owasp_api": "API8:2023 \u2013 Security Misconfiguration",
+      "owasp_web": "A01:2021 – Broken Access Control",
+      "owasp_api": "API8:2023 – Security Misconfiguration",
       "nist_csf2": [
         "PR.AA-05",
         "PR.DS-02"
@@ -9420,7 +9564,8 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5100",
-      "_template": false
+      "_template": false,
+      "category": "Injection"
     },
     {
       "id": "SI-130",
@@ -9467,7 +9612,7 @@
         150023,
         150024
       ],
-      "owasp_web": "A03:2021 \u2013 Injection",
+      "owasp_web": "A03:2021 – Injection",
       "owasp_api": "API8:2023 Security Misconfiguration",
       "nist_csf2": [
         "DE.CM-01",
@@ -9534,19 +9679,21 @@
       "description": "Siphon observed a database error message in the response after injecting SQL metacharacters into a parameter, indicating that user input is concatenated into SQL statements without parameterisation (error-based SQL injection).",
       "impact": "An attacker can read, modify or delete arbitrary database contents, bypass authentication, and in many configurations escalate to file-system access or command execution on the database host. Error-based injection also discloses schema details that accelerate full database compromise.",
       "_scaffold_from": "siphon.py:4893",
-      "_template": false
+      "_template": false,
+      "category": "Injection"
     },
     {
       "id": "SI-131",
-      "title": "Web Vulnerability: Unsafe Consumption \u2014 Open Redirect to External URL",
+      "title": "Web Vulnerability: Unsafe Consumption — Open Redirect to External URL",
       "aliases": [
         "Open URL Redirect",
         "Redirect Parameter Manipulation",
         "Unvalidated Redirect",
-        "Unsafe Consumption \u2014 Open Redirect to External URL"
+        "Unsafe Consumption — Open Redirect to External URL"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -9558,7 +9705,7 @@
       "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
       "nessus_plugin_ids": [],
       "qualys_qids": [],
-      "owasp_web": "A01:2021 \u2013 Broken Access Control",
+      "owasp_web": "A01:2021 – Broken Access Control",
       "owasp_api": "",
       "nist_csf2": [
         "PR.DS-02"
@@ -9632,13 +9779,14 @@
     },
     {
       "id": "SI-132",
-      "title": "Injection: Unsafe Consumption \u2014 Serialization Markers in API Response",
+      "title": "Injection: Unsafe Consumption — Serialization Markers in API Response",
       "aliases": [
-        "Unsafe Consumption \u2014 Serialization Markers in API Response",
-        "Unsafe API Consumption \u2014 Serialization Markers in Response"
+        "Unsafe Consumption — Serialization Markers in API Response",
+        "Unsafe API Consumption — Serialization Markers in Response"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -9652,8 +9800,8 @@
       "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
       "nessus_plugin_ids": [],
       "qualys_qids": [],
-      "owasp_web": "A08:2021 \u2013 Software and Data Integrity Failures",
-      "owasp_api": "API10:2023 \u2013 Unsafe Consumption of APIs",
+      "owasp_web": "A08:2021 – Software and Data Integrity Failures",
+      "owasp_api": "API10:2023 – Unsafe Consumption of APIs",
       "nist_csf2": [
         "PR.DS-02",
         "DE.CM-01"
@@ -9750,14 +9898,17 @@
       "nessus_plugin_ids": [
         10061,
         34970,
-        57792
+        57792,
+        10144,
+        10399,
+        87932
       ],
       "qualys_qids": [
         150100,
         150101
       ],
-      "owasp_web": "A05:2021 \u2013 Security Misconfiguration",
-      "owasp_api": "API2:2023 \u2013 Broken Authentication",
+      "owasp_web": "A05:2021 – Security Misconfiguration",
+      "owasp_api": "API2:2023 – Broken Authentication",
       "nist_csf2": [
         "PR.AA-01",
         "DE.CM-01"
@@ -9839,7 +9990,7 @@
           "url": "https://github.com/rapid7/metasploit-framework",
           "install": "curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > msfinstall && bash msfinstall",
           "command": "msfconsole -x 'use auxiliary/scanner/mysql/mysql_login; set RHOSTS TARGET; set PASS_FILE /usr/share/metasploit-framework/data/wordlists/unix_passwords.txt; run'",
-          "description": "World's most used penetration testing framework \u2014 modules for DB auth testing, exploitation"
+          "description": "World's most used penetration testing framework — modules for DB auth testing, exploitation"
         },
         {
           "name": "nuclei",
@@ -9853,7 +10004,8 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:5387",
-      "_template": false
+      "_template": false,
+      "category": "Authentication"
     },
     {
       "id": "SI-134",
@@ -9892,8 +10044,8 @@
         150040,
         150041
       ],
-      "owasp_web": "A05:2021 \u2013 Security Misconfiguration",
-      "owasp_api": "API3:2023 \u2013 Injection",
+      "owasp_web": "A05:2021 – Security Misconfiguration",
+      "owasp_api": "API3:2023 – Injection",
       "nist_csf2": [
         "PR.DS-02",
         "DE.CM-01"
@@ -9984,14 +10136,16 @@
       "description": "",
       "impact": "",
       "_scaffold_from": "siphon.py:4985",
-      "_template": false
+      "_template": false,
+      "category": "Injection"
     },
     {
       "id": "SI-135",
       "title": "API Misconfiguration: Enumerated Parameter Value Restriction Not Enforced",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "cwe": [
@@ -10043,7 +10197,8 @@
       "title": "Input Validation: Numeric Parameter Boundary Not Enforced",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "cwe": [
@@ -10095,7 +10250,8 @@
       "title": "Input Validation: Parameter Type Confusion Accepted",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [
@@ -10193,14 +10349,16 @@
       "_x_remediation": "",
       "_x_metasploit": [],
       "_x_exploitdb": [],
-      "_x_references": []
+      "_x_references": [],
+      "category": "Injection"
     },
     {
       "id": "SI-139",
-      "title": "Misconfigured Security Header: Content-Type Confusion \u2014 Alternate Body Format Accepted",
+      "title": "Misconfigured Security Header: Content-Type Confusion — Alternate Body Format Accepted",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "cwe": [
@@ -10252,7 +10410,8 @@
       "title": "Input Validation: Unbounded Resource Consumption via Pagination Parameter",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [
@@ -10304,7 +10463,8 @@
       "title": "WebSocket: Insecure WebSocket Transport (Unencrypted ws://)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [
@@ -10357,7 +10517,8 @@
       "title": "WebSocket: WebSocket Handshake Accepts Arbitrary Origin (CSWSH Risk)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "cwe": [
@@ -10411,7 +10572,8 @@
       "title": "Unauthenticated Access: Unauthenticated Server-Sent Events (SSE) Stream",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [
@@ -10464,7 +10626,8 @@
       "title": "Web Misconfiguration: Server-Sent Events Stream Over Cleartext HTTP",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "cwe": [
@@ -10517,7 +10680,8 @@
       "title": "gRPC: gRPC Server Reflection Exposed",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "cwe": [
@@ -10570,7 +10734,8 @@
       "title": "gRPC: Insecure gRPC Transport (Plaintext / No TLS)",
       "aliases": [],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "cwe": [
@@ -10679,7 +10844,8 @@
       "remediation_effort": "Moderate",
       "validation_tools": [
         "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/03-Identity_Management_Testing/04-Testing_for_Account_Enumeration_and_Guessable_User_Account"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-148",
@@ -10688,7 +10854,8 @@
         "Authentication Timing Oracle"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "description": "The login endpoint shows a measurable timing difference between valid and invalid username submissions. Non-constant-time credential comparison or early-exit logic exposes a timing side-channel that can be exploited for username enumeration.",
@@ -10734,7 +10901,8 @@
         "Unhandled Server Error"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "An API endpoint returns a 500-series HTTP status code when sent malformed or unexpected input. This indicates the server does not properly validate inputs before processing, allowing unhandled exceptions to propagate to the client. The error response may expose stack traces, internal paths, or framework details.",
@@ -10785,7 +10953,8 @@
         "Internal Server Name Leakage"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "description": "API response headers or body contain internal hostnames (e.g., *.local, *.internal, *.corp). Internal hostnames reveal network topology, naming conventions, and infrastructure details that should not be exposed to external consumers.",
@@ -10825,7 +10994,8 @@
       "remediation_component": "Network",
       "remediation_category": "Configuration",
       "remediation_effort": "Easy",
-      "validation_tools": []
+      "validation_tools": [],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-151",
@@ -10835,7 +11005,8 @@
         "JWT Claim Tampering"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "description": "The server accepted a JWT with modified scope, role, or permission claims without rejecting the tampered token. This indicates the server does not independently validate JWT claims against the authorization database, allowing privilege escalation through token manipulation.",
@@ -10897,7 +11068,8 @@
         "Excessive Session Lifetime"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "description": "API bearer tokens remain valid after extended periods of inactivity. The tested token was still accepted by the server after the configured check interval (default: 30 minutes). Excessive session timeouts increase the window for token theft and replay attacks.",
@@ -10943,7 +11115,8 @@
         "Session Token Replay After Logout"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "Cookie-based session tokens remain valid after calling the logout endpoint. The session cookie can be replayed against protected resources and continues to grant access, indicating the server does not invalidate the server-side session record on logout.",
@@ -10997,7 +11170,8 @@
         "Verbose Error Response"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "An API response contains stack traces, exception class names, debug output, or SQL error messages. This typically occurs on 500-series responses but can also appear in 200 responses with JSON error payloads. The disclosure reveals internal implementation details.",
@@ -11046,7 +11220,8 @@
         "JWT Payload PII Disclosure"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "JWT access token payload contains personally identifiable information (PII) such as email, phone number, or address. JWTs are base64-encoded (not encrypted), so any party that intercepts or extracts the token can read PII directly.",
@@ -11110,7 +11285,8 @@
         "Token Leakage via URL"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "description": "Authentication tokens (access_token, bearer, jwt) are transmitted in URL query parameters rather than in headers or cookies.",
@@ -11168,7 +11344,8 @@
         "API Key Leakage via URL"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "description": "API keys are transmitted in URL query parameters (api_key, apiKey, client_secret, etc.) rather than in headers.",
@@ -11204,7 +11381,8 @@
       "remediation_effort": "Easy",
       "validation_tools": [
         "burpsuite"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-158",
@@ -11214,7 +11392,8 @@
         "Pre-Authentication Session Reuse"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "HIGH",
       "description": "The session cookie retains the same value before and after authentication. An attacker who sets a pre-authentication session cookie can hijack the victim's authenticated session.",
@@ -11275,7 +11454,8 @@
         "Null Origin CORS Bypass"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "The API reflects 'null' as an allowed CORS origin. Sandboxed iframes, data: URIs, and local files send Origin: null, allowing an attacker to craft pages that read cross-origin API responses.",
@@ -11325,7 +11505,8 @@
         "GraphQL Schema Enumeration via Suggestions"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "description": "The GraphQL server returns 'Did you mean ...?' suggestions in error responses for misspelled field names, enabling schema reconstruction even when introspection is disabled.",
@@ -11370,7 +11551,8 @@
         "GraphQL Query Batching Abuse"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "The GraphQL endpoint accepts batched queries (array of operations) in a single request without enforcing a batch size limit.",
@@ -11415,7 +11597,8 @@
         "GraphQL Alias DoS"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "The GraphQL endpoint resolves multiple aliased copies of the same field in a single request, allowing attackers to multiply resolver executions and bypass per-request rate limits.",
@@ -11460,7 +11643,8 @@
         "Token Introspection Endpoint"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "The OAuth token info/introspection endpoint returns token metadata (scope, audience, user identity) to any bearer of the token without requiring client authentication.",
@@ -11497,7 +11681,8 @@
       "validation_tools": [
         "burpsuite",
         "curl"
-      ]
+      ],
+      "category": "Information Disclosure"
     },
     {
       "id": "SI-164",
@@ -11507,7 +11692,8 @@
         "Postman Environment Leak"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "MEDIUM",
       "description": "Postman collection or environment files are publicly accessible. Collections expose full API endpoint inventory with example requests; environment files may contain API keys, tokens, and secrets.",
@@ -11552,7 +11738,8 @@
         "X-RateLimit Headers"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "description": "API responses include rate-limiting headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset) that reveal exact throttling thresholds.",
@@ -11596,7 +11783,8 @@
         "Version Header Bypass"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "LOW",
       "description": "The API accepts version negotiation headers (X-API-Version, Accept-Version, Api-Version) and returns different responses for different version values, indicating deprecated or beta versions may be accessible.",
@@ -11641,7 +11829,8 @@
         "Web Path Discovered"
       ],
       "source_tools": [
-        "siphon"
+        "siphon",
+        "arbiter_master"
       ],
       "risk": "INFO",
       "description": "Katana web crawler discovered accessible web paths, JavaScript-referenced endpoints, and linked resources on the target application. Katana performs headless or passive crawling to enumerate the full reachable surface of a web application, including dynamically generated links.",
@@ -11742,7 +11931,8 @@
         "testssl.sh",
         "sslscan",
         "sslyze"
-      ]
+      ],
+      "category": "SSL/TLS Forward Secrecy"
     },
     {
       "id": "SI-171",
@@ -11807,7 +11997,8 @@
         "pain",
         "nuclei",
         "garak"
-      ]
+      ],
+      "category": "AI/ML API Service Detected"
     },
     {
       "id": "SI-172",
