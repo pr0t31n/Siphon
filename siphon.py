@@ -1056,16 +1056,17 @@ class OutputManager:
         self.action_items_json = self.out_dir / "action_items.json"
         self._action_items_lock = threading.Lock()
         self._fdb = None
-        _db_path = os.environ.get("PR0T31N_FINDINGS_DB")
-        if _db_path:
-            try:
-                import sys as _s
-                if "/opt/pr0t31n/shared" not in _s.path:
-                    _s.path.insert(0, "/opt/pr0t31n/shared")
-                import pr0t31n_findings_db
-                self._fdb = pr0t31n_findings_db.FindingsDB(_db_path)
-            except Exception:
-                self._fdb = None
+        _db_path = os.environ.get("PR0T31N_FINDINGS_DB") or str(self.out_dir / "findings.db")
+        try:
+            import sys as _s
+            if "/opt/pr0t31n/shared" not in _s.path:
+                _s.path.insert(0, "/opt/pr0t31n/shared")
+            import pr0t31n_findings_db
+            self._fdb = pr0t31n_findings_db.FindingsDB(_db_path)
+        except Exception:
+            self._fdb = None
+        if self._fdb and _ie:
+            _ie.init_db(self._fdb)
         self._setup_dirs()
         if not self.findings_json.exists():
             self.findings_json.write_text("[]", encoding="utf-8")
@@ -1296,6 +1297,7 @@ class OutputManager:
 
             _norm_key = (title.strip().lower(), url.strip(), int(port) if port else 0)
             merged = False
+            _merged_entry = None
             for ex in existing_all:
                 ex_key = (
                     (ex.get("title") or "").strip().lower(),
@@ -1323,20 +1325,21 @@ class OutputManager:
                                 _ex_roles.add(_a.get("role", ""))
                         ex["accounts"] = _ex_accts
                     merged = True
+                    _merged_entry = ex
                     break
 
             if not merged:
                 existing_all.append(fr_entry)
 
+            if self._fdb:
+                try:
+                    self._fdb.insert_finding(_merged_entry if merged else fr_entry)
+                except Exception:
+                    pass
+
             tmp = self.findings_json.with_suffix(".tmp")
             tmp.write_text(json.dumps(existing_all, indent=2), encoding="utf-8")
             tmp.replace(self.findings_json)
-
-            if self._fdb and not merged:
-                try:
-                    self._fdb.insert_finding(fr_entry)
-                except Exception:
-                    pass
 
         if _MANAGED and not merged:
             try:
@@ -1505,8 +1508,7 @@ class OutputManager:
 
     def save_inventory(self, inventory: list, filename: str = "api_inventory.json") -> Path:
         path = self.out_dir / filename
-        path.write_text(json.dumps(inventory, indent=2))
-        if _ie and _MANAGED:
+        if _ie:
             try:
                 _inv_rows = []
                 for _ep in inventory:
@@ -1523,13 +1525,13 @@ class OutputManager:
                     _ie.emit_intel("api_endpoint", _inv_rows, bulk=True)
             except Exception:
                 pass
+        path.write_text(json.dumps(inventory, indent=2))
         return path
 
     def save_api_map(self, api_map: dict, filename: str = "api_map.json") -> Path:
         """Persist the endpoint structure map to api_map.json."""
         path = self.out_dir / filename
-        path.write_text(json.dumps(api_map, indent=2))
-        if _ie and _MANAGED:
+        if _ie:
             try:
                 _map_rows = []
                 for _ep_path, _ep_info in api_map.items():
@@ -1547,6 +1549,7 @@ class OutputManager:
                     _ie.emit_intel("structure_url", _map_rows, bulk=True)
             except Exception:
                 pass
+        path.write_text(json.dumps(api_map, indent=2))
         return path
 
     def save_all(self, inventory: list | None = None) -> None:
@@ -12291,13 +12294,7 @@ def phase_access_matrix(
         "endpoints":        endpoint_access,
     }
     matrix_path = project_dir / "access_matrix.json"
-    try:
-        matrix_path.write_text(json.dumps(access_matrix, indent=2))
-        con.info(f"  Access matrix saved: {matrix_path}")
-    except Exception as exc:
-        con.err(f"  Failed to save access_matrix.json: {exc}")
-
-    if _ie and _MANAGED:
+    if _ie:
         try:
             _ie.emit_intel("access_matrix", {
                 "roles":            all_roles,
@@ -12307,6 +12304,11 @@ def phase_access_matrix(
             })
         except Exception:
             pass
+    try:
+        matrix_path.write_text(json.dumps(access_matrix, indent=2))
+        con.info(f"  Access matrix saved: {matrix_path}")
+    except Exception as exc:
+        con.err(f"  Failed to save access_matrix.json: {exc}")
 
     unauth_count = sum(
         1 for ep in endpoint_access
