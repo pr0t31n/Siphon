@@ -742,6 +742,14 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 _MANAGED = os.environ.get("CRUCIBLE_MANAGED", "0") == "1"
+
+try:
+    import sys as _sys_ie
+    if "/opt/pr0t31n/shared" not in _sys_ie.path:
+        _sys_ie.path.insert(0, "/opt/pr0t31n/shared")
+    import pr0t31n_intel_emitter as _ie
+except ImportError:
+    _ie = None
 _CP_FINDING = "__CRUCIBLE_FINDING__:"
 
 
@@ -1498,12 +1506,47 @@ class OutputManager:
     def save_inventory(self, inventory: list, filename: str = "api_inventory.json") -> Path:
         path = self.out_dir / filename
         path.write_text(json.dumps(inventory, indent=2))
+        if _ie and _MANAGED:
+            try:
+                _inv_rows = []
+                for _ep in inventory:
+                    _inv_rows.append({
+                        "url":           _ep.get("url", ""),
+                        "method":        _ep.get("method", "GET"),
+                        "status_code":   _ep.get("status_code"),
+                        "content_type":  _ep.get("content_type", ""),
+                        "auth_required": _ep.get("auth_required", False),
+                        "parameters":    _ep.get("parameters", []),
+                        "source":        _ep.get("source", ""),
+                    })
+                if _inv_rows:
+                    _ie.emit_intel("api_endpoint", _inv_rows, bulk=True)
+            except Exception:
+                pass
         return path
 
     def save_api_map(self, api_map: dict, filename: str = "api_map.json") -> Path:
         """Persist the endpoint structure map to api_map.json."""
         path = self.out_dir / filename
         path.write_text(json.dumps(api_map, indent=2))
+        if _ie and _MANAGED:
+            try:
+                _map_rows = []
+                for _ep_path, _ep_info in api_map.items():
+                    if isinstance(_ep_info, dict):
+                        for _meth, _meth_info in _ep_info.get("methods", {}).items():
+                            _map_rows.append({
+                                "path":        _ep_path,
+                                "method":      _meth,
+                                "status":      _meth_info.get("status"),
+                                "auth":        _meth_info.get("auth"),
+                                "params":      _meth_info.get("params", []),
+                                "source":      _meth_info.get("source", ""),
+                            })
+                if _map_rows:
+                    _ie.emit_intel("structure_url", _map_rows, bulk=True)
+            except Exception:
+                pass
         return path
 
     def save_all(self, inventory: list | None = None) -> None:
@@ -12253,6 +12296,17 @@ def phase_access_matrix(
         con.info(f"  Access matrix saved: {matrix_path}")
     except Exception as exc:
         con.err(f"  Failed to save access_matrix.json: {exc}")
+
+    if _ie and _MANAGED:
+        try:
+            _ie.emit_intel("access_matrix", {
+                "roles":            all_roles,
+                "most_privileged":  most_privileged,
+                "privilege_counts": privilege_counts,
+                "endpoint_count":   len(endpoint_access),
+            })
+        except Exception:
+            pass
 
     unauth_count = sum(
         1 for ep in endpoint_access
