@@ -182,9 +182,16 @@ def _pip_installed(pkg_spec: str) -> bool:
 
 def _brew_installed_set():
     bp = shutil.which("brew") or "/opt/homebrew/bin/brew"
+    if not os.path.isfile(bp):
+        return set()
+    cmd = [bp, "list", "--formula", "-1"]
+    if is_root():
+        user = get_sudo_user()
+        if not user:
+            return set()
+        cmd = ["sudo", "-u", user, "-H"] + cmd
     try:
-        r = subprocess.run([bp, "list", "--formula", "-1"],
-                           capture_output=True, text=True, timeout=30)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         return set(r.stdout.split()) if r.returncode == 0 else set()
     except Exception:
         return set()
