@@ -595,6 +595,27 @@ def _write_auth_status(project_dir: "Path | str", role: str, username: str,
         "landing_body": landing_body[:8192],
     }
 
+    # ── Intel emissions: auth_session + auth_cookie ──────────────────────
+    if _ie and status == "success" and session is not None:
+        try:
+            _ie.emit_intel("auth_session", {
+                "role":    role,
+                "cookies": cookies,
+                "headers": {h["name"]: h["value"] for h in auth_headers},
+            })
+        except Exception:
+            pass
+        if cookies:
+            try:
+                _ie.emit_intel("auth_cookie", [
+                    {"name": c["name"], "domain": c["domain"],
+                     "path": c["path"], "secure": c["secure"],
+                     "httpOnly": c["httpOnly"]}
+                    for c in cookies
+                ], bulk=True)
+            except Exception:
+                pass
+
     try:
         p = Path(project_dir) / "authentication_status.json"
         existing: list = []
@@ -5646,6 +5667,25 @@ def phase_recon(settings: dict, sess: requests.Session,
             remediation="Configure proxies and load balancers to strip or genericize the Via header.",
             extra={"command": _hdr_cmd},
         )
+
+    # ── Intel emission: software detected from API response headers ───
+    if _ie:
+        try:
+            _sw_items = []
+            if server:
+                _sw_items.append({"name": server, "source": "Server header",
+                                  "url": base_url})
+            if x_powered:
+                _sw_items.append({"name": x_powered, "source": "X-Powered-By header",
+                                  "url": base_url})
+            if _aspnet:
+                _sw_items.append({"name": f"ASP.NET {_aspnet}",
+                                  "source": "X-AspNet-Version header",
+                                  "url": base_url})
+            if _sw_items:
+                _ie.emit_intel("software", _sw_items, bulk=True)
+        except Exception:
+            pass
 
     # Security headers — restrict to the canonical 6
     _is_https = base_url.startswith("https://")
