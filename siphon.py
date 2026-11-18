@@ -599,18 +599,30 @@ def _write_auth_status(project_dir: "Path | str", role: str, username: str,
     if _ie and status == "success" and session is not None:
         try:
             _ie.emit_intel("auth_session", {
-                "role":    role,
-                "cookies": cookies,
-                "headers": {h["name"]: h["value"] for h in auth_headers},
+                "role":      role,
+                "username":  username,
+                "auth_type": "cookie" if cookies else "header",
+                "valid":     1,
+                "cookies":   [
+                    {"name": c["name"], "domain": c.get("domain", ""),
+                     "path": c.get("path", "/"),
+                     "secure": int(bool(c.get("secure"))),
+                     "httponly": int(bool(c.get("httpOnly"))),
+                     "samesite": c.get("samesite", ""),
+                     "expires_at": c.get("expires")}
+                    for c in cookies
+                ] if cookies else [],
             })
         except Exception:
             pass
         if cookies:
             try:
                 _ie.emit_intel("auth_cookie", [
-                    {"name": c["name"], "domain": c["domain"],
-                     "path": c["path"], "secure": c["secure"],
-                     "httpOnly": c["httpOnly"]}
+                    {"name": c["name"], "domain": c.get("domain", ""),
+                     "path": c.get("path", "/"),
+                     "secure": int(bool(c.get("secure"))),
+                     "httponly": int(bool(c.get("httpOnly"))),
+                     "samesite": c.get("samesite", "")}
                     for c in cookies
                 ], bulk=True)
             except Exception:
@@ -1549,22 +1561,32 @@ class OutputManager:
         path.write_text(json.dumps(inventory, indent=2))
         return path
 
-    def save_api_map(self, api_map: dict, filename: str = "api_map.json") -> Path:
+    def save_api_map(self, api_map: dict, filename: str = "api_map.json",
+                     base_url: str = "") -> Path:
         """Persist the endpoint structure map to api_map.json."""
         path = self.out_dir / filename
+        _base = (base_url or getattr(self, "_api_base_url", "")).rstrip("/")
         if _ie:
             try:
                 _map_rows = []
                 for _ep_path, _ep_info in api_map.items():
                     if isinstance(_ep_info, dict):
+                        _from_spec = _ep_info.get("from_spec", False)
+                        _is_rogue = _ep_info.get("rogue", False)
+                        _full_url = (_base + "/" + _ep_path.lstrip("/")) if _base else _ep_path
                         for _meth, _meth_info in _ep_info.get("methods", {}).items():
+                            _scodes = _meth_info.get("status_codes", [])
                             _map_rows.append({
-                                "path":        _ep_path,
-                                "method":      _meth,
-                                "status":      _meth_info.get("status"),
-                                "auth":        _meth_info.get("auth"),
-                                "params":      _meth_info.get("params", []),
-                                "source":      _meth_info.get("source", ""),
+                                "url":           _full_url,
+                                "path":          _ep_path,
+                                "method":        _meth,
+                                "status_code":   int(_scodes[0]) if _scodes else None,
+                                "source":        _meth_info.get("source", "siphon"),
+                                "auth_required": int(bool(_meth_info.get("auth_required", False))),
+                                "auth_roles":    json.dumps(_meth_info.get("auth_users", [])),
+                                "is_rogue":      int(bool(_is_rogue or _meth_info.get("rogue", False))),
+                                "from_spec":     int(bool(_from_spec)),
+                                "target_url":    _base,
                             })
                 if _map_rows:
                     _ie.emit_intel("structure_url", _map_rows, bulk=True)
@@ -1588,7 +1610,8 @@ class OutputManager:
             updated_map = update_api_map_from_findings(
                 dict(self._api_map), self.findings, auth_cfg
             )
-            self.save_api_map(updated_map)
+            self.save_api_map(updated_map,
+                              base_url=getattr(self, "_api_base_url", ""))
         self.write_summary()
         # Augment findings.json with universal-required fields (idempotent).
         _u_augment_findings(self.findings_json, tool="siphon", scope=None)
@@ -5547,9 +5570,10 @@ def phase_discovery(settings: dict, sess: requests.Session,
         spec_paths=_spec_path_set if spec_was_provided else None,
         auth_cfg=scan.get("auth"),
     )
-    output.save_api_map(_api_map)
+    output.save_api_map(_api_map, base_url=base_url)
     # Stash map on output so later phases can update it
     output._api_map = _api_map
+    output._api_base_url = base_url
     output._spec_was_provided = spec_was_provided
     output._spec_path_set = _spec_path_set
 
@@ -12336,12 +12360,20 @@ def phase_access_matrix(
     matrix_path = project_dir / "access_matrix.json"
     if _ie:
         try:
-            _ie.emit_intel("access_matrix", {
-                "roles":            all_roles,
-                "most_privileged":  most_privileged,
-                "privilege_counts": privilege_counts,
-                "endpoint_count":   len(endpoint_access),
-            })
+            _am_rows = []
+            for _ep in endpoint_access:
+                for _rl, _st in _ep.get("access", {}).items():
+                    _result = "granted" if (isinstance(_st, int) and _st in (200, 201, 202, 204)) else "denied"
+                    _am_rows.append({
+                        "endpoint_path": _ep.get("path", ""),
+                        "role":          _rl,
+                        "method":        _ep.get("method", "GET"),
+                        "actual_status": _st if isinstance(_st, int) else None,
+                        "result":        _result,
+                        "target_url":    _ep.get("url", ""),
+                    })
+            if _am_rows:
+                _ie.emit_intel("access_matrix", _am_rows, bulk=True)
         except Exception:
             pass
     try:
