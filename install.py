@@ -281,6 +281,7 @@ APT_PACKAGES = [
     "git",
     "golang-go",
     "ffuf",
+    "proxychains4",
 ]
 
 DNF_PACKAGES = [
@@ -291,6 +292,7 @@ DNF_PACKAGES = [
     "python3-devel",
     "git",
     "golang",
+    "proxychains-ng",
 ]
 
 BREW_PACKAGES = [
@@ -300,6 +302,7 @@ BREW_PACKAGES = [
     "git",
     "ffuf",
     "feroxbuster",
+    "proxychains-ng",
 ]
 
 
@@ -386,6 +389,7 @@ PIP_PACKAGES = [
     "beautifulsoup4>=4.12.0", # HTML parser for response analysis — required
     "termcolor>=2.0.0",       # terminal colour output — required
     "websocket-client>=1.6.0",# WebSocket handshake/passive checks (Phase 21) — optional
+    "PySocks>=1.7.1",         # SOCKS proxy support for requests.Session — optional
 ]
 
 OFFLINE_BUNDLE_URLS = {
