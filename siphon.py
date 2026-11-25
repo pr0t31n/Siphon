@@ -236,6 +236,41 @@ def _start_oom_watchdog(threshold_pct=90, interval=15):
 
 VERSION = Path(__file__).resolve().parent.joinpath("VERSION").read_text().strip()
 
+# ── Shared proxy helper (graceful degradation if not installed) ──
+try:
+    if "/opt/pr0t31n/shared" not in sys.path:
+        sys.path.insert(0, "/opt/pr0t31n/shared")
+    import pr0t31n_proxy as _pp
+except ImportError:
+    _pp = None
+
+# Module-level proxy state — set once at scan start
+_PROXY_URL = ""
+_PROXYCHAINS_CONF = None
+
+
+def _init_proxy(scan, run_dir=None):
+    """Build proxy URL from config and write proxychains conf if needed."""
+    global _PROXY_URL, _PROXYCHAINS_CONF
+    proxy_addr = scan.get("proxy", "")
+    if not proxy_addr:
+        _PROXY_URL = ""
+        _PROXYCHAINS_CONF = None
+        return
+    if _pp:
+        _PROXY_URL = _pp.build_proxy_url(
+            proxy_addr,
+            scan.get("proxy_type", "http"),
+            scan.get("dns_over_proxy", False),
+        )
+    else:
+        _PROXY_URL = proxy_addr
+    if run_dir and _pp:
+        _PROXYCHAINS_CONF = _pp.write_proxychains_conf(
+            _PROXY_URL, run_dir,
+            dns_over_proxy=scan.get("dns_over_proxy", False),
+        )
+
 # ---------------------------------------------------------------------------
 # OWASP API Security Top 10 2023 mapping
 # ---------------------------------------------------------------------------
@@ -1780,7 +1815,13 @@ def _make_session(settings: dict) -> requests.Session:
     sess.verify = scan.get("verify_ssl", False)
     proxy = scan.get("proxy", "")
     if proxy:
-        sess.proxies = {"http": proxy, "https": proxy}
+        if _pp:
+            _proxy_url = _pp.build_proxy_url(
+                proxy, scan.get("proxy_type", "http"),
+                scan.get("dns_over_proxy", False))
+        else:
+            _proxy_url = proxy
+        sess.proxies = {"http": _proxy_url, "https": _proxy_url}
     ua = scan.get("user_agent", f"Mozilla/5.0 (compatible; Siphon/{VERSION}; Security Assessment)")
     sess.headers.update({"User-Agent": ua})
     extra_hdrs = scan.get("extra_headers", {})
@@ -2442,6 +2483,8 @@ DEFAULT_SETTINGS: dict = {
         "user_agent":     "Mozilla/5.0 (compatible; Siphon/1.0; Security Assessment)",
         "extra_headers":  {},
         "proxy":          "",
+        "proxy_type":     "http",
+        "dns_over_proxy": False,
         "verify_ssl":     False,
         "phases": {
             "discovery":        True,
@@ -2671,7 +2714,9 @@ def _parse_args() -> argparse.Namespace:
     ap.add_argument("--auth-token",   metavar="TOKEN", help="Pre-obtained auth token (bearer)")
     ap.add_argument("--threads",      type=int,        metavar="N")
     ap.add_argument("--timeout",      type=int,        metavar="SEC")
-    ap.add_argument("--proxy",        metavar="URL",   help="HTTP proxy")
+    ap.add_argument("--proxy",        metavar="URL",   help="HTTP/SOCKS proxy (host:port)")
+    ap.add_argument("--proxy-type",   metavar="TYPE",  default=None, help="http|https|socks4|socks5")
+    ap.add_argument("--dns-over-proxy", action="store_true", help="Resolve DNS through the proxy (socks5h://)")
     ap.add_argument("--version",      action="version", version=f"siphon {VERSION}")
     return ap.parse_args()
 
@@ -2711,6 +2756,10 @@ def _apply_args(settings: dict, args: argparse.Namespace) -> dict:
         scan["timeout"] = args.timeout
     if args.proxy:
         scan["proxy"] = args.proxy
+    if getattr(args, "proxy_type", None):
+        scan["proxy_type"] = args.proxy_type
+    if getattr(args, "dns_over_proxy", False):
+        scan["dns_over_proxy"] = True
     if getattr(args, "environment", None):
         scan["environment"] = args.environment
     if args.fast:
@@ -3230,6 +3279,21 @@ def _run_logged(cmd, *, output_file=None, tool_name="", timeout=None, text=True,
     from datetime import datetime as _dt, timezone as _tz
     started = _dt.now(_tz.utc)
     out, err, rc, proc = "", "", -1, None
+    # Proxy injection for subprocess tools
+    if _PROXY_URL and _pp:
+        from pathlib import Path as _P
+        _orig_bin = _P(cmd[0]).name if cmd else ""
+        _pi = _pp._tool_info(_orig_bin)
+        if _pi and _pi.get("env"):
+            _env = kw.get("env")
+            if _env is None:
+                import os as _os
+                _env = _os.environ.copy()
+            _env.update(_pp.proxy_env(_PROXY_URL))
+            kw["env"] = _env
+        elif not (_pi and (_pi.get("offline") or _pi.get("special"))):
+            cmd = _pp.proxy_wrap_cmd(
+                cmd, _PROXY_URL, proxychains_conf=_PROXYCHAINS_CONF)
     try:
         proc = _sp.run(cmd, capture_output=True, text=text, timeout=timeout, **kw)
         rc = proc.returncode
@@ -4646,8 +4710,8 @@ def _run_kiterunner(base_url: str, target: dict, scan: dict,
         "--fail-status-codes", "400,404,405,501",
         "--ignore-length", "0",
     ]
-    if scan.get("proxy"):
-        cmd += ["--proxy", scan["proxy"]]
+    if _PROXY_URL:
+        cmd += ["--proxy", _PROXY_URL]
 
     results: list = []
     try:
@@ -4729,8 +4793,8 @@ def _run_ffuf_discovery(base_url: str, target: dict, scan: dict,
         "-of", "json",
         "-s",  # silent (suppress progress)
     ] + hdrs
-    if scan.get("proxy"):
-        cmd += ["-x", scan["proxy"]]
+    if _PROXY_URL:
+        cmd += ["-x", _PROXY_URL]
 
     results: list = []
     try:
@@ -4807,8 +4871,8 @@ def _run_feroxbuster(base_url: str, target: dict, scan: dict,
     ]
     if not scan.get("verify_ssl", False):
         cmd.append("-k")
-    if scan.get("proxy"):
-        cmd += ["--proxy", scan["proxy"]]
+    if _PROXY_URL:
+        cmd += ["--proxy", _PROXY_URL]
     # Pass auth header if configured
     auth_cfg = scan.get("auth", {})
     if auth_cfg.get("enabled") and auth_cfg.get("auth_token"):
@@ -4889,8 +4953,8 @@ def _run_dirsearch(base_url: str, target: dict, scan: dict,
     ]
     if not scan.get("verify_ssl", False):
         cmd.append("--no-tls-errors")
-    if scan.get("proxy"):
-        cmd += ["--proxy", scan["proxy"]]
+    if _PROXY_URL:
+        cmd += ["--proxy", _PROXY_URL]
 
     results: list = []
     try:
@@ -4958,8 +5022,8 @@ def _run_katana(base_url: str, target: dict, scan: dict,
         "-o", str(out_file),
         "-silent",
     ]
-    if scan.get("proxy"):
-        cmd += ["-proxy", scan["proxy"]]
+    if _PROXY_URL:
+        cmd += ["-proxy", _PROXY_URL]
 
     results: list = []
     try:
@@ -12908,7 +12972,11 @@ def main() -> None:
     con.info(f"Project  : {scan['project']}")
     con.info(f"Threads  : {scan['threads']}")
     con.info(f"Timeout  : {scan['timeout']}s")
-    if scan.get("proxy"):
+    # Initialize proxy state from config
+    _init_proxy(scan, run_dir=Path(scan["project"]) if scan.get("project") else None)
+    if _PROXY_URL:
+        con.info(f"Proxy    : {_PROXY_URL}" + (" (DNS-over-proxy)" if scan.get("dns_over_proxy") else ""))
+    elif scan.get("proxy"):
         con.info(f"Proxy    : {scan['proxy']}")
     _spec_files = scan.get("api_spec_files") or ([scan["openapi_url"]] if scan.get("openapi_url") else [])
     if _spec_files:

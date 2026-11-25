@@ -7,3 +7,4 @@ websocket-client>=1.6.0   # Phase 21 WebSocket checks (optional; degrades gracef
 #   nuclei     — vulnerability scanner (github.com/projectdiscovery/nuclei)
 #   jq         — JSON processing (stedolan.github.io/jq)
 #   grpcurl    — gRPC reflection enumeration (github.com/fullstorydev/grpcurl) [Phase 21]
+PySocks>=1.7.1
